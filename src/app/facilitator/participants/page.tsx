@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScoreCard } from "@/components/ui/score-card";
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
+import { getFacilitatorBusinessIds } from "@/lib/facilitator/participants";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
@@ -18,40 +19,10 @@ import { NoteForm } from "./note-form";
 export const metadata: Metadata = { title: "Participants — Blueprint Facilitator" };
 export const dynamic = "force-dynamic";
 
-async function getParticipantBusinessIds(userId: string, role: string) {
-  if (can.viewAllBusinesses(role as never)) {
-    const regs = await prisma.sessionRegistration.findMany({
-      where: { businessId: { not: null }, status: { not: "CANCELLED" } },
-      select: { businessId: true },
-      distinct: ["businessId"],
-    });
-    return regs.map((r) => r.businessId!).filter(Boolean);
-  }
-
-  const [assignments, facilitatedRegs] = await Promise.all([
-    prisma.facilitatorAssignment.findMany({
-      where: { facilitatorId: userId },
-      select: { businessId: true },
-    }),
-    prisma.sessionRegistration.findMany({
-      where: {
-        businessId: { not: null },
-        status: { not: "CANCELLED" },
-        session: { facilitatorId: userId },
-      },
-      select: { businessId: true },
-    }),
-  ]);
-
-  return Array.from(
-    new Set([...assignments.map((a) => a.businessId), ...facilitatedRegs.map((r) => r.businessId!)]),
-  );
-}
-
 export default async function FacilitatorParticipantsPage() {
   const user = await requireUser("/facilitator/participants");
 
-  const businessIds = await getParticipantBusinessIds(user.id, user.role);
+  const businessIds = await getFacilitatorBusinessIds(user.id, user.role);
 
   if (businessIds.length === 0) {
     return (
@@ -110,6 +81,12 @@ export default async function FacilitatorParticipantsPage() {
                       {owner.firstName} {owner.lastName} · {owner.email}
                     </span>
                   )}
+                  <Link
+                    href={`/facilitator/participants/${business.id}`}
+                    className="text-xs font-medium text-navy-500 underline hover:text-navy-800"
+                  >
+                    Full Detail
+                  </Link>
                   <Link
                     href={`/facilitator/participants/roadmap/${business.id}`}
                     className="text-xs font-medium text-navy-500 underline hover:text-navy-800"

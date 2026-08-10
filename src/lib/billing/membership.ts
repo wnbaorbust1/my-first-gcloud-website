@@ -86,7 +86,7 @@ export async function getSyncedMembership(businessId: string): Promise<Membershi
   return syncMembershipIfStale(membership);
 }
 
-const STATUSES_WITH_BUILDER_ACCESS: MembershipStatus[] = [
+export const STATUSES_WITH_BUILDER_ACCESS: MembershipStatus[] = [
   "COMPLIMENTARY",
   "ACTIVE_MONTHLY",
   "ACTIVE_ANNUAL",

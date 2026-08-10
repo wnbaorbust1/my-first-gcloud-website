@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
   const mode = input.mode ?? DEFAULT_AI_MODE;
   const businessContext = await assembleAiContext(input.businessId);
-  const systemPrompt = buildSystemPrompt(mode, businessContext);
+  const systemPrompt = await buildSystemPrompt(mode, businessContext);
   const reply = await callBlueprintAi({ systemPrompt, history: [{ role: "user", content: input.message }] });
 
   const conversation = await prisma.aiConversation.create({

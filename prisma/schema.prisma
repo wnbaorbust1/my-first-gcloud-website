@@ -73,6 +73,7 @@ model User {
   aiConversations             AiConversation[]
   membershipsGranted          Membership[]          @relation("MembershipGrantedBy")
   weeklyCheckIns              WeeklyCheckIn[]
+  aiPromptTemplatesUpdated    AiPromptTemplate[]
 
   @@index([role])
 }
@@ -487,6 +488,7 @@ enum SessionFormat {
 model SessionOffering {
   id                      String                 @id @default(cuid())
   organizationId          String?
+  programId               String?
   sessionType             RecommendedSessionType
   title                   String
   description             String?                @db.Text
@@ -515,12 +517,14 @@ model SessionOffering {
   updatedAt DateTime @updatedAt
 
   organization  Organization?         @relation(fields: [organizationId], references: [id])
+  program       Program?              @relation(fields: [programId], references: [id], onDelete: SetNull)
   facilitator   User?                 @relation("SessionFacilitator", fields: [facilitatorId], references: [id])
   registrations SessionRegistration[]
   summaries     PostSessionSummary[]
 
   @@index([status, startsAt])
   @@index([sessionType])
+  @@index([programId])
 }
 
 /// One lifecycle status per registration (spec: "Track: Registered,
@@ -1495,4 +1499,43 @@ model ContentPlanItem {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, cadence, status])
+}
+
+// ---------------------------------------------------------------------------
+// Facilitator + Admin Command Center (spec Prompt 11)
+// ---------------------------------------------------------------------------
+
+/// AI PROMPT TEMPLATES (spec Prompt 11 CONTENT MANAGEMENT): an admin-editable
+/// override of one AiMode's system-prompt fragment. Not required to exist
+/// for a mode — `buildSystemPrompt()` falls back to the hardcoded
+/// `AI_MODE_BY_KEY` fragment (Phase 7) whenever no active row exists here,
+/// so this is purely an override layer, never a second source of truth.
+model AiPromptTemplate {
+  id                   String  @id @default(cuid())
+  mode                 AiMode  @unique
+  systemPromptFragment String  @db.Text
+  isActive             Boolean @default(true)
+  updatedByUserId      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updatedByUser User? @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
+}
+
+/// PROGRAMS (spec Prompt 11 CONTENT MANAGEMENT): a named catalog a
+/// SessionOffering can optionally belong to (e.g. "Blueprint Foundations,"
+/// "Veteran Entrepreneur Track") — admin-managed now, and the natural
+/// attachment point for Prompt 12's Organization-level Programs later
+/// without a schema change to SessionOffering itself.
+model Program {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions SessionOffering[]
 }

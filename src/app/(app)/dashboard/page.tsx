@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { NotificationsCard } from "@/components/dashboard/notifications-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -23,6 +24,7 @@ import { TaskCard, type TaskPriority } from "@/components/ui/task-card";
 import { sessionLabelFor } from "@/lib/assessment/scoring";
 import { getDashboardData } from "@/lib/dashboard/data";
 import { formatCents } from "@/lib/money";
+import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { STAGES, STAGE_META, type Stage } from "@/lib/utils";
 
@@ -44,22 +46,39 @@ const IMPACT_BY_PRIORITY: Record<TaskPriority, string> = {
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const data = await getDashboardData(user.id);
+  const [data, unreadNotifications] = await Promise.all([
+    getDashboardData(user.id),
+    prisma.notification.findMany({
+      where: { userId: user.id, readAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+  ]);
 
   const header = (
-    <div>
-      <h1 className="font-display text-3xl font-semibold text-navy-900">
-        {greeting()}, {user.firstName}
-      </h1>
-      <p className="mt-1 text-foreground-muted">
-        {data.state === "no-business"
-          ? "Let's set up your business to get started."
-          : data.state === "builder"
-            ? "Let's keep building your Blueprint."
-            : data.state === "expired"
-              ? `${data.business.name}'s Blueprint Builder access has ended.`
-              : `Let's keep building ${data.business.name}.`}
-      </p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="font-display text-3xl font-semibold text-navy-900">
+          {greeting()}, {user.firstName}
+        </h1>
+        <p className="mt-1 text-foreground-muted">
+          {data.state === "no-business"
+            ? "Let's set up your business to get started."
+            : data.state === "builder"
+              ? "Let's keep building your Blueprint."
+              : data.state === "expired"
+                ? `${data.business.name}'s Blueprint Builder access has ended.`
+                : `Let's keep building ${data.business.name}.`}
+        </p>
+      </div>
+      <NotificationsCard
+        notifications={unreadNotifications.map((n) => ({
+          id: n.id,
+          title: n.title,
+          body: n.body,
+          createdAt: n.createdAt.toISOString(),
+        }))}
+      />
     </div>
   );
 

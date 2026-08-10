@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const mode = input.mode ?? conversation.mode;
   const businessContext = await assembleAiContext(conversation.businessId);
-  const systemPrompt = buildSystemPrompt(mode, businessContext);
+  const systemPrompt = await buildSystemPrompt(mode, businessContext);
 
   const history: AiChatTurn[] = [
     ...conversation.messages.map((m) => ({

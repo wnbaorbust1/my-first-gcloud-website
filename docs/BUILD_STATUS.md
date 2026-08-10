@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 10: Advanced Business Tools_
+_Last updated: 2026-08-10 — Phase 11: Facilitator + Admin Command Center_
 
 ## COMPLETE
 
@@ -890,9 +890,174 @@ My Blueprint side effect)
   assessment/roadmap rows added to unlock the dashboard's Builder view)
   removed afterward.
 
+---
+
+### Phase 11 — Facilitator + Admin Command Center
+
+**Facilitator Dashboard — `/facilitator`**
+- Replaces the old link-out stub with a real compact table of every
+  assigned participant: Business, Current Stage (the weakest-scored
+  stage, mirroring the assessment's own recommendation logic), Passion/
+  Power/Legacy/Health, Last Activity, Current Task, Current Goal, Session
+  Attended, and a "Potentially Stalled" flag — every field a real query,
+  computed once in a new shared `getParticipantSummaries()`
+  (`src/lib/facilitator/participants.ts`) so this list and the
+  Participant Detail page below can never disagree with each other.
+- **"Current Task" reuses the Dashboard's own `nextBestAction` logic**
+  (highest-priority NOT_STARTED task) — a facilitator never sees a
+  different "next" than the member does.
+- **Stalled detection**: a business is flagged only once it has Builder
+  access, still has incomplete roadmap tasks, *and* nobody has engaged
+  with the app in `STALLED_DAYS = 14` days — never flagged pre-session,
+  since there's nothing to stall yet.
+- Authorization reuses (and both the old participants list and this new
+  dashboard now share) one extracted `getFacilitatorBusinessIds()`: an
+  admin sees every business with a session registration; a facilitator
+  sees only businesses they're assigned to (`FacilitatorAssignment`) or
+  that registered for a session they personally run.
+
+**Participant Detail — `/facilitator/participants/[businessId]`**
+- New page consolidating everything the spec asks for in one place:
+  Assessment (scores, top strengths/priorities), Roadmap (status counts +
+  recently completed, linking to the existing Phase 5 Manage Roadmap
+  page for the editing actions), My Blueprint (section-fill count, no
+  raw content dumped), Goals, Sessions (with attendance control), Progress
+  (check-in count, milestones, accountability cadence), Recent Activity
+  (real AI conversations + completed tasks), Facilitator Notes (full
+  history + the existing NoteForm), Send Encouragement, and — for
+  admins — Grant Membership.
+
+**Facilitator Actions (spec: 8 actions)**
+- **Assign Task, Reorder Roadmap, Unlock Task, Pause Task, Set
+  Priority** were already fully built in Phase 5 (`AddTaskForms` +
+  `RoadmapControls` at `/facilitator/participants/roadmap/[businessId]`)
+  — linked from the new Detail page rather than rebuilt.
+- **Add Note** reuses the existing Phase 3 `NoteForm`/`FacilitatorNote`
+  pipeline, now embedded in the Detail page.
+- **Recommend Session** (new): a dropdown of real, currently-`SCHEDULED`
+  `SessionOffering`s — never free text — that writes a real
+  `FacilitatorNote` (type `RECOMMENDATION`). Because that note type
+  already feeds Blueprint AI's context and the roadmap generator's
+  facilitator-boost logic (Phases 5 & 7), a session recommendation is
+  immediately visible in both places too, for free.
+- **Send Encouragement** (new): the first real writer for the Phase 1
+  `Notification` model, which sat completely unused until this phase.
+  Creates a `Notification` for every member of the business — not a note
+  only staff can see — surfaced on a new `NotificationsCard` folded into
+  the member Dashboard's shared header (so it shows in every dashboard
+  state, including EXPIRED), with a dismiss action that marks it read.
+
+**Admin Dashboard — `/admin`**
+- Replaces the `ComingSoon` placeholder with real aggregate metrics
+  (`src/lib/admin/metrics.ts`, one `Promise.all` batch): Users,
+  Assessments Started/Completed, Session Registrations/Attendance,
+  Builder Activations, Active/Monthly/Annual Members, Task Completion %,
+  average Roadmap Progress %, and Passion/Power/Legacy/Business Health
+  averages computed from each business's *latest* completed assessment
+  only (a business that reassessed doesn't count twice).
+
+**Funnel — `/admin/analytics`**
+- Real counts for every spec stage (Signup → Assessment Started/
+  Completed → Session Registered/Attended → Builder Activated → First
+  Task Completed → 30-Day Active → Paid Conversion), rendered as
+  proportional bars. **"Session Viewed" is honestly shown as "Not
+  tracked"** rather than a fabricated number — this app has no
+  page-view analytics infrastructure, and every other metric in this
+  build has been real from Phase 1 onward; this one stage doesn't get an
+  exception.
+
+**Admin Users — `/admin/users`**
+- Real user list with a role-change control. **Only a Super Admin may
+  grant Admin or Super Admin itself** — a plain Admin can still manage
+  Member/Facilitator/Implementation Specialist — closing a
+  privilege-escalation hole a flat "any admin can grant any role" rule
+  would have opened. Verified live in both directions.
+
+**Admin Sessions — `/admin/sessions`**
+- Real list of every `SessionOffering` (title, type, format, start time,
+  registered/capacity, facilitator) with a status control, plus a Create
+  Session form (title, type, format, description, start time, capacity,
+  facilitator).
+
+**Admin Assessments — `/admin/assessments`**
+- **Assessment Questions**: all 36 questions, grouped by stage, each
+  inline-editable (prompt text, active toggle, scoring weight).
+- **Scoring Thresholds** (spec: "Thresholds can be modified"): a real
+  form editing `AssessmentScoringConfig`'s `stageThresholds` (drives
+  which session gets recommended) and `excellenceThreshold` (drives the
+  GROWTH-session override) — the exact two fields that model's own doc
+  comments call out as the configurable ones. `stageWeights`/
+  `statusBands` stay visible but read-only this phase (see Known
+  Issues).
+
+**Admin Content — `/admin/content`**
+- **Task Templates** (also *is* the Roadmap Template — a business's
+  roadmap is generated directly from this library, so there's no
+  separate model to edit): active toggle + inline `whyItMatters` edit,
+  grouped by stage.
+- **Resources**: full create/toggle/delete on the previously-unused
+  Phase 1 `Resource` model.
+- **Milestones**: the 15-milestone catalog shown read-only — it's
+  code-defined (each key is referenced directly by the Phase 9
+  auto-detection engine), so "editing" it here would silently desync
+  from what the app actually checks; see Important Decisions.
+- **AI Prompt Templates** (new `AiPromptTemplate` model, one row per
+  `AiMode`): admin can override any of the 8 modes' system-prompt
+  framing. `buildSystemPrompt()` (Phase 7) now checks for an active
+  override before falling back to the hardcoded default — purely an
+  override layer, never a second source of truth.
+- **Programs** (new `Program` model): a named catalog a `SessionOffering`
+  can optionally belong to (`SessionOffering.programId`, nullable) —
+  admin-managed now, and the attachment point Prompt 12's
+  Organization-level Programs will use later without another migration.
+
+**A richer, safer "last active" signal**
+- The Facilitator Dashboard's "Last Activity" and the funnel's "30-Day
+  Active" use a new `getRealLastActivityBulk()`
+  (`src/lib/facilitator/activity.ts`) — the max of `Business.lastActiveAt`
+  and the most recent real roadmap-task update, AI conversation, or
+  weekly check-in for that business. **Deliberately does not broaden
+  what writes to `Business.lastActiveAt` itself** — that column stays
+  scoped to Progress-page visits/check-ins exactly as Phase 9 defined it,
+  because Progress's "Welcome Back" banner depends on reading that
+  column's *previous* value before the current visit overwrites it;
+  widening the write path (e.g. from the shared app layout) would make
+  every visit look "fresh" by the time Progress reads it, silently
+  breaking Welcome Back. This was caught and reverted during this
+  phase's own implementation — see Important Decisions.
+
+**Verification method**
+- Live end-to-end, not code review: two facilitators (one assigned, one
+  not) and an admin against a real test business — confirmed the
+  unassigned facilitator sees "No participants yet," gets a 404 loading
+  the business's Detail page directly, and gets 403 posting a note to
+  it, while the assigned facilitator sees exactly the right real
+  numbers (hand-verified against direct SQL: Passion 70/Power 55/Legacy
+  60/Health 62, Current Task "Create Mission Statement," Current Goal,
+  Current Stage badge = POWER as the weakest score). Recommend Session
+  and Send Encouragement both verified end-to-end — the encouragement
+  Notification appeared on the real member Dashboard, was dismissible,
+  and disappeared after being marked read via a real `PATCH`. Every
+  Admin Overview metric and every Funnel stage count was hand-verified
+  against direct SQL/counts before and after creating test data. Role
+  management, session creation, assessment-question edits, scoring
+  threshold edits, task-template edits, resource/program creation, and
+  the AI prompt override were all exercised via real API calls and
+  confirmed to persist on reload — then restored to their original
+  values (the real seed content was never left altered). Confirmed via
+  screenshot that the mobile Facilitator Dashboard and the member
+  Dashboard's notification card both render correctly at a 390px
+  viewport. All test users/business/sessions/resources/programs removed
+  afterward.
+- **Authorization boundaries verified live in both directions**: a
+  facilitator (not admin) got 403 from every admin-only route (user role
+  change, session create, task-template edit) tested; an Admin (not
+  Super Admin) got 403 attempting to grant Admin; a Super Admin's own
+  grant of a lower role succeeded.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 10. Every prompt in the current build sequence (1–10) is complete.
+- Nothing left mid-implementation from Phase 1 through 11. Every prompt in the current build sequence (1–11) is complete.
 
 ## NOT STARTED
 
@@ -900,10 +1065,6 @@ My Blueprint side effect)
   `ComingSoon` placeholders — Prompt 9 gave Progress its check-in/review/
   milestone/reassessment content but not a "story" narrative view, which
   the spec never actually defined beyond the section heading).
-- Admin/Facilitator functionality beyond role-gated placeholder shells,
-  the participant view, and the roadmap control page built in Phase 5
-  (no admin UI yet to edit `AssessmentScoringConfig`, create
-  `SessionOffering`s, or assign `FacilitatorAssignment`s directly).
 - Transactional email (see Known Issues) — Billing is now implemented (Phase 8).
 - A member-facing view of their own Post-Session Summary.
 - Per-stage roadmap sub-pages — Stage Progress cards all link to the one
@@ -912,16 +1073,21 @@ My Blueprint side effect)
 - A real DOCX export — only the printable/PDF path is implemented; see
   Important Decisions for why `documents.ts` is already shaped to add one
   without a rewrite.
-- **PROMPT 11 (Facilitator + Admin Command Center)** and **PROMPT 12
-  (Organizations + Cohorts + Future Scale)** — received alongside Prompt
-  10; not started per the explicit instruction not to begin the next
-  phase automatically after this one.
 - Full-field editing for the 8 Phase 10 tools — each supports Create,
   Read, Delete, and (for CRM/Content Planner) a quick stage/status
   change, but not yet editing every field of an existing SOP, Offer,
   Marketing Plan, etc. in place. Matches the spec's literal acceptance
   language ("saves"/"works"), not an editing requirement; see Important
   Decisions.
+- **PROMPT 12 (Organizations + Cohorts + Future Scale)** — received
+  alongside Prompts 10–11; not started per the explicit instruction not
+  to begin the next phase automatically after this one.
+- Full editing of `stageWeights`/`statusBands` on the admin Scoring
+  Thresholds form — only `stageThresholds`/`excellenceThreshold` are
+  editable this phase (see Phase 11 summary above).
+- Session-level page-view analytics ("Session Viewed" in the funnel) —
+  no tracking infrastructure exists for this yet; honestly shown as "Not
+  tracked" rather than guessed at.
 
 ## KNOWN ISSUES
 
@@ -1078,9 +1244,52 @@ My Blueprint side effect)
     offers side-by-side sees them all listed on `/tools/offers`, but only
     the most recently saved (or manually re-saved) one is reflected in
     My Blueprint at a time.
+28. **No admin UI to create/edit `FacilitatorAssignment`s or
+    `Organization`s.** Assigning a facilitator to a business is still a
+    direct DB write in test scripts, same as before this phase — Admin
+    Users manages roles, not business-facilitator pairings; a natural
+    extension of `/admin/users` or a new `/admin/facilitators` screen for
+    a later phase.
+29. **`AssessmentScoringConfig.stageWeights` and `.statusBands` are
+    admin-visible (returned by the API) but not editable from
+    `/admin/assessments` this phase** — only `stageThresholds` and
+    `excellenceThreshold`, the two fields the model's own doc comments
+    flag as the configurable ones. Editing per-stage weights or the
+    status-band label ranges would need a slightly richer form (a
+    dynamic list of bands); deferred rather than built partially.
+30. **"Session Viewed" in the admin funnel is permanently "Not
+    tracked."** No page-view analytics infrastructure exists anywhere in
+    this app — adding it would mean a new event-logging model and
+    instrumentation on every marketing/session page, well beyond this
+    phase's scope. Rendered honestly rather than estimated.
+31. **The richer `getRealLastActivityBulk()` last-active signal (used
+    only by the Facilitator Dashboard and admin funnel) queries 4 tables
+    per call** (Business, RoadmapTask, AiConversation, WeeklyCheckIn).
+    Fine at this scale (a facilitator's participant list and the
+    platform-wide funnel are both small); would want a denormalized
+    "lastRealActivityAt" column recomputed on write if this ever needs to
+    run over thousands of businesses on every request.
 
 ## DATABASE CHANGES
 
+- New migration:
+  `prisma/migrations/20260810230000_facilitator_admin_command_center` —
+  purely additive, no existing table touched.
+  - New model `AiPromptTemplate` (mode `AiMode` unique,
+    systemPromptFragment, isActive, updatedByUserId) — an admin-editable
+    override layer in front of Phase 7's hardcoded per-mode system
+    prompts.
+  - New model `Program` (name, description, isActive) — a named catalog
+    a `SessionOffering` can optionally belong to.
+  - `SessionOffering`: added `programId` (nullable FK to `Program`,
+    `onDelete: SetNull`).
+  - `User`: gained the `aiPromptTemplatesUpdated` back-relation (no new
+    column).
+  - `src/lib/billing/membership.ts`: `STATUSES_WITH_BUILDER_ACCESS`
+    (previously module-private) is now exported — reused directly by
+    `src/lib/admin/metrics.ts`'s Active Members count instead of forcing
+    a full `Membership` object through `membershipGrantsAccess()` just
+    to read one array.
 - New migration: `prisma/migrations/20260810220000_advanced_business_tools`
   — purely additive, no existing table touched.
   - New enums `LeadStage` (7 values), `SalesScriptType` (6 values),
@@ -1562,44 +1771,108 @@ My Blueprint side effect)
   is satisfied by generating a real, editable starting point rather than
   requiring a live model call just to see a first draft.
 
+## IMPORTANT DECISIONS (Phase 11 additions)
+
+- **The Facilitator Dashboard and Participant Detail share exactly one
+  authorization function and one summary-computation function**
+  (`getFacilitatorBusinessIds()`, `getParticipantSummaries()` in
+  `src/lib/facilitator/participants.ts`) rather than each page
+  re-deriving "which businesses can this facilitator see" or "what's
+  this business's current task" independently. The original Phase 3
+  participants list's inline authorization function was extracted into
+  the same shared helper so all three surfaces can never quietly
+  disagree with each other.
+- **"Current Task" on the Facilitator Dashboard reuses the member
+  Dashboard's own `nextBestAction` priority-sort**, rather than a
+  facilitator-specific "what should they work on" heuristic. A
+  facilitator coaching a member through what to do next needs to see
+  literally the same "next" the member's own Dashboard is telling them —
+  a second, subtly different definition would be actively confusing in a
+  coaching conversation.
+- **Reverted mid-phase: broadening `Business.lastActiveAt` writes to
+  every authenticated page load, in favor of a derived signal that never
+  touches that column.** The first implementation added a
+  `touchLastActive()` call to the shared `(app)/layout.tsx` so
+  "Last Activity" would reflect real platform-wide usage. Reasoning
+  through it caught a real bug before it shipped: Progress's Phase 9
+  "Welcome Back" banner depends on reading `lastActiveAt`'s value from
+  *before* the current visit, and since every page (including `/progress`
+  itself) renders through that same shared layout, the layout's own
+  write would have already landed by the time Progress's page code ran
+  — meaning the banner would silently stop firing on literally every
+  visit. Kept `lastActiveAt`'s write path exactly as Phase 9 left it, and
+  instead added `getRealLastActivityBulk()` as a read-only derived
+  signal (max of `lastActiveAt` and the latest roadmap-task/AI-
+  conversation/check-in timestamp) used only by facilitator/admin views,
+  which need "is this business actually active" but have no
+  read-before-write ordering to protect.
+- **Recommend Session picks from a real dropdown of `SCHEDULED`
+  `SessionOffering`s rather than free text**, and is stored as a
+  `FacilitatorNote` (type `RECOMMENDATION`) instead of a new dedicated
+  model. The note pipeline already has real consumers (Blueprint AI's
+  context, the roadmap generator's facilitator-boost text-matching) —
+  reusing it means a recommendation is immediately live in both places,
+  and a new model would have meant either duplicating that context-
+  assembly logic or leaving the new model unconsumed.
+- **Send Encouragement is the first real writer for the Phase 1
+  `Notification` model.** It sat fully modeled but completely unused
+  since the original scaffold — exactly the kind of "architected for
+  later" placeholder this build has consistently filled in for real the
+  first time a spec prompt actually needed it (same pattern as Phase 8
+  replacing the unused `Subscription` placeholder with real
+  `Membership`).
+- **AI Prompt Templates are an override layer, never a parallel prompt
+  system.** `buildSystemPrompt()` still starts from the Phase 7
+  hardcoded `AI_MODE_BY_KEY` fragments and only substitutes an admin's
+  text when an active `AiPromptTemplate` row exists for that mode — an
+  admin can always fall back to "what the app ships with" by toggling a
+  mode's override off, without needing to know or retype the original
+  wording.
+- **Milestones stay read-only in Admin Content.** Every one of the 15
+  `MilestoneKey` enum values is referenced directly by code (the
+  auto-detection engine in `src/lib/progress/milestones.ts`, the
+  Dashboard's milestone snapshot, the Progress page's grid) — an admin
+  "editing" a milestone's label here would desync from what the engine
+  is actually keyed on unless the enum, the catalog, and an editable copy
+  were all kept in lockstep. Shown for visibility; genuinely editable
+  milestone content is a bigger schema change than this phase's scope.
+- **Only a Super Admin can grant Admin or Super Admin** in
+  `/api/admin/users/[id]`, enforced server-side (not just hidden in the
+  UI, per this app's Task 4 rule). A flat "any Admin can set any role"
+  check would let one compromised or careless Admin account mint
+  arbitrarily many more Admins — the one-way ratchet (only the top role
+  can grant the top two roles) closes that off while still letting any
+  Admin manage the Member/Facilitator/Implementation Specialist roles
+  day-to-day.
+
 ## NEXT RECOMMENDED PHASE
 
 Per the explicit instruction received with Prompts 10–12 ("Do not begin
 the next phase automatically"), work stops here pending confirmation.
-**PROMPT 11 — Facilitator + Admin Command Center** is the next in
-sequence: an expanded Facilitator Dashboard (assigned participants,
-scores, stage, last activity, stalled-status detection), a Participant
-Detail view (assessment/roadmap/Blueprint/goals/sessions/progress/notes
-in one place), Facilitator Actions (assign/reorder/unlock/pause tasks,
-recommend a session, add a note, send encouragement, set priority), an
-Admin Dashboard with real aggregate metrics (users, assessments,
-sessions, membership counts, average scores), a signup-to-paid-conversion
-funnel, and Content Management screens for the admin-editable data this
-build has flagged as DB-only since Phase 2 (`AssessmentScoringConfig`,
-sessions, task/roadmap templates, resources, milestones, AI prompt
-templates, programs). **PROMPT 12 — Organizations + Cohorts + Future
-Scale** follows after that (organization accounts, cohorts, sponsored
-membership access, aggregate-by-default privacy, a printable Impact
-Report, white-label architecture) — not started.
+**PROMPT 12 — Organizations + Cohorts + Future Scale** is the only
+numbered prompt left: organization accounts (nonprofits, schools,
+incubators, corporate programs, etc.), cohorts with participant/session/
+completion/score/engagement tracking, sponsored membership access
+(`Membership.status = SPONSORED` already exists from Phase 8 — this
+phase would add the organization/expiration tracking around it),
+aggregate-by-default organization analytics with individual-level access
+gated by explicit permission, a printable/exportable Impact Report, and
+white-label architecture (custom logo/colors/domain-readiness, not full
+domain infrastructure). Everything before it — real Membership states,
+real facilitator assignments, real session offerings, and now a real
+admin Users/Content layer to manage the org-facing content this phase
+will need — is exactly the foundation Prompt 12's organization layer
+builds on top of.
 
 What's left, flagged by earlier phases as out of scope rather than part
 of any numbered prompt so far:
 
-- **Admin content tooling** — `AssessmentScoringConfig`,
-  `SessionOffering`, `FacilitatorAssignment`, and now
-  `AssessmentQuestion` seed content are all currently editable only via
-  direct DB writes in test scripts; an admin UI is the natural next home
-  for all of them.
-- **Resources library** and a real **Progress page "story" narrative** —
-  the Resources nav item is still a `ComingSoon` placeholder, and Phase 9
-  gave Progress its check-in/review/milestone/reassessment content but
-  never defined what a "story" narrative view would show beyond that.
 - **A real `ANTHROPIC_API_KEY`** and **real Stripe keys** (`STRIPE_SECRET_KEY`,
   `STRIPE_WEBHOOK_SECRET`, and two Price ids) in whatever environment
   this deploys to, to turn Phase 7/8's fully-built integrations from
   graceful-degradation messages into real AI responses and real payments.
 - **An automated test suite** (Known Issue #3, unchanged since Phase 2)
-  — every phase through 10 has been verified live against a real
+  — every phase through 11 has been verified live against a real
   Postgres database instead of a checked-in suite; formalizing the
   verification scripts this build sequence has already been running into
   real regression tests would be valuable before further phases build on
@@ -1611,3 +1884,14 @@ of any numbered prompt so far:
   Create/Read/Delete plus one quick status control today; editing every
   field of an existing SOP, Offer, Marketing Plan, Automation step, or
   Script in place is a natural follow-up if member usage asks for it.
+- **A real `FacilitatorAssignment`/`Organization` admin UI** (Known
+  Issue #28) — assigning a facilitator to a business is still a direct
+  DB write in test scripts; Prompt 12's organization/cohort work is the
+  natural place this finally gets a real screen.
+- **Full editing of `stageWeights`/`statusBands`** on the admin Scoring
+  Thresholds form (Known Issue #29) — only the two primary threshold
+  fields are editable this phase.
+- **A real Resources library page and Progress "story" narrative** for
+  members — Phase 11 gave Resources real admin-managed content for the
+  first time, but the member-facing `/resources` page itself is still a
+  `ComingSoon` placeholder that doesn't yet read from it.
