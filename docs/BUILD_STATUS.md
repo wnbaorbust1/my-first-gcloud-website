@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 7: Blueprint AI_
+_Last updated: 2026-08-10 — Phase 8: Membership + Billing_
 
 ## COMPLETE
 
@@ -461,18 +461,163 @@ platform, not just read about it.
 - **Isolation verified** (spec: "One user cannot access another user's context"): a second member gets 404 reading another user's conversation, 404 posting into it, an empty list filtering another user's business, and 404 starting a new conversation against a business they don't belong to; an unauthenticated request gets 401. None of these altered the real data.
 - Favorite, rename, and mode-switch-mid-conversation all confirmed via direct API calls and a Playwright screenshot of the rendered console. Test users/business/conversations removed afterward.
 
+---
+
+### Phase 8 — Membership + Billing
+
+**The complimentary trial starts exactly where the spec says it must**
+- `ensureMembershipActivated` (`src/lib/billing/membership.ts`) is called
+  from the same `markAttendance` transaction that flips
+  `Business.builderAccessEligible` (Phase 3) — the free 30 days begins
+  when attendance is confirmed *and* Builder activates, never at
+  registration. Verified live: a fresh business's `Membership` row shows
+  `trialEndsAt - trialStartsAt` = exactly 30 days, both timestamps
+  matching the attendance action's own timestamp, not the earlier
+  registration.
+- **EXISTING MEMBER RULE, verified live**: the same business attending a
+  *second* qualifying session produced no new `Membership` row and no
+  change to the original trial dates — `ensureMembershipActivated` is a
+  no-op once a membership already exists, full stop, regardless of
+  status.
+
+**8 membership states, all real**
+- New `Membership` model (business-scoped — see Important Decisions) with
+  the exact spec fields for TRIAL/COMPLIMENTARY LOGIC:
+  `qualifyingSessionRegistrationId`, `attendanceConfirmedAt`,
+  `activatedAt`, `trialStartsAt`, `trialEndsAt`, `convertedAt`.
+  `MembershipStatus` enum: COMPLIMENTARY, ACTIVE_MONTHLY, ACTIVE_ANNUAL,
+  PAYMENT_ISSUE, CANCELLED, EXPIRED, SPONSORED, ADMIN_GRANTED.
+- **Correct 30-day expiration without a cron job**: `resolveEffectiveStatus`
+  is a pure function computing what a membership's status *should* read
+  as right now from its stored dates; `syncMembershipIfStale` lazily
+  writes that back on every load (the same idempotent "ensure*" pattern
+  used everywhere else in this app). Verified live: manually setting
+  `trialEndsAt` to yesterday and reloading any gated page flipped the
+  stored status to EXPIRED on read, with no scheduled job involved.
+- **Admin-granted states**: `POST /api/admin/membership/[businessId]/grant`
+  (ADMIN_ROLES only) sets SPONSORED or ADMIN_GRANTED with a required
+  reason, recorded on the row (`grantedByUserId`, `grantedReason`) and in
+  `AuditLog` — the spec's "Admin may manually grant promotional credit
+  later" as a real, provenance-tracked action, addable from
+  `/facilitator/participants`. Verified live: granting SPONSORED to an
+  EXPIRED business immediately restored Builder access.
+
+**Access gating — "Lock premium Builder functionality"**
+- `getBuilderAccessState()` combines `Business.builderAccessEligible`
+  (unchanged, stays true forever once earned — Known Issue #6) with
+  whether the (lazily-synced) membership currently grants access.
+  Applied to `/build`, `/roadmap`, `/my-blueprint`, `/my-blueprint/documents`
+  (+ its print view), and conditionally to `/ai` (only once Builder was
+  ever unlocked — Blueprint AI itself isn't Builder-gated, so an expired
+  membership only locks it for businesses that had Builder access to
+  lose). Verified live across all five surfaces after simulating trial
+  expiration: every one rendered the shared `MembershipLockedNotice`
+  ("Your Blueprint is saved... reactivate to keep building") instead of
+  its normal content.
+- `/dashboard` degrades to a distinct **EXPIRED ACCOUNT** view instead of
+  locking outright — spec: "Basic Account... Session History... Read-only
+  summary if appropriate." Shows read-only stage scores, the business
+  name, and links to Billing/Reactivation and Session History — verified
+  live via screenshot.
+
+**Stripe integration (spec: "a proven subscription provider... server-side
+secure integration")**
+- `stripe` npm package, called only from server-only lib files — the API
+  key never reaches the client, satisfying "no sensitive keys exposed
+  client-side" by construction.
+- **Checkout** (`/api/billing/checkout`): creates a Stripe Customer (once)
+  and a Checkout Session for Monthly or Annual — Stripe's hosted,
+  PCI-scope-free page, never touching card data directly.
+- **Billing Portal** (`/api/billing/portal`): Stripe's hosted portal
+  covers Update Payment and Payment History in one "proven provider" flow
+  per the spec's own phrasing.
+- **Cancel** (`/api/billing/cancel`): sets `cancel_at_period_end` on the
+  Stripe subscription and flips local status to CANCELLED immediately —
+  access continues (`membershipGrantsAccess` includes CANCELLED) through
+  `currentPeriodEndsAt`, exactly the spec's "allow access through current
+  paid billing period." Nothing about the business's Blueprint content is
+  touched.
+- **Reactivate** (`/api/billing/reactivate`): un-cancels a still-alive
+  subscription in place, or — if the subscription actually ended —
+  starts a fresh Checkout Session at the same plan, with no new trial
+  (`ensureMembershipActivated` is never re-invoked).
+- **Webhook** (`/api/billing/webhook`): `Stripe.webhooks.constructEvent`
+  signature verification (a static method needing only
+  `STRIPE_WEBHOOK_SECRET`, no API key) plus a `StripeWebhookEvent`
+  idempotency table, both required before any event is trusted. Handles
+  `customer.subscription.created/updated` (the single source of truth for
+  ACTIVE_MONTHLY/ACTIVE_ANNUAL/PAYMENT_ISSUE/CANCELLED — a Stripe-Portal-
+  initiated cancellation is recognized via `cancel_at_period_end`, not
+  just our own Cancel button), `customer.subscription.deleted` (→
+  EXPIRED), `invoice.paid`/`invoice.payment_failed` (writes a real
+  `MembershipInvoice` row either way — Payment History — and flips
+  PAYMENT_ISSUE on failure without touching anything else), and
+  `payment_method.attached` (the one event whose payload includes full
+  card details inline, so it's the only place payment-method display
+  fields sync without an extra Stripe API call).
+
+**Verified live, gated by no `STRIPE_SECRET_KEY`**
+- No live Stripe key is configured in this sandbox, so real
+  checkout/portal/cancel/reactivate all return a clear "Billing isn't
+  connected in this environment yet" (503) instead of crashing — same
+  graceful-degradation pattern as Blueprint AI (Phase 7) and email (Phase
+  1). **Bug found and fixed by this phase's own live testing**: the four
+  billing action routes originally checked `isStripeConfigured()` before
+  `assertBusinessAccess`, so an unrelated user's request short-circuited
+  to a 503 ("not connected") instead of a 404 — meaning an unauthorized
+  caller could still learn the environment's billing-configuration state,
+  and worse, the authorization check silently never ran in a sandbox like
+  this one. Reordered so authorization is always checked first,
+  regardless of what else is or isn't configured — re-verified live
+  afterward (an unrelated member now gets a flat 404 from all four
+  routes).
+- **Webhook signature verification and the full state machine were
+  verified fully offline**, since `Stripe.webhooks.constructEvent` and
+  its test-signing counterpart both need only the shared webhook secret,
+  not a live API key: a script signed six synthetic events with Stripe's
+  own `generateTestHeaderString` and posted them to the real route,
+  confirming — via direct Postgres queries — past_due → PAYMENT_ISSUE,
+  cancel_at_period_end + active → CANCELLED, subscription.deleted →
+  EXPIRED, a failed invoice recording a FAILED `MembershipInvoice` row
+  and flipping PAYMENT_ISSUE, a paid invoice recording a PAID row, a
+  payment method's brand/last4/exp syncing from `payment_method.attached`,
+  a redelivered event id being deduped (`{"deduped": true}`, no double
+  apply), and a bad signature being rejected with 400.
+- Authorization isolation verified: an unrelated member gets 404 from
+  checkout/portal/reactivate for a business they don't own, and 403 from
+  the admin grant route.
+
+**Pricing & Billing pages**
+- `/pricing` (public, `(marketing)`): exact spec copy and numbers —
+  "First 30 days free with a qualifying session," $9.99/month,
+  $100/year, "Save approximately 17%" — verified against
+  `src/lib/billing/pricing.ts`'s computed constants ($19.88 / 16.58%→17%
+  rounded), not hand-typed twice.
+- `/billing` (authenticated): Current Plan, Status, Trial End (when
+  COMPLIMENTARY), Next Billing Date / Access Through (when
+  ACTIVE_*/CANCELLED), Amount, Payment Method, Payment History, and the
+  right action buttons for the current status (subscribe, Update
+  Payment, Change Plan, Cancel, Reactivate) — verified live via
+  screenshot showing a real Visa card, a PAID and a FAILED invoice with
+  receipt links, and Status "Expired."
+- `/billing/return`: Checkout's `success_url` lands here — a brief
+  "confirming" beat before redirecting to the real Billing page, so the
+  webhook has a moment to land first.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 7. Every prompt in the current build sequence (1–7) is complete.
+- Nothing left mid-implementation from Phase 1 through 8. Every prompt in the current build sequence (1–8) is complete.
 
 ## NOT STARTED
 
 - Resources library, Progress page's "story" narrative.
+- PROMPT 9 (Goals + Money + Progress + Accountability) — received during
+  this phase, not yet started.
 - Admin/Facilitator functionality beyond role-gated placeholder shells,
   the participant view, and the roadmap control page built in Phase 5
   (no admin UI yet to edit `AssessmentScoringConfig`, create
   `SessionOffering`s, or assign `FacilitatorAssignment`s directly).
-- Billing. Transactional email (see Known Issues).
+- Transactional email (see Known Issues) — Billing is now implemented (Phase 8).
 - A member-facing view of their own Post-Session Summary.
 - Per-stage roadmap sub-pages — Stage Progress cards all link to the one
   `/roadmap` page rather than a stage-scoped view (spec says "each opens
@@ -558,9 +703,45 @@ platform, not just read about it.
     editable after the fact the way title is — spec only lists "Rename
     conversation" as an action, not "re-topic," so this was left as
     intentionally out of scope rather than guessed at.
+16. **No `STRIPE_SECRET_KEY` (or a real `STRIPE_WEBHOOK_SECRET`) is
+    configured in this sandbox.** Real checkout/portal/cancel/reactivate
+    all return a clear 503 instead of working — the entire surrounding
+    system (trial activation, 30-day expiration, access gating, the
+    webhook's signature verification and full event-driven state
+    machine, Payment History, the admin grant path) was fully built and
+    verified live around that one gap, the same pattern as Blueprint AI
+    (Phase 7) and email (Phase 1). A local-only test `STRIPE_WEBHOOK_SECRET`
+    was used to verify webhook signature handling offline via Stripe's
+    own `generateTestHeaderString` helper (no live key needed for that
+    specific check) — see `docs/BUILD_STATUS.md` Phase 8 summary.
+17. **Stripe Price ids (`STRIPE_PRICE_ID_MONTHLY`/`STRIPE_PRICE_ID_ANNUAL`)
+    must be created in the Stripe Dashboard and set as env vars before
+    real checkout works** — nothing here can create them programmatically
+    (a Price is tied to a Product, which is a one-time dashboard/API setup
+    step, not a per-checkout action).
+18. **No plan proration UI.** "Change Plan" routes through Stripe's
+    Billing Portal, which handles proration on a plan switch itself —
+    there's no custom in-app "switch to annual" flow with its own
+    proration math to get wrong.
+19. **Payment Method display fields only sync from `payment_method.attached`.**
+    If a customer's default payment method changes through some other
+    path Stripe supports but this integration doesn't listen for, the
+    Billing page's "Payment Method" could show stale brand/last4 until
+    the next `payment_method.attached` fires. Doesn't affect the
+    subscription's actual billing — only that one display field.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810200000_membership_billing` —
+  new enums `MembershipStatus` (8 values), `MembershipPlan`,
+  `InvoiceStatus`; new models `Membership` (businessId unique, status,
+  plan, the spec's trial/complimentary fields, Stripe linkage, payment
+  method display fields, cancellation fields, admin-grant provenance),
+  `MembershipInvoice` (Payment History), `StripeWebhookEvent` (webhook
+  idempotency). Also **drops the unused Phase 1 `Subscription` model**
+  (User-scoped, never wired to anything, explicitly a placeholder) in
+  favor of the business-scoped `Membership` design the spec actually
+  calls for — no data existed to migrate.
 - New migration: `prisma/migrations/20260810193000_blueprint_ai` — new
   enums `AiMode` (8 values) and `AiMessageRole`; new models
   `AiConversation` (businessId, userId, title, topic, mode,
@@ -815,20 +996,86 @@ platform, not just read about it.
   is never reasoning from stale data — the small extra query cost is
   worth that guarantee.
 
+## IMPORTANT DECISIONS (Phase 8 additions)
+
+- **Membership is scoped to the Business, not the User.** Builder access
+  itself is already business-scoped (`Business.builderAccessEligible`),
+  and the spec's EXISTING MEMBER RULE ("a paid member attending another
+  session gets no new trial") only makes sense against one membership
+  per business to check — not one per user who happens to attend, which
+  would let a second team member attending a session accidentally start
+  a second free trial for the same business.
+- **Access gating is two independent flags, not one.**
+  `builderAccessEligible` means "this business has ever earned Builder
+  access" and never changes once true (unchanged from Phase 3/Known Issue
+  #6); `Membership` status means "does that access currently apply."
+  Keeping them separate means an expired trial never has to pretend the
+  business never attended its session — the dashboard's EXPIRED ACCOUNT
+  view can still show real read-only assessment data precisely because
+  `builderAccessEligible` stays true.
+- **30-day expiration and post-cancellation access-through-period-end are
+  computed lazily, not via a scheduled job.** `resolveEffectiveStatus` +
+  `syncMembershipIfStale` is the same idempotent "ensure*" pattern this
+  app already uses for content seeding and roadmap generation — the
+  status is only ever stale between someone's page loads, and it
+  self-corrects on the very next one. No cron infrastructure needed for
+  "correct 30-day expiration" to be true.
+- **`customer.subscription.updated` (not `checkout.session.completed`) is
+  the single source of truth for plan/status/period.** A Checkout Session
+  event's payload doesn't include the subscription's line items inline;
+  rather than making the webhook handler perform an extra
+  `subscriptions.retrieve` API call, subscription events (which Stripe
+  fires for the initial purchase *and* every renewal *and* every
+  cancellation, from either our button or Stripe's own portal) carry
+  everything needed inline. One handler, no extra network round-trip,
+  and every kind of subscription change — not just the first one — goes
+  through the identical code path.
+- **`cancel_at_period_end` is read before Stripe's raw subscription
+  status when mapping to a local `MembershipStatus`.** Otherwise a
+  cancellation initiated from Stripe's own Billing Portal (bypassing our
+  in-app Cancel button entirely) would still show as ACTIVE_* until the
+  period actually ended, silently disagreeing with what Stripe itself
+  would tell the member.
+- **Stripe's hosted Checkout + Billing Portal over custom card UI.**
+  Meets "prefer a proven subscription provider... server-side secure
+  integration" literally, keeps this app entirely out of PCI scope (no
+  Stripe Elements, no card fields ever rendered here), and gives Update
+  Payment / Payment History / Change Plan proration all "for free" from
+  one hosted flow rather than three custom ones.
+- **Authorization is checked before the Stripe-configured check, in every
+  billing route — found and fixed during this phase's own testing** (see
+  Phase 8 COMPLETE summary). The general lesson generalizes past Stripe:
+  any "is this feature configured" gate must never sit ahead of "is this
+  caller allowed to do this" in the same handler, or an unconfigured
+  sandbox silently stops exercising authorization at all.
+
 ## NEXT RECOMMENDED PHASE
 
-All seven prompts in the current build sequence are complete. What's left
-is everything each phase already flagged as out of scope rather than a
-new numbered prompt:
+Begin **PROMPT 9 — Goals + Money + Progress + Accountability**, received
+mid-Phase-8 and not yet started: expanded Goals (5 cadences × 9 goal
+types), a Revenue Planner and Pricing Builder (both real calculators, not
+AI-guessed numbers — the Pricing Builder explicit per spec about not
+portraying its output as guaranteed market pricing), Weekly CEO Check-ins
+and a Monthly Review built from actual roadmap/score/revenue data,
+Reassessment (after 90 days or substantial roadmap completion, comparing
+real historical scores), 13 named Milestones, and Accountability check-in
+cadence preferences with no shame-based messaging. Everything before it
+(Membership/Billing's real trial dates, real assessment history, real
+roadmap completion data) is exactly the data this phase's calculators,
+reviews, and reassessment comparisons need to be honest rather than
+guessed — build it on top of that, not around it.
 
-- **Billing** (`Subscription` model exists, no Stripe/payment integration
-  or plan-gating logic yet).
+What's left after Prompt 9, flagged by earlier phases as out of scope
+rather than part of any numbered prompt so far:
+
 - **Admin content tooling** — `AssessmentScoringConfig`,
   `SessionOffering`, and `FacilitatorAssignment` are all currently
   editable only via direct DB writes in test scripts; an admin UI is the
   natural next home for them.
 - **Resources library** and the **Progress page's "story" narrative** —
-  both still `ComingSoon` placeholders.
-- **A real `ANTHROPIC_API_KEY`** in whatever environment this deploys
-  to, to turn Phase 7's fully-built AI integration from graceful-
-  degradation messages into real responses.
+  both still `ComingSoon` placeholders (Prompt 9 gives Progress its real
+  content).
+- **A real `ANTHROPIC_API_KEY`** and **real Stripe keys** (`STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, and two Price ids) in whatever environment
+  this deploys to, to turn Phase 7/8's fully-built integrations from
+  graceful-degradation messages into real AI responses and real payments.

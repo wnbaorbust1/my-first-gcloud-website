@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { PrintButton } from "@/components/shared/print-button";
 import { DOCUMENT_TYPES, generateDocument } from "@/lib/blueprint/documents";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -32,6 +33,10 @@ export default async function GeneratedDocumentPage({
     include: { business: true },
   });
   if (!membership?.business.builderAccessEligible) notFound();
+
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) notFound();
 
   const doc = await generateDocument(membership.businessId, slug);
   if (!doc) notFound();

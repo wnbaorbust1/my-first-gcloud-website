@@ -1,6 +1,8 @@
 import { CreditCard, User as UserIcon } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/session";
 
@@ -50,10 +52,12 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent className="text-sm text-foreground-muted">
           <p>
-            Your first month of Blueprint Builder is free after attending a
-            qualifying session, then $9.99/month or $100/year. Billing isn&apos;t
-            wired up yet — this is a placeholder for a future phase.
+            Your first 30 days of Blueprint Builder are free after attending a
+            qualifying session, then $9.99/month or $100/year.
           </p>
+          <Button asChild size="sm" className="mt-3">
+            <Link href="/billing">Manage Billing</Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

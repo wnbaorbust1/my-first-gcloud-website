@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { getMyBlueprintData } from "@/lib/blueprint/data";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -53,6 +55,10 @@ export default async function MyBlueprintPage() {
       />
     );
   }
+
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) return <MembershipLockedNotice />;
 
   const sectionsByStage = await getMyBlueprintData(membership.businessId);
 

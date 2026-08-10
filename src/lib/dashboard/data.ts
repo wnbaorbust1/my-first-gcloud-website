@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
 import { STAGES, type Stage } from "@/lib/utils";
@@ -47,6 +48,17 @@ export async function getDashboardData(userId: string) {
       assessment,
       latestRegistration,
     };
+  }
+
+  // spec Prompt 8 EXPIRED ACCOUNT: once membership no longer grants
+  // access, the dashboard degrades to a read-only summary instead of the
+  // full active Builder view below — "Basic Account... Read-only summary
+  // if appropriate" is exactly what this dashboard already is once it's
+  // not showing live roadmap/task data.
+  const billingMembership = await getSyncedMembership(business.id);
+  const access = getBuilderAccessState(business.builderAccessEligible, billingMembership);
+  if (access.locked) {
+    return { state: "expired" as const, business, assessment, membership: billingMembership };
   }
 
   const roadmap = await prisma.roadmap.findFirst({

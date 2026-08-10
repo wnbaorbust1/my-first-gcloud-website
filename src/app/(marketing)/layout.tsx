@@ -15,6 +15,12 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
             Blueprint
           </Link>
           <div className="flex items-center gap-3">
+            <Link
+              href="/pricing"
+              className="hidden text-sm font-medium text-navy-600 hover:text-navy-900 sm:inline"
+            >
+              Pricing
+            </Link>
             <Button asChild variant="ghost" size="sm">
               <Link href="/login">Log In</Link>
             </Button>

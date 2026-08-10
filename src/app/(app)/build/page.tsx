@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StageBadge } from "@/components/ui/stage-badge";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { cn, type Stage } from "@/lib/utils";
@@ -29,20 +31,26 @@ export default async function BuildPage() {
     include: { business: true },
   });
 
-  if (!membership?.business.builderAccessEligible) {
-    return (
-      <EmptyState
-        icon={Hammer}
-        title="Business Builder unlocks after your Blueprint Session"
-        description="Complete your assessment and attend your recommended session to unlock hands-on Builder activities."
-        action={
-          <Button asChild size="sm">
-            <Link href="/dashboard">Back to Dashboard</Link>
-          </Button>
-        }
-      />
-    );
-  }
+  const notUnlockedNotice = (
+    <EmptyState
+      icon={Hammer}
+      title="Business Builder unlocks after your Blueprint Session"
+      description="Complete your assessment and attend your recommended session to unlock hands-on Builder activities."
+      action={
+        <Button asChild size="sm">
+          <Link href="/dashboard">Back to Dashboard</Link>
+        </Button>
+      }
+    />
+  );
+
+  if (!membership) return notUnlockedNotice;
+
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+
+  if (access.locked && access.reason === "not-unlocked") return notUnlockedNotice;
+  if (access.locked) return <MembershipLockedNotice />;
 
   const roadmap = await prisma.roadmap.findFirst({
     where: { businessId: membership.businessId },

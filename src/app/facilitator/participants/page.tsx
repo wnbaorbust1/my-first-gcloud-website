@@ -12,6 +12,7 @@ import { requireUser } from "@/lib/session";
 import { STAGES, type Stage } from "@/lib/utils";
 
 import { AttendanceControl } from "./attendance-control";
+import { MembershipGrantForm } from "./membership-grant-form";
 import { NoteForm } from "./note-form";
 
 export const metadata: Metadata = { title: "Participants — Blueprint Facilitator" };
@@ -237,6 +238,15 @@ export default async function FacilitatorParticipantsPage() {
               </p>
               <NoteForm businessId={business.id} />
             </div>
+
+            {can.grantMembership(user.role as never) && (
+              <div className="mt-5 border-t border-navy-100 pt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">
+                  Grant Membership
+                </p>
+                <MembershipGrantForm businessId={business.id} />
+              </div>
+            )}
           </Card>
         );
       })}

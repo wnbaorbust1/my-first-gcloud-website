@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -34,6 +36,17 @@ export default async function AiPage() {
         }
       />
     );
+  }
+
+  // Blueprint AI itself isn't gated behind builderAccessEligible (it's
+  // useful even pre-Builder, grounded in the assessment alone) — but
+  // once a business *has* unlocked Builder, an expired membership still
+  // locks it, same as /build/roadmap/my-blueprint (spec: "Lock premium
+  // Builder functionality").
+  if (membership.business.builderAccessEligible) {
+    const billingMembership = await getSyncedMembership(membership.businessId);
+    const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+    if (access.locked) return <MembershipLockedNotice />;
   }
 
   const conversations = await prisma.aiConversation.findMany({

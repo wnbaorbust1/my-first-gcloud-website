@@ -2,6 +2,7 @@ import {
   BookOpen,
   CalendarDays,
   Compass,
+  CreditCard,
   Home,
   Hammer,
   LibraryBig,
@@ -29,6 +30,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   { label: "Resources", href: "/resources", icon: LibraryBig },
   { label: "Sessions", href: "/sessions", icon: CalendarDays },
   { label: "Progress", href: "/progress", icon: TrendingUp },
+  { label: "Billing", href: "/billing", icon: CreditCard },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

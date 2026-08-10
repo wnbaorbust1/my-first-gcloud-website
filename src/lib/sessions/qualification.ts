@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { RegistrationStatus } from "@/generated/prisma/enums";
+import { ensureMembershipActivated } from "@/lib/billing/membership";
 import { ensureRoadmapGenerated } from "@/lib/roadmap/generate";
 import { prisma } from "@/lib/prisma";
 
@@ -77,6 +78,13 @@ export async function markAttendance(
   // an empty state. Runs after the transaction (it does its own writes).
   if (justUnlocked && registration.businessId) {
     await ensureRoadmapGenerated(registration.businessId);
+    // spec Prompt 8: the complimentary period begins exactly here —
+    // attendance confirmed AND Builder just activated — never at
+    // registration. Idempotent: a business that already has a
+    // Membership (e.g. attending a second qualifying session while
+    // already a paid member) gets no new trial, per the spec's
+    // EXISTING MEMBER RULE.
+    await ensureMembershipActivated(registration.businessId, registrationId);
   }
 }
 

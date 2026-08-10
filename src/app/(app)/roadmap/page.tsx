@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RoadmapItem, type RoadmapItemStatus } from "@/components/ui/roadmap-item";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import type { Stage } from "@/lib/utils";
@@ -58,6 +60,10 @@ export default async function RoadmapPage() {
       />
     );
   }
+
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) return <MembershipLockedNotice />;
 
   const roadmap = await prisma.roadmap.findFirst({
     where: { businessId: membership.businessId },

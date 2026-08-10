@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Circle,
   Compass,
+  CreditCard,
   Lock,
   Sparkles,
   Target,
@@ -53,7 +54,9 @@ export default async function DashboardPage() {
           ? "Let's set up your business to get started."
           : data.state === "builder"
             ? "Let's keep building your Blueprint."
-            : `Let's keep building ${data.business.name}.`}
+            : data.state === "expired"
+              ? `${data.business.name}'s Blueprint Builder access has ended.`
+              : `Let's keep building ${data.business.name}.`}
       </p>
     </div>
   );
@@ -183,6 +186,75 @@ export default async function DashboardPage() {
             </Button>
           )}
         </Card>
+      </div>
+    );
+  }
+
+  // ---- EXPIRED ACCOUNT (spec Prompt 8): membership no longer grants ----
+  // Builder access. Basic Account + a read-only summary — never full
+  // Builder content, never deleted content.
+  if (data.state === "expired") {
+    return (
+      <div className="flex flex-col gap-8">
+        {header}
+
+        <Card className="border-navy-200 bg-navy-50">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-navy-500">
+                Your Blueprint is saved
+              </p>
+              <p className="mt-1 text-lg font-semibold text-navy-900">
+                Nothing you&apos;ve built has been lost — reactivate to keep building.
+              </p>
+            </div>
+            <Button asChild size="lg" variant="gold" className="w-full shrink-0 sm:w-auto">
+              <Link href="/billing">
+                <CreditCard className="h-4 w-4" aria-hidden="true" />
+                Billing &amp; Reactivation
+              </Link>
+            </Button>
+          </div>
+        </Card>
+
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-navy-400">
+            Blueprint Scores (read-only)
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {STAGES.map((stage) => {
+              const score = data.assessment.scores.find((s) => s.stage === stage);
+              return <ScoreCard key={stage} stage={stage} scorePercent={score?.scorePercent ?? null} />;
+            })}
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Basic Account</CardTitle>
+            </CardHeader>
+            <p className="text-sm text-foreground-muted">{data.business.name}</p>
+            <p className="mt-1 text-xs text-foreground-muted">
+              Business profile, past assessments, and My Blueprint content are all preserved and
+              will be fully accessible again once reactivated.
+            </p>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Session History</CardTitle>
+            </CardHeader>
+            <p className="text-sm text-foreground-muted">
+              Review the sessions you&apos;ve registered for and attended.
+            </p>
+            <Button asChild size="sm" variant="outline" className="mt-4">
+              <Link href="/sessions">
+                <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+                View Sessions
+              </Link>
+            </Button>
+          </Card>
+        </div>
       </div>
     );
   }

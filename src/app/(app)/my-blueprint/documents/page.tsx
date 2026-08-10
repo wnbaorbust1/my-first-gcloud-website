@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DOCUMENT_TYPES } from "@/lib/blueprint/documents";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -35,6 +37,10 @@ export default async function DocumentGeneratorPage() {
       />
     );
   }
+
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) return <MembershipLockedNotice />;
 
   return (
     <div className="mx-auto max-w-3xl">

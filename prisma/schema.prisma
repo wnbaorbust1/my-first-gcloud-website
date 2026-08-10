@@ -69,9 +69,9 @@ model User {
   postSessionSummariesWritten PostSessionSummary[]  @relation("PostSessionSummaryAuthor")
   goals                       Goal[]
   notifications               Notification[]
-  subscriptions               Subscription[]
   auditLogs                   AuditLog[]
   aiConversations             AiConversation[]
+  membershipsGranted          Membership[]          @relation("MembershipGrantedBy")
 
   @@index([role])
 }
@@ -200,8 +200,10 @@ model Business {
   /// proper data logic such as builder_access_eligible,
   /// session_completed_at, qualifying_session_id"). Set together, in one
   /// place — see src/lib/sessions/qualification.ts — when a facilitator/
-  /// admin marks a registration ATTENDED or COMPLETED. Never set by
-  /// billing; billing isn't implemented yet.
+  /// admin marks a registration ATTENDED or COMPLETED. Stays true forever
+  /// once earned (see Known Issue #6); Membership (below) is the separate,
+  /// billing-driven gate that can still lock Builder *functionality* even
+  /// while this stays true — see src/lib/billing/membership.ts.
   builderAccessEligible           Boolean   @default(false)
   sessionCompletedAt              DateTime?
   qualifyingSessionRegistrationId String?
@@ -221,6 +223,7 @@ model Business {
   facilitatorNotes       FacilitatorNote[]
   postSessionSummaries   PostSessionSummary[]
   aiConversations        AiConversation[]
+  membership             Membership?
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
@@ -947,39 +950,126 @@ model Notification {
 }
 
 // ---------------------------------------------------------------------------
-// Subscriptions (billing not implemented yet — see BUILD_STATUS.md)
+// Membership & Billing (spec Prompt 8)
 // ---------------------------------------------------------------------------
 
-enum SubscriptionPlan {
-  FREE_MONTH
+/// The 8 spec MEMBERSHIP STATES. Membership is scoped to the Business
+/// (not the User) — Builder access itself is already business-scoped
+/// (Business.builderAccessEligible), and the spec's EXISTING MEMBER RULE
+/// ("a paid member attending another session gets no new trial") only
+/// makes sense if there's one membership per business to check against,
+/// not one per user who happens to attend.
+enum MembershipStatus {
+  COMPLIMENTARY
+  ACTIVE_MONTHLY
+  ACTIVE_ANNUAL
+  PAYMENT_ISSUE
+  CANCELLED
+  EXPIRED
+  SPONSORED
+  ADMIN_GRANTED
+}
+
+/// Only meaningful once a business has actually converted to paid —
+/// null while COMPLIMENTARY / SPONSORED / ADMIN_GRANTED.
+enum MembershipPlan {
   MONTHLY
   ANNUAL
 }
 
-enum SubscriptionStatus {
-  NONE
-  TRIALING
-  ACTIVE
-  PAST_DUE
-  CANCELLED
-}
+/// One row per Business, created the moment their qualifying session
+/// attendance activates Builder access — never at registration (spec:
+/// "The complimentary period... does NOT begin at registration"). See
+/// src/lib/billing/membership.ts `ensureMembershipActivated`, called
+/// from the same markAttendance transaction that flips
+/// Business.builderAccessEligible.
+model Membership {
+  id         String           @id @default(cuid())
+  businessId String           @unique
+  status     MembershipStatus @default(COMPLIMENTARY)
+  plan       MembershipPlan?
 
-model Subscription {
-  id     String             @id @default(cuid())
-  userId String
-  plan   SubscriptionPlan   @default(FREE_MONTH)
-  status SubscriptionStatus @default(NONE)
+  /// TRIAL / COMPLIMENTARY LOGIC — the exact fields the spec calls out:
+  /// "qualifying_session_id, attendance confirmation, activation date,
+  /// trial start, trial end, conversion status."
+  qualifyingSessionRegistrationId String?
+  attendanceConfirmedAt           DateTime?
+  activatedAt                     DateTime?
+  trialStartsAt                   DateTime?
+  trialEndsAt                     DateTime?
+  /// Conversion status: null = still complimentary/unconverted; set the
+  /// moment a paid subscription first becomes active.
+  convertedAt                     DateTime?
 
-  trialEndsAt         DateTime?
+  /// Stripe linkage. Never store raw card data — these are the display-
+  /// only fields Stripe's API returns about the attached payment method.
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?
+  paymentMethodBrand    String?
+  paymentMethodLast4    String?
+  paymentMethodExpMonth Int?
+  paymentMethodExpYear  Int?
+
+  /// Doubles as "Next Billing Date" (ACTIVE_*) and the access-through
+  /// date after a cancellation (spec: "Allow access through current paid
+  /// billing period").
   currentPeriodEndsAt DateTime?
+  cancelAtPeriodEnd   Boolean   @default(false)
   cancelledAt         DateTime?
+
+  /// Provenance for SPONSORED / ADMIN_GRANTED (spec: "Admin may manually
+  /// grant promotional credit later") — who granted it and why, not just
+  /// that it happened.
+  grantedByUserId String?
+  grantedReason   String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  grantedBy User?               @relation("MembershipGrantedBy", fields: [grantedByUserId], references: [id])
+  invoices  MembershipInvoice[]
 
-  @@index([userId])
+  @@index([status])
+  @@index([stripeCustomerId])
+}
+
+enum InvoiceStatus {
+  PAID
+  FAILED
+  REFUNDED
+}
+
+/// Payment History (spec BILLING PAGE). Populated from real Stripe
+/// invoice webhooks — never fabricated. Empty when Stripe isn't
+/// configured or nothing has been charged yet.
+model MembershipInvoice {
+  id              String        @id @default(cuid())
+  membershipId    String
+  stripeInvoiceId String        @unique
+  amountCents     Int
+  currency        String        @default("usd")
+  status          InvoiceStatus
+  description     String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  receiptUrl      String?
+
+  createdAt DateTime @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, createdAt])
+}
+
+/// Idempotency guard for the Stripe webhook (spec ACCEPTANCE CHECKLIST:
+/// "Webhook events are validated") — `id` is the Stripe event id itself,
+/// so a redelivered event is a harmless no-op instead of double-applying
+/// a state change.
+model StripeWebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------
