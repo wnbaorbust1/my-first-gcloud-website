@@ -248,7 +248,7 @@ export default async function DashboardPage() {
               </p>
             )}
             <Button asChild size="lg" variant="gold" className="mt-5">
-              <Link href="/build">Start Building</Link>
+              <Link href={`/build/${nextBestAction.id}`}>Start Building</Link>
             </Button>
           </>
         ) : (
@@ -270,7 +270,7 @@ export default async function DashboardPage() {
               stage={todaysBlueprint.mustDo.stage as Stage}
               priority="MUST_DO"
               estimatedMins={todaysBlueprint.mustDo.estimatedMins ?? undefined}
-              href="/build"
+              href={`/build/${todaysBlueprint.mustDo.id}`}
             />
           )}
           {todaysBlueprint.shouldDo && (
@@ -279,7 +279,7 @@ export default async function DashboardPage() {
               stage={todaysBlueprint.shouldDo.stage as Stage}
               priority="SHOULD_DO"
               estimatedMins={todaysBlueprint.shouldDo.estimatedMins ?? undefined}
-              href="/build"
+              href={`/build/${todaysBlueprint.shouldDo.id}`}
             />
           )}
           {todaysBlueprint.bonus && (
@@ -288,7 +288,7 @@ export default async function DashboardPage() {
               stage={todaysBlueprint.bonus.stage as Stage}
               priority="BONUS"
               estimatedMins={todaysBlueprint.bonus.estimatedMins ?? undefined}
-              href="/build"
+              href={`/build/${todaysBlueprint.bonus.id}`}
             />
           )}
           {!todaysBlueprint.mustDo && !todaysBlueprint.shouldDo && !todaysBlueprint.bonus && (
@@ -338,13 +338,14 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Roadmap Snapshot</CardTitle>
           </CardHeader>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {(
               [
                 ["Completed", roadmapSnapshot.completed],
                 ["In Progress", roadmapSnapshot.inProgress],
                 ["Ready", roadmapSnapshot.ready],
                 ["Locked", roadmapSnapshot.locked],
+                ["Paused", roadmapSnapshot.paused],
               ] as const
             ).map(([label, count]) => (
               <div key={label} className="rounded-xl bg-navy-50 p-3 text-center">

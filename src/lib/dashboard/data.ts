@@ -74,6 +74,7 @@ export async function getDashboardData(userId: string) {
     inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
     ready: tasks.filter((t) => t.status === "NOT_STARTED").length,
     locked: tasks.filter((t) => t.status === "LOCKED").length,
+    paused: tasks.filter((t) => t.status === "PAUSED").length,
   };
 
   const progressByStage: Record<Stage, { completed: number; total: number; percent: number }> =

@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 4: Personalized Blueprint Dashboard_
+_Last updated: 2026-08-10 — Phase 5: Personalized Roadmap + Business Builder_
 
 ## COMPLETE
 
@@ -255,28 +255,98 @@ someone else's summary, or read another business's summary — all 403.
   which is the spec's mobile priority order — verified with a 390px
   viewport screenshot.
 
+---
+
+### Phase 5 — Personalized Roadmap + Business Builder
+
+**The core differentiator**: members now build their business inside the
+platform, not just read about it.
+
+**30-task library with real dependencies**
+- `src/lib/roadmap/task-templates.ts`: all 30 spec tasks (9 Passion, 12
+  Power, 9 Legacy), each with `whyItMatters` (LEARN), `thinkPrompt`
+  (THINK), 2–5 structured `instructions` steps (BUILD), `implementGuidance`
+  (IMPLEMENT), `measurePrompt` (MEASURE), plus category, difficulty,
+  impact, estimated time, and a `blueprintDestination` key.
+- Real dependency graph (spec TASK DEPENDENCIES) via a `TaskTemplate`
+  self-relation — e.g. "Create Lead Generation Plan" requires "Define
+  Ideal Customer," "Define Core Offer," and "Build Pricing Strategy," the
+  spec's own example. Seeded in two passes (insert all 30, then connect
+  prerequisites by title) since Prisma needs real row ids to link a
+  self-relation.
+
+**Personalized generation, verified with two different businesses**
+- `src/lib/roadmap/generate.ts` scores every task from assessment
+  category/stage gaps, the stage of the session just attended, business
+  maturity (`businessStage`), active goal keywords, and facilitator
+  `TASK_RECOMMENDATION`/`RECOMMENDATION` notes (a note naming a task
+  title bumps its priority) — that score sets **order**. **Lock status**
+  is completely separate and purely dependency-driven: a task starts
+  Ready only if it has zero prerequisites, regardless of score.
+- "Existing completed work": if a business-profile field already answers
+  part of a task (e.g. `idealCustomer` → "Define Ideal Customer"), that
+  task is pre-seeded with a real draft answer and nudged to IN_PROGRESS
+  — never marked falsely COMPLETE from one field.
+- Verified live: Business A (Passion 25%, "Idea Stage") got a
+  Passion-first roadmap with "Define Ideal Customer" pre-filled from its
+  profile and bumped to IN_PROGRESS; Business B (Power 21%, "Scaling")
+  got a completely different Power-first roadmap — confirming different
+  users get different priorities from their own data, not a fixed order.
+- Completing "Define Business Purpose" was verified to instantly unlock
+  both of its real dependents ("Create Mission Statement," "Create
+  Vision Statement") via `recomputeUnlocks`, called after every
+  completion.
+
+**Business Builder task page**
+- `/build` lists a business's roadmap tasks with status; `/build/[taskId]`
+  is the full LEARN → THINK → BUILD → SAVE → IMPLEMENT → MEASURE page —
+  Why This Matters, a reflective prompt, the structured step form, Save
+  Draft / Save to My Blueprint / Mark Complete, then Implement and
+  Measure guidance.
+- Answers are structured (`TaskResponse.answers` is `{ [stepKey]:
+  answer }`, one row per task, not a paragraph of prose) — spec: "Do not
+  store everything only as unstructured notes."
+- **Save to Blueprint** (verified live) upserts a `DocumentSection` on
+  the business's "My Blueprint" `Document`, keyed by
+  `blueprintDestination`, rendered from the structured answers — real
+  content, not a placeholder. **Mark Complete** always saves to the
+  Blueprint too, sets `COMPLETED` + `completedAt`, and recomputes
+  unlocks — all three read back correctly in testing.
+
+**Facilitator roadmap control**
+- `/facilitator/participants/roadmap/[businessId]`: assign an unused
+  library task, add a fully custom one-off task, change priority,
+  move up/down, pause/unlock (unlock deliberately bypasses the
+  dependency check — an explicit facilitator override), and remove a
+  task. Every facilitator-touched task is flagged `facilitatorAdjusted`.
+- All six actions verified live via the API, plus that a MEMBER gets 403
+  from every facilitator-only route and a LOCKED task can't be completed
+  by anyone (409).
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1, 2, 3, or 4.
+- Nothing left mid-implementation from Phase 1 through 5.
 
 ## NOT STARTED
 
-- Business Builder activities (the interactive workbook UI — `/build`
-  is still a placeholder; the dashboard now links to it correctly, it
-  just isn't built yet), Blueprint AI, My Blueprint binder, Resources
-  library, Progress page's "story" narrative.
-- Admin/Facilitator functionality beyond role-gated placeholder shells
-  and the participant view (no admin UI yet to edit
-  `AssessmentScoringConfig`, create `SessionOffering`s/`TaskTemplate`s,
-  or assign `FacilitatorAssignment`s — all real data operations today,
-  just not yet exposed with a form).
+- Blueprint AI, My Blueprint's dedicated navigation page (sections exist
+  as `DocumentSection` rows populated by Builder tasks; there's no page
+  yet organizing them into the spec's PASSION/POWER/LEGACY layout — next
+  phase), document generation/download, Resources library, Progress
+  page's "story" narrative.
+- Admin/Facilitator functionality beyond role-gated placeholder shells,
+  the participant view, and the roadmap control page built this phase
+  (no admin UI yet to edit `AssessmentScoringConfig`, create
+  `SessionOffering`s, or assign `FacilitatorAssignment`s directly).
 - Billing. Transactional email (see Known Issues).
-- A member-facing view of their own Post-Session Summary (facilitators
-  can create/edit it and the member can already `GET` it via the API as
-  its owner; there's no page rendering it for them yet).
+- A member-facing view of their own Post-Session Summary.
 - Per-stage roadmap sub-pages — Stage Progress cards all link to the one
   `/roadmap` page rather than a stage-scoped view (spec says "each opens
   respective roadmap"; simplified to one page showing every stage).
+- "My Blueprint" sections with no task mapping yet: **Technology** and
+  **Impact** (Prompt 6's section list has a couple more entries than
+  Phase 5's 30-task library directly populates — see Important
+  Decisions). They'll render an honest empty state, not fake content.
 
 ## KNOWN ISSUES
 
@@ -315,9 +385,39 @@ someone else's summary, or read another business's summary — all 403.
    counter on `SessionOffering` — simpler and always correct, at the cost
    of an extra query per session shown. Fine at this scale; revisit if a
    session list ever needs to render hundreds of offerings at once.
+9. **Two "My Blueprint" sections (Technology, Impact) have no task
+   mapping yet.** The 30-task library maps almost 1:1 to Prompt 6's
+   section list, but not perfectly — see Important Decisions. Adding a
+   task later that targets either `blueprintDestination` fills them in
+   automatically, no migration needed.
+10. **`prisma migrate dev` doesn't work in this non-interactive
+    environment** (it wants a TTY to confirm destructive-looking
+    warnings, e.g. new unique constraints on empty tables). Every Phase 5
+    migration was generated with `prisma migrate diff --script` and
+    applied with `prisma migrate deploy` instead — same resulting SQL,
+    just without the interactive confirmation step. Worth trying
+    `prisma migrate dev` directly in a normal terminal in later phases.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810183045_roadmap_builder_dependencies`.
+  - `TaskTemplate`: added `category`, `whyItMatters`, `thinkPrompt`,
+    `instructions` (Json), `implementGuidance`, `measurePrompt`,
+    `difficulty` (new enum `TaskDifficulty`), `impact` (new enum
+    `TaskImpact`), `outputType`, `blueprintDestination`; removed
+    `description`; added a self-relation (`prerequisites`/`unlocks`) for
+    TASK DEPENDENCIES.
+  - `TaskStatus` gained `PAUSED`.
+  - `RoadmapTask`: added `category`, `facilitatorAdjusted`.
+  - `TaskResponse`: replaced free-text `content` with structured `answers`
+    (Json) and added `savedToBlueprintAt`; `roadmapTaskId` is now unique
+    (one current response per task, not a history).
+  - `DocumentSection`: added `sourceRoadmapTaskId`, `lastEditedAt`, and a
+    `(documentId, title)` unique constraint so "Save to Blueprint" can
+    upsert instead of duplicate.
+  - The old Phase 4 15-task `TaskTemplate` library was truncated and
+    replaced entirely by the 30-task library below — no real
+    user/business data existed yet to migrate.
 - New migration: `prisma/migrations/20260810182749_task_template_priority`
   — `TaskTemplate` gained `priority` (`TaskPriority`), so a generated
   `RoadmapTask` can inherit Must Do/Should Do/Bonus from its template.
@@ -425,11 +525,46 @@ someone else's summary, or read another business's summary — all 403.
   clarity. Revisit if the roadmap grows large enough that stage-scoped
   views become genuinely useful.
 
+## IMPORTANT DECISIONS (Phase 5 additions)
+
+- **Order (personalization) and lock status (dependencies) are fully
+  independent mechanisms.** A weak-category task can still be LOCKED if
+  its prerequisites aren't done; a strong-category task can still be
+  first if it happens to have no prerequisites. This matches the spec
+  literally — ROADMAP ENGINE and TASK DEPENDENCIES are separate
+  sections — and avoids the two rules fighting each other.
+- **"Existing completed work" pre-fills a draft, never a false
+  COMPLETE.** One business-profile field (e.g. `idealCustomer`) answers
+  one step of a multi-step task at best. Marking the whole task
+  COMPLETE from partial data would violate "no hard-coded fake results"
+  just as much as a fabricated score would.
+- **Facilitator recommendations influence generation via note-text
+  matching, not a dedicated task-targeting field.** A `FacilitatorNote`
+  with `noteType: TASK_RECOMMENDATION` whose text contains a task's
+  title (case-insensitive) bumps that task's priority at generation
+  time. Simple and works today; a real "target this specific task" field
+  on `FacilitatorNote` would be more precise if this proves too fragile
+  in practice.
+- **My Blueprint's section list and the 30-task library don't map
+  perfectly 1:1.** Prompt 6 lists a couple more Power/Legacy sections
+  (Technology, Impact) than Prompt 5's task library directly produces.
+  Rather than invent tasks not in the spec's INITIAL TASK LIBRARY to
+  force a perfect match, those two sections simply have no
+  `blueprintDestination` pointing at them yet and render an honest empty
+  state — consistent with "no hard-coded fake results" applying to
+  content structure, not just scores.
+- **`prisma migrate dev` → `migrate diff --script` + `migrate deploy`.**
+  This sandbox's non-interactive shell can't answer `migrate dev`'s
+  confirmation prompts for "looks destructive" warnings (new unique
+  constraints on tables that are actually empty). Generating the SQL
+  with `diff` and applying it with `deploy` produces an identical
+  migration file with the same guarantees, just without the prompt.
+
 ## NEXT RECOMMENDED PHASE
 
-Build the **Business Builder** interactive workbook: turn `/build` (and
-each roadmap task) from a checklist item into the guided, per-task
-activity the spec describes (lesson/why-it-matters, the activity itself,
-tips/example, "Ask Blueprint AI") — the last major placeholder the
-dashboard now correctly links to but doesn't yet implement. Blueprint AI
+Build **My Blueprint**: a dedicated navigation page organizing every
+`DocumentSection` a completed Builder task has already populated into
+the spec's PASSION/POWER/LEGACY layout, with in-place editing — the
+structured data has existed since this phase's "Save to Blueprint," it
+just doesn't have a home page yet. Blueprint AI
 and billing remain explicitly out of scope until their own phases.

@@ -17,6 +17,7 @@ const STATUS_MAP: Record<string, RoadmapItemStatus> = {
   IN_PROGRESS: "CURRENT",
   NOT_STARTED: "NOT_STARTED",
   LOCKED: "LOCKED",
+  PAUSED: "PAUSED",
 };
 
 export default async function RoadmapPage() {
@@ -81,15 +82,24 @@ export default async function RoadmapPage() {
       </p>
 
       <div className="mt-8 rounded-2xl border border-navy-100 bg-surface p-6">
-        {roadmap.tasks.map((task, i) => (
-          <RoadmapItem
-            key={task.id}
-            title={task.title}
-            stage={task.stage as Stage}
-            status={STATUS_MAP[task.status] ?? "NOT_STARTED"}
-            isLast={i === roadmap.tasks.length - 1}
-          />
-        ))}
+        {roadmap.tasks.map((task, i) => {
+          const actionable = task.status === "NOT_STARTED" || task.status === "IN_PROGRESS";
+          const item = (
+            <RoadmapItem
+              title={task.title}
+              stage={task.stage as Stage}
+              status={STATUS_MAP[task.status] ?? "NOT_STARTED"}
+              isLast={i === roadmap.tasks.length - 1}
+            />
+          );
+          return actionable ? (
+            <Link key={task.id} href={`/build/${task.id}`} className="block hover:opacity-80">
+              {item}
+            </Link>
+          ) : (
+            <div key={task.id}>{item}</div>
+          );
+        })}
       </div>
     </div>
   );

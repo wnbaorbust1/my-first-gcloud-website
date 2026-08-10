@@ -1,8 +1,8 @@
-import { Check, Lock } from "lucide-react";
+import { Check, Lock, PauseCircle } from "lucide-react";
 
 import { cn, STAGE_META, type Stage } from "@/lib/utils";
 
-export type RoadmapItemStatus = "COMPLETED" | "CURRENT" | "NOT_STARTED" | "LOCKED";
+export type RoadmapItemStatus = "COMPLETED" | "CURRENT" | "NOT_STARTED" | "LOCKED" | "PAUSED";
 
 interface RoadmapItemProps {
   title: string;
@@ -18,6 +18,7 @@ const NODE_CLASSES: Record<RoadmapItemStatus, string> = {
   CURRENT: "bg-gold-400 text-navy-900 border-gold-400",
   NOT_STARTED: "bg-surface text-navy-300 border-navy-200",
   LOCKED: "bg-navy-50 text-navy-300 border-navy-100",
+  PAUSED: "bg-navy-50 text-navy-400 border-navy-200",
 };
 
 export function RoadmapItem({
@@ -50,6 +51,8 @@ export function RoadmapItem({
           <Check className="h-4 w-4" aria-hidden="true" />
         ) : status === "LOCKED" ? (
           <Lock className="h-4 w-4" aria-hidden="true" />
+        ) : status === "PAUSED" ? (
+          <PauseCircle className="h-4 w-4" aria-hidden="true" />
         ) : (
           <span aria-hidden="true">{stageMeta.icon}</span>
         )}
@@ -67,6 +70,7 @@ export function RoadmapItem({
           {stageMeta.label}
           {status === "CURRENT" && " · In progress"}
           {status === "LOCKED" && " · Locked"}
+          {status === "PAUSED" && " · Paused"}
         </p>
       </div>
     </div>

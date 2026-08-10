@@ -593,6 +593,19 @@ enum TaskStatus {
   NOT_STARTED
   IN_PROGRESS
   COMPLETED
+  PAUSED
+}
+
+enum TaskDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum TaskImpact {
+  HIGH
+  MEDIUM
+  LOW
 }
 
 enum TaskPriority {
@@ -601,20 +614,50 @@ enum TaskPriority {
   BONUS
 }
 
+/// The reusable definition behind every RoadmapTask (spec TASK METADATA +
+/// BUSINESS BUILDER TASK PAGE). `instructions` holds the BUILD step
+/// fields as structured data — [{ key, label, prompt, type }] — so a
+/// completed task's answers are always structured (spec: "Do not store
+/// everything only as unstructured notes"), not a paragraph of prose.
 model TaskTemplate {
-  id            String         @id @default(cuid())
-  stage         BlueprintStage
-  title         String
-  description   String?        @db.Text
-  priority      TaskPriority   @default(SHOULD_DO)
-  estimatedMins Int?
-  order         Int
-  isActive      Boolean        @default(true)
+  id       String         @id @default(cuid())
+  stage    BlueprintStage
+  category String
+  title    String
+
+  /// LEARN — a short, beginner-friendly explanation of why this matters.
+  whyItMatters      String  @db.Text
+  /// THINK — a reflective prompt shown before the build steps.
+  thinkPrompt       String? @db.Text
+  /// BUILD — [{ key, label, prompt, type: "short_text"|"long_text" }].
+  instructions      Json
+  /// IMPLEMENT — shown after the task is marked complete.
+  implementGuidance String? @db.Text
+  /// MEASURE — a follow-up prompt for revisiting this later.
+  measurePrompt     String? @db.Text
+
+  difficulty           TaskDifficulty @default(BEGINNER)
+  impact               TaskImpact     @default(MEDIUM)
+  priority             TaskPriority   @default(SHOULD_DO)
+  estimatedMins        Int?
+  /// "structured_fields" today; room for e.g. "document" later without a migration.
+  outputType           String         @default("structured_fields")
+  /// Key identifying which My Blueprint section this task's answers populate.
+  blueprintDestination String?
+
+  order    Int
+  isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   roadmapTasks RoadmapTask[]
+
+  /// Self-relation: this task can't start until every "prerequisite" is
+  /// COMPLETED (spec TASK DEPENDENCIES). `prerequisites` = tasks this one
+  /// needs; `unlocks` = tasks that need this one.
+  prerequisites TaskTemplate[] @relation("TaskTemplatePrerequisites")
+  unlocks       TaskTemplate[] @relation("TaskTemplatePrerequisites")
 
   @@index([stage, order])
 }
@@ -624,6 +667,7 @@ model RoadmapTask {
   roadmapId      String
   taskTemplateId String?
   stage          BlueprintStage
+  category       String?
   title          String
   description    String?        @db.Text
   status         TaskStatus     @default(NOT_STARTED)
@@ -632,27 +676,37 @@ model RoadmapTask {
   order          Int            @default(0)
   completedAt    DateTime?
 
+  /// True once a facilitator has manually adjusted this task (priority,
+  /// pause, unlock override, reorder) — surfaced in the UI so a member
+  /// can see their facilitator was involved, and so regeneration logic
+  /// (future) knows not to silently overwrite it.
+  facilitatorAdjusted Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  roadmap      Roadmap        @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
-  taskTemplate TaskTemplate?  @relation(fields: [taskTemplateId], references: [id])
-  responses    TaskResponse[]
+  roadmap      Roadmap       @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  taskTemplate TaskTemplate? @relation(fields: [taskTemplateId], references: [id])
+  response     TaskResponse?
 
   @@index([roadmapId, status])
 }
 
+/// One current structured response per task (upserted on every save —
+/// spec doesn't ask for answer history, only for task/blueprint activity
+/// history, which RoadmapTask.completedAt + DocumentSection.updatedAt
+/// already provide).
 model TaskResponse {
-  id            String @id @default(cuid())
-  roadmapTaskId String
-  content       String @db.Text
+  id                 String    @id @default(cuid())
+  roadmapTaskId      String    @unique
+  /// { [stepKey]: answer } — matches TaskTemplate.instructions' keys.
+  answers            Json
+  savedToBlueprintAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   roadmapTask RoadmapTask @relation(fields: [roadmapTaskId], references: [id], onDelete: Cascade)
-
-  @@index([roadmapTaskId])
 }
 
 // ---------------------------------------------------------------------------
@@ -716,11 +770,19 @@ model DocumentSection {
   content    String?         @db.Text
   order      Int             @default(0)
 
+  /// The RoadmapTask whose "Save to Blueprint" last wrote this section,
+  /// if any — lets My Blueprint show "from: <task>" and link back, and
+  /// distinguishes auto-populated sections from ones a member typed
+  /// directly. A section stays independently editable either way.
+  sourceRoadmapTaskId String?
+  lastEditedAt        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@unique([documentId, title])
   @@index([documentId, order])
 }
 

@@ -103,11 +103,19 @@ export default async function FacilitatorParticipantsPage() {
             <CardHeader>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <CardTitle>{business.name}</CardTitle>
-                {owner && (
-                  <span className="text-sm text-foreground-muted">
-                    {owner.firstName} {owner.lastName} · {owner.email}
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {owner && (
+                    <span className="text-sm text-foreground-muted">
+                      {owner.firstName} {owner.lastName} · {owner.email}
+                    </span>
+                  )}
+                  <Link
+                    href={`/facilitator/participants/roadmap/${business.id}`}
+                    className="text-xs font-medium text-navy-500 underline hover:text-navy-800"
+                  >
+                    Manage Roadmap
+                  </Link>
+                </div>
               </div>
             </CardHeader>
 
