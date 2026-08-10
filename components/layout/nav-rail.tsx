@@ -15,7 +15,7 @@ type NavSection = {
 };
 
 const NAV_SECTIONS: NavSection[] = [
-  { label: "Dashboard", href: "/" },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Curriculum", href: "#" },
   { label: "Assignments", href: "#" },
   { label: "Assessments", href: "#" },
