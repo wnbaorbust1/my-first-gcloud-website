@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 1: Project Foundation + Architecture_
+_Last updated: 2026-08-10 — Phase 2: Blueprint Business Assessment + Scoring_
 
 ## COMPLETE
 
@@ -17,182 +17,200 @@ _Last updated: 2026-08-10 — Phase 1: Project Foundation + Architecture_
 - Prisma 7 ORM on Postgres (driver adapter `@prisma/adapter-pg`), connected
   to a real local Postgres instance for this phase (see Database Changes).
 
-**Authentication (Task 3)**
+**Authentication (Phase 1, Task 3)**
 - Email/password sign up, log in, log out, forgot password, reset
-  password — all real, working API routes backed by Postgres, verified
-  end-to-end over HTTP (see Tests/Checks in the phase summary).
-- NextAuth.js v4, JWT sessions (no DB session table) — session persists
-  across requests via a signed cookie.
+  password — all real, working API routes backed by Postgres.
+- NextAuth.js v4, JWT sessions (no DB session table).
 - Passwords hashed with bcrypt (12 rounds). Reset tokens are random,
   stored only as a SHA-256 hash, single-use, 1-hour expiry.
-- Google OAuth is architected (provider wiring + user upsert logic in
-  `src/lib/auth.ts`) but stays inactive until `GOOGLE_CLIENT_ID` /
-  `GOOGLE_CLIENT_SECRET` are set — no Google setup was done this phase.
-- `src/middleware.ts`... see note in Important Decisions — file is at
-  `src/proxy.ts` (Next 16 renamed the convention from `middleware` to
-  `proxy`; same behavior).
+- Google OAuth architected (`src/lib/auth.ts`) but inactive until
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are set.
+- Route protection lives in `src/proxy.ts` (Next 16 renamed `middleware`
+  to `proxy`; same behavior).
 
-**Roles & authorization (Task 4)**
+**Roles & authorization (Phase 1, Task 4)**
 - Roles: `MEMBER`, `FACILITATOR`, `ADMIN`, `SUPER_ADMIN`, plus
-  `IMPLEMENTATION_SPECIALIST` reserved in the `Role` enum and
-  `src/lib/rbac.ts` for a future phase.
-- Centralized authorization in `src/lib/rbac.ts` (edge-safe, no DB import)
-  and `src/lib/session.ts` (`requireUser`, `requireRole`,
-  `assertBusinessAccess`).
-- Enforced in two places, not just the UI: `src/proxy.ts` blocks
-  `/admin/*` and `/facilitator/*` by role before the page renders, and
-  `/admin`, `/facilitator` layouts call `requireRole` again server-side.
-  `assertBusinessAccess` is the pattern future business-scoped routes
-  should call before returning data.
+  `IMPLEMENTATION_SPECIALIST` reserved.
+- Centralized in `src/lib/rbac.ts` (edge-safe) and `src/lib/session.ts`
+  (`requireUser`, `requireRole`, `assertBusinessAccess`), enforced in
+  `src/proxy.ts` and again server-side in layouts/routes — never UI-only.
 
-**Database (Task 5 & 6)**
-- Full Prisma schema for every entity listed in Task 5 (Users, Businesses,
-  UserBusinessMemberships, Organizations, Assessments +
-  AssessmentQuestions/Responses/Scores, Sessions (`SessionOffering`) +
-  SessionRegistrations + Attendance, Roadmaps + RoadmapTasks +
-  TaskTemplates + TaskResponses, Goals, Documents + DocumentSections,
-  Resources, FacilitatorAssignments + FacilitatorNotes, Notifications,
-  Subscriptions, AuditLogs), with `createdAt`/`updatedAt`, foreign keys,
-  and status fields.
-- Multi-business architecture in place (Task 6): `UserBusinessMembership`
-  join table with an `OWNER`/`COLLABORATOR` role, so a user can eventually
-  own or collaborate on more than one `Business`. MVP UI only exposes
-  creating/editing a single business today — see Next Recommended Phase.
+**Database foundation (Phase 1, Task 5 & 6)**
+- Full Prisma schema for every core entity (Users, Businesses,
+  UserBusinessMemberships, Organizations, Sessions, Roadmaps, Goals,
+  Documents, Resources, Facilitator relationships, Notifications,
+  Subscriptions, AuditLogs).
+- Multi-business architecture in place via `UserBusinessMembership`; MVP
+  UI still exposes only one business per user.
 
-**Design system (Task 7)**
-- Tailwind v4 tokens in `src/app/globals.css`: navy, cream, gold, and the
-  three stage colors (passion/pink, power/orange-gold, legacy/purple),
-  plus semantic success/warning/danger/info.
-- Reusable components in `src/components/ui/`: Button, Card (+ Header/
-  Title/Description/Content/Footer), MetricCard, ProgressBar, StageBadge,
-  ScoreCard (progress ring), TaskCard, RoadmapItem, SessionCard, Alert,
-  Modal, EmptyState, Input, Textarea, Select, Tabs, Label.
-- Fonts: Inter (interface) + Fraunces (display serif, used sparingly per
-  spec section 31).
+**Design system (Phase 1, Task 7) & navigation (Task 8)**
+- Tailwind v4 tokens for the Blueprint color system + a reusable
+  component library (Button, Card, MetricCard, ProgressBar, StageBadge,
+  ScoreCard, TaskCard, RoadmapItem, SessionCard, Alert, Modal, EmptyState,
+  Input, Textarea, Select, Tabs, Label) in `src/components/ui/`.
+- Desktop sidebar + mobile bottom nav in `src/components/nav/`.
 
-**Navigation (Task 8)**
-- Desktop sidebar + mobile bottom nav (4 primary + "More" sheet) in
-  `src/components/nav/`, driven by one shared config
-  (`nav-items.ts`) so adding a page means editing one file.
+**Business profile (Phase 1, Task 10)**
+- `/business-profile` create/edit form; only business name required.
 
-**Member dashboard shell (Task 9)**
-- Welcome header, business name, three stage score cards (render `—`,
-  never a fake number, when no assessment score exists), "Complete your
-  Blueprint Assessment to begin" CTA when there's no completed
-  assessment, and honest empty states for Next Best Move, Today's
-  Blueprint, Roadmap Progress, and Upcoming Session.
+---
 
-**Business profile (Task 10)**
-- `/business-profile` form with every field from the spec; only
-  business name is required, everything else is skippable.
-- `POST /api/business` creates-or-updates the caller's business
-  (zod-validated, auth-checked) — verified end-to-end over HTTP.
+### Phase 2 — Blueprint Assessment, Scoring, Results
+
+**Assessment content & scoring engine**
+- 36-question bank across all 33 spec categories (8 Passion, 13 Power, 12
+  Legacy) in `src/lib/assessment/questions.ts` — one question per
+  category to keep the assessment to "a few minutes," plus extra
+  questions so every spec question type (1–5 scale, Yes/No, single
+  choice, multiple choice, short answer, number) is exercised at least
+  once, not just architected.
+- Content and scoring config are **idempotently self-seeded**
+  (`src/lib/assessment/seed-content.ts`) the first time a business starts
+  an assessment — no separate `npm run seed` step required to get a
+  working app.
+- `AssessmentScoringConfig` (DB row, not code) stores stage thresholds
+  (default 65), stage weights, the "excellence" threshold (default 85),
+  and status-label bands — an admin tool can retune these later without a
+  code change or migration, per the spec's "scoring rules must be stored
+  in a configurable way."
+- `src/lib/assessment/scoring.ts` is pure, dependency-free scoring logic:
+  normalizes each answer type to 0–100, averages into category scores,
+  averages categories into stage scores ("normalized category averages"
+  per spec), weights stages into the Business Health Score, and
+  implements the **progressive** session-matching logic exactly as
+  specified (Passion gate → Power gate → Legacy gate → weakest-of-three
+  or GROWTH once all three clear the excellence threshold) — verified
+  live against both branches (see Tests/Checks).
+
+**Assessment experience**
+- `/assessment`: welcome screen → one question at a time → stage
+  transition screens (Passion→Power, Power→Legacy) → completion screen →
+  results. Progress header shows question count, percent, and
+  stage-colored progress bar.
+- Autosave on every answer (immediate for scale/yes-no/choice questions,
+  debounced 600ms for text/number) via `PATCH /api/assessment/[id]/responses`.
+  Revisiting `/assessment` resumes exactly at the first unanswered
+  question — verified live, not just by inspection.
+- All 6 question types render with large, accessible selectable
+  cards/inputs and a visible checkmark + border + stage color on
+  selection (not color alone).
+- Business-scoped auth: every response write re-checks
+  `assertBusinessAccess` against the assessment's owning business.
+
+**Results & score detail**
+- `/assessment/results/[assessmentId]`: three stage score rings, Business
+  Health Score, a "Current Blueprint Stage" hero built from the real
+  recommendation, Top 3 Strengths / Top 3 Priorities computed from actual
+  category scores, a dynamically composed "why this session" reason
+  string, a next-best-action pulled from the lowest-scoring category's
+  real content, and the recommended session card. No hard-coded scores
+  anywhere in this flow.
+- `/assessment/results/[assessmentId]/stage/[stage]`: every category in
+  that stage with its score, status label (from the configurable bands),
+  "Why It Matters," and "Recommended Next Step" — the spec's Score Detail
+  page, generalized to list a full stage instead of one hard-coded
+  category.
+- Dashboard updated: score cards link to the relevant stage detail page
+  once an assessment is completed, and a "View My Full Results" link
+  appears next to the Blueprint Scores heading.
+- Revisiting `/assessment` after completion redirects to the existing
+  results page instead of silently starting a duplicate assessment;
+  completed assessments are never deleted, so reassessment (a future
+  "retake" entry point) won't erase history.
 
 ## IN PROGRESS
 
-- Nothing left mid-implementation. Every Phase 1 task above was carried
-  to a working, verified state before this phase closed.
+- Nothing left mid-implementation from Phase 1 or Phase 2.
 
 ## NOT STARTED
 
-(Deliberately out of scope for this phase — see the master spec for what
-each of these owes the Visual Experience Directive when built.)
-
-- Blueprint Assessment (question flow, scoring, stage transitions).
-- Session Match / Session Attendance flows (schema exists; no booking UI).
-- Personalized Roadmap generation (schema + static `RoadmapItem`
-  component exist; no engine that populates `RoadmapTask` rows).
-- Business Builder activities, Blueprint AI, My Blueprint binder,
-  Progress story, Goals UI, Resources library.
-- Admin/Facilitator functionality beyond role-gated placeholder shells.
-- Billing (first month free → $9.99/mo or $100/yr) — `Subscription` model
-  exists; no Stripe/payment integration, per instructions.
-- Transactional email (see Known Issues).
+- Session registration/attendance, facilitator participant view,
+  post-session summaries (next phase).
+- Personalized Roadmap generation, Business Builder activities, Blueprint
+  AI, My Blueprint binder, Goals UI, Resources library.
+- Admin/Facilitator functionality beyond role-gated placeholder shells
+  (including any admin UI to edit `AssessmentScoringConfig` — the data
+  model supports it, no UI yet).
+- Billing. Transactional email (see Known Issues).
 
 ## KNOWN ISSUES
 
-1. **No email provider.** Signup and password-reset don't send real
-   email. `forgot-password` logs the reset link server-side and, in
-   non-production only, returns it in the API response so the flow is
-   testable. Wire a real provider (Postgres-friendly options: Resend,
-   Postmark, SES) before this reaches real users.
-2. **`next-auth@4.24.15`'s bundled `@auth/core` (0.34.3) has 3 known
-   advisories** (`npm audit`): a malformed-Bearer-header crash in
-   `getToken()`, an email-normalizer homoglyph issue (Email/magic-link
-   provider only — not used here), and OAuth state/nonce/PKCE cookies not
-   bound to their provider (relevant only once a second OAuth provider is
-   active). None of the three are triggered by the Credentials-only setup
-   shipped this phase. The real fix is Auth.js v5, which is still beta and
-   a bigger migration (different session/callback API) — deferred rather
-   than done under time pressure. Re-evaluate before adding Google OAuth.
-3. **No automated test suite yet.** Verification this phase was a real
-   Postgres migration + `next build` + `eslint` + live HTTP smoke tests
-   (signup, login, session, protected-route redirects, role-gated
-   redirects, business create, forgot/reset password) against a running
-   dev server — not unit/integration tests. Add a test runner in a future
-   phase.
-4. **`Business.status`, `Organization.status`, etc. are free-text
-   strings**, not enums — intentional (see Important Decisions), but
-   means nothing stops a typo'd status value at the DB layer today. Zod
-   validation should gate any field before it reaches the DB as these
-   modules get built out.
+1. **No email provider** — unchanged from Phase 1; `forgot-password`
+   logs/returns the reset link instead of emailing it.
+2. **`next-auth@4` / `@auth/core` advisories** — unchanged from Phase 1,
+   not reachable by the Credentials-only setup in use.
+3. **No automated test suite.** Phase 2 was verified with a real Postgres
+   migration, `next build`, `eslint`, and live HTTP scripts that signed
+   up test users, drove all 36 questions through autosave, completion,
+   and both recommendation branches (progressive gate and GROWTH), then
+   inspected the DB and rendered HTML directly — not a checked-in test
+   suite. Add one in a future phase.
+4. **The recommended session is a label, not a bookable thing yet.** The
+   Results page's CTA links to `/sessions` (still a placeholder) — Phase
+   2 explicitly excludes registration, so there is nothing to link to yet
+   without overpromising.
+5. **"Most strategic growth opportunity" is an interpreted rule.** The
+   spec leaves this phrase undefined when all three stages clear their
+   threshold. Implemented as: recommend the weakest of the three stages
+   unless *all three* also clear `excellenceThreshold` (default 85), in
+   which case recommend a general GROWTH session. Documented here and in
+   `src/lib/assessment/scoring.ts` so it's easy to revise.
 
 ## DATABASE CHANGES
 
-- Provider: PostgreSQL (Prisma 7, `@prisma/adapter-pg` driver adapter —
-  Prisma 7 requires an explicit adapter, no more implicit
-  connection-string-only clients).
-- One migration: `prisma/migrations/20260810174049_init` — creates every
-  model in `prisma/schema.prisma` (see COMPLETE → Database above for the
-  full entity list) plus enums for `Role`, `BusinessMembershipRole`,
-  `BlueprintStage`, `AssessmentStatus`, `SessionOfferingStatus`,
-  `RegistrationStatus`, `AttendanceStatus`, `RoadmapStatus`, `TaskStatus`,
-  `TaskPriority`, `GoalStatus`, `SubscriptionPlan`, `SubscriptionStatus`.
-- Generated client output: `src/generated/prisma` (gitignored — run
-  `npx prisma generate` after cloning or after any schema change).
-- Local dev database: a real Postgres 16 instance, database
-  `blueprint_dev`, user `blueprint` — see `.env.example` for the
-  connection string shape. Production should point `DATABASE_URL` at
-  Cloud SQL for PostgreSQL (or another managed Postgres); nothing in the
-  schema or client setup is dev-only.
+- New migration: `prisma/migrations/20260810175322_assessment_scoring`.
+- `AssessmentQuestion` gained `category`, `questionType` (new enum
+  `QuestionType`), `options` (Json, choice questions), `minValue`/
+  `maxValue` (Number questions), `weight`, `includeInScoring`.
+- `AssessmentResponse.value` changed from `Int` to `Json` — one flexible
+  column whose shape depends on the question's type (number / boolean /
+  string / string[]) instead of four sparse nullable columns.
+- `Assessment` gained `assessmentVersion`, `healthScorePercent`,
+  `recommendedSessionType` (new enum `RecommendedSessionType`:
+  PASSION/POWER/LEGACY/GROWTH), `recommendationReason`.
+- New model `AssessmentCategoryScore` — persisted per-category scores
+  (not recomputed on read) so history stays accurate if question content
+  changes later.
+- New model `AssessmentScoringConfig` — the configurable scoring rules
+  described above.
+- Seed data: 36 `AssessmentQuestion` rows + 1 active
+  `AssessmentScoringConfig` row, created lazily on first use rather than
+  via a migration seed script (see Important Decisions).
 
 ## IMPORTANT DECISIONS
 
-- **Enums vs. strings.** Closed, code-referenced sets that the app
-  branches on (`Role`, `BlueprintStage`, `TaskStatus`, ...) are Postgres
-  enums. Open-ended categorical fields product will likely reword or
-  extend (industry, business stage, revenue range, CRM used, etc.) are
-  plain `String` with zod validation at the API boundary instead, so
-  adding an option is a content change, not a migration.
-- **No NextAuth Prisma adapter.** `@auth/prisma-adapter` expects a `name`
-  field and owns OAuth account/session persistence; Blueprint's `User`
-  model uses `firstName`/`lastName`, and Credentials-based auth forces JWT
-  sessions anyway (adapter database sessions aren't compatible with a
-  Credentials provider). Both Credentials and the (currently inactive)
-  Google provider instead find-or-create the `User` row directly inside
-  the `jwt` callback in `src/lib/auth.ts`. This keeps one code path for
-  both auth methods and avoids the schema mismatch.
-- **`middleware.ts` → `proxy.ts`.** Next.js 16 deprecated the
-  `middleware` file convention in favor of `proxy` (same API, renamed
-  export). Built this phase on the new convention rather than starting on
-  a deprecated one.
-- **One business per user in the UI, many in the data model.** Schema
-  supports multiple businesses per user (Task 6) via
-  `UserBusinessMembership`, but `/business-profile` and
-  `POST /api/business` only expose create-or-update-the-first-business for
-  now, matching the Task 10 MVP scope. Adding a "create another business"
-  entry point later doesn't require a data model change.
-- **Single light theme, no dark mode.** The Visual Experience Directive
-  calls for warm cream backgrounds as the primary surface; Blueprint ships
-  one considered light theme rather than an OS-driven dark variant that
-  would fight that direction.
+- **Enums vs. strings** (Phase 1, unchanged): closed code-referenced sets
+  are Postgres enums; open-ended categorical fields are validated
+  strings.
+- **No NextAuth Prisma adapter** (Phase 1, unchanged).
+- **Lazy, idempotent content seeding instead of a seed script.**
+  `ensureAssessmentContentSeeded()` runs a cheap existence check at the
+  top of the "start assessment" path and only inserts if empty. This
+  means a fresh clone of the repo "just works" the first time someone
+  starts an assessment, in any environment, without a manual seed step —
+  at the cost of the first request after a fresh DB doing slightly more
+  work. A future admin content tool would edit these rows directly rather
+  than re-running a seed script.
+- **Only `SCALE_1_5` and `YES_NO` questions score by default.**
+  `SINGLE_CHOICE`/`MULTIPLE_CHOICE`/`SHORT_ANSWER` have no defined
+  numeric mapping in v1 and are always excluded from scoring, even if a
+  future question sets `includeInScoring: true`; `NUMBER` questions *can*
+  score (normalized against `minValue`/`maxValue`) but none in the v1
+  bank do. This keeps "no hard-coded fake results" honest — nothing gets
+  a numeric score without a defined, documented way to compute one.
+- **Category score = single question's score when a category has one
+  question (true for all 33 in v1).** The engine supports multiple
+  weighted questions per category for when content is expanded later.
+- **Stage score = unweighted average of that stage's category scores**,
+  per the spec's "normalized category averages" — a category with only
+  one question counts the same as one with several, so breadth across
+  categories matters more than depth in any single one.
 
 ## NEXT RECOMMENDED PHASE
 
-Build the **Blueprint Assessment** (Passion → Power → Legacy): welcome
-screen, one-question-at-a-time flow with the progress header, stage
-transition screens, completion screen, and scoring that writes
-`AssessmentResponse`/`AssessmentScore` rows — replacing the `/assessment`
-placeholder and feeding real numbers into the dashboard score cards and
-"Complete your Blueprint Assessment to begin" CTA already wired up this
-phase.
+Build the **Blueprint Session system**: session offerings, member
+registration/waitlist, facilitator attendance marking, and the
+qualifying-session unlock flag — so a completed assessment's recommended
+session becomes something a member can actually register for, and
+attendance becomes the gate for the post-session Blueprint Builder
+dashboard.

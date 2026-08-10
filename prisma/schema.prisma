@@ -247,10 +247,29 @@ enum AssessmentStatus {
   COMPLETED
 }
 
+/// What a completed assessment recommends the member attend next. A
+/// superset of BlueprintStage (adds GROWTH) because "all three scores are
+/// strong" isn't a stage — see src/lib/assessment/scoring.ts.
+enum RecommendedSessionType {
+  PASSION
+  POWER
+  LEGACY
+  GROWTH
+}
+
 model Assessment {
   id         String           @id @default(cuid())
   businessId String
   status     AssessmentStatus @default(NOT_STARTED)
+
+  // Which AssessmentQuestion set was scored (see ASSESSMENT_VERSION in
+  // src/lib/assessment/questions.ts). Lets question content change later
+  // without corrupting how a historical assessment is interpreted.
+  assessmentVersion String @default("v1")
+
+  healthScorePercent     Int?
+  recommendedSessionType RecommendedSessionType?
+  recommendationReason   String?                 @db.Text
 
   startedAt   DateTime?
   completedAt DateTime?
@@ -258,34 +277,69 @@ model Assessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  business  Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  responses AssessmentResponse[]
-  scores    AssessmentScore[]
+  business       Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses      AssessmentResponse[]
+  scores         AssessmentScore[]
+  categoryScores AssessmentCategoryScore[]
 
   @@index([businessId])
 }
 
+enum QuestionType {
+  SCALE_1_5
+  YES_NO
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+  NUMBER
+}
+
 model AssessmentQuestion {
-  id         String         @id @default(cuid())
-  stage      BlueprintStage
-  order      Int
-  prompt     String         @db.Text
-  helperText String?        @db.Text
-  isActive   Boolean        @default(true)
+  id           String         @id @default(cuid())
+  stage        BlueprintStage
+  /// Sub-category within a stage, e.g. "Lead Generation" (spec's category
+  /// lists) — plain string per the schema-wide "open categorical sets
+  /// don't need a migration" convention.
+  category     String
+  questionType QuestionType   @default(SCALE_1_5)
+  order        Int
+  prompt       String         @db.Text
+  helperText   String?        @db.Text
+
+  /// [{ "value": "a", "label": "..." }] — SINGLE_CHOICE / MULTIPLE_CHOICE only.
+  options  Json?
+  minValue Int? // NUMBER type range, when used
+  maxValue Int?
+
+  /// Relative weight within its category average — configurable per
+  /// question so scoring can be tuned without a migration.
+  weight Float @default(1)
+
+  /// False for profile/context questions (e.g. open-ended "what do you
+  /// sell?") that shouldn't be averaged into a 0–100 score.
+  includeInScoring Boolean @default(true)
+
+  isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   responses AssessmentResponse[]
 
-  @@index([stage, order])
+  @@index([stage, category, order])
 }
 
 model AssessmentResponse {
   id           String @id @default(cuid())
   assessmentId String
   questionId   String
-  value        Int
+
+  /// Shape depends on the question's questionType: number (SCALE_1_5,
+  /// NUMBER), boolean (YES_NO), string (SHORT_ANSWER, SINGLE_CHOICE), or
+  /// string[] (MULTIPLE_CHOICE). One flexible column beats four sparse
+  /// nullable ones — see src/lib/assessment/scoring.ts for how each type
+  /// is normalized to a 0–100 contribution.
+  value Json
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -310,6 +364,55 @@ model AssessmentScore {
 
   @@unique([assessmentId, stage])
   @@index([assessmentId])
+}
+
+/// Per-category breakdown backing the Score Detail page. Persisted
+/// (rather than recomputed from responses on every read) so a category's
+/// historical score stays accurate even if question content changes
+/// later.
+model AssessmentCategoryScore {
+  id           String         @id @default(cuid())
+  assessmentId String
+  stage        BlueprintStage
+  category     String
+  scorePercent Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, category])
+  @@index([assessmentId])
+}
+
+/// Single active row read by the scoring engine (src/lib/assessment/
+/// scoring.ts). Exists so an admin tool can retune thresholds/weights
+/// later without a code change or migration — spec Task: "scoring rules
+/// must be stored in a configurable way."
+model AssessmentScoringConfig {
+  id       String  @id @default(cuid())
+  isActive Boolean @default(true)
+  version  String  @default("v1")
+
+  /// { "PASSION": 65, "POWER": 65, "LEGACY": 65 } — a stage scoring below
+  /// its threshold is the next recommended session.
+  stageThresholds Json
+
+  /// A stage at/above this (default 85) is "excellent" — only when ALL
+  /// three clear it do we recommend a GROWTH session instead of the
+  /// weakest of the three.
+  excellenceThreshold Int @default(85)
+
+  /// Relative weight of each stage in the Business Health Score.
+  stageWeights Json
+
+  /// [{ "min":0, "max":39, "label":"Needs Development" }, ...] — drives
+  /// the status label on the Score Detail page.
+  statusBands Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------

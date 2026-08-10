@@ -80,7 +80,9 @@ export default async function DashboardPage() {
               </p>
             </div>
             <Button asChild size="lg" variant="gold" className="w-full shrink-0 sm:w-auto">
-              <Link href="/assessment">Start My Assessment</Link>
+              <Link href="/assessment">
+                {assessment?.status === "IN_PROGRESS" ? "Continue My Assessment" : "Start My Assessment"}
+              </Link>
             </Button>
           </div>
         </Card>
@@ -88,19 +90,35 @@ export default async function DashboardPage() {
 
       {business && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-navy-400">
-            Blueprint Scores
-          </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-400">
+              Blueprint Scores
+            </h2>
+            {assessment?.status === "COMPLETED" && (
+              <Link
+                href={`/assessment/results/${assessment.id}`}
+                className="text-sm font-medium text-navy-600 hover:text-navy-900"
+              >
+                View My Full Results
+              </Link>
+            )}
+          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {STAGES.map((stage) => {
               const score = assessment?.scores.find((s) => s.stage === stage);
-              return (
+              const card = (
                 <ScoreCard
-                  key={stage}
                   stage={stage}
                   scorePercent={score?.scorePercent ?? null}
                   statusLabel={score ? undefined : "Not started yet"}
                 />
+              );
+              return assessment?.status === "COMPLETED" ? (
+                <Link key={stage} href={`/assessment/results/${assessment.id}/stage/${stage}`}>
+                  {card}
+                </Link>
+              ) : (
+                <div key={stage}>{card}</div>
               );
             })}
           </div>
