@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 9: Goals + Money + Progress + Accountability_
+_Last updated: 2026-08-10 — Phase 10: Advanced Business Tools_
 
 ## COMPLETE
 
@@ -759,9 +759,140 @@ secure integration")**
   establishes. All test data (business, three test users, the
   second/retake assessment) removed afterward.
 
+---
+
+### Phase 10 — Advanced Business Tools
+
+Eight new business-scoped tools, all gated behind the same Builder-access
+check as Money/Progress (`getGatedBusinessContext`) — none required a
+schema change to anything that existed before this phase; every model is
+purely additive (`prisma/migrations/20260810220000_advanced_business_tools`).
+
+**Lightweight CRM — `/tools/crm`**
+- New `Lead` model with the spec's exact tracked fields (Name, Business,
+  Email, Phone, Offer, Value, Stage, Next Action, Notes) and the 7-stage
+  `LeadStage` enum (New Lead → Contacted → Qualified → Proposal →
+  Follow-Up → Won/Lost). The page groups leads by stage with a live
+  Open Pipeline / Won value summary computed from real `valueCents`, not
+  hand-typed numbers. Verified live: created a lead, moved it through a
+  stage change via `PATCH`, confirmed the summary cards and stage
+  grouping updated correctly, then removed it via `DELETE`.
+
+**Customer Journey Builder — `/tools/journey`**
+- New `JourneyStage` model. Every business is lazily seeded with the
+  spec's exact 9 default stages (Awareness → Lead → Nurture →
+  Consultation → Purchase → Onboarding → Delivery → Retention →
+  Referral) the same "ensure*"-on-first-visit pattern used everywhere
+  else in this app (`ensureJourneyStagesSeeded`) — verified live via
+  direct SQL showing all 9 rows in the correct order on first load.
+  Fully customizable after that: renamed a stage inline, added a custom
+  10th stage, swapped its order with an existing stage via the shared
+  up/down `ReorderButtons` control, then deleted it — all verified live.
+
+**SOP Builder — `/tools/sops`**
+- New `Sop` model with the spec's exact 9 fields (Name, Purpose, Trigger,
+  Owner, Tools, Steps, Completion Criteria, Exceptions, Review Date).
+  `Steps` is stored as one-step-per-line free text — an SOP is read as a
+  document, not driven by app logic. Verified live: created a full SOP
+  and confirmed every field round-tripped correctly, including the
+  formatted multi-line Steps block.
+
+**Automation Mapper — `/tools/automation`**
+- New `AutomationStep` model with the spec's exact fields (Trigger,
+  Action, Tool, Timing, Owner, Message, Next Step) plus an `order`
+  column. "Allow visual sequence" is met by rendering steps as a
+  connected chain (a colored icon + connector line between cards,
+  mirroring the master spec's own Roadmap chain visual) with the same
+  shared `ReorderButtons` control as Customer Journey. Verified live:
+  created two chained steps (order 0, 1, auto-incrementing), confirmed
+  both render connected in sequence.
+
+**Offer Builder — `/tools/offers`** (the one Phase 10 tool with a spec-mandated
+My Blueprint side effect)
+- New `Offer` model with the spec's exact fields (Name, Audience,
+  Problem, Outcome, Features, Benefits, Deliverables, Price, CTA) plus
+  `savedToBlueprintAt`. Creating an offer automatically upserts My
+  Blueprint's existing "Products & Services" section (the same
+  `blueprintDestination` the Phase 5 "Finalize Products and Services"
+  Builder task already targets) via a new general-purpose
+  `upsertBlueprintSection()` added to `src/lib/roadmap/blueprint.ts` —
+  no manual step required, though a manual "Save to My Blueprint" button
+  (`POST /api/tools/offers/[id]/save-to-blueprint`) also exists so a
+  member can pick which of several saved offers is their current live
+  one. **Verified live and directly in Postgres**: created an offer,
+  confirmed `savedToBlueprintAt` was set in the same response, then
+  queried `DocumentSection` directly and confirmed the "Products &
+  Services" row's `content` exactly matches the offer's formatted
+  fields, `stage = POWER`, `sourceRoadmapTaskId = null` (correctly
+  distinguishing this from a roadmap-task-driven save) — then confirmed
+  it renders on the real `/my-blueprint` page. As a side effect (through
+  the same `checkForNewMilestones` call every Blueprint-section write
+  already triggers), saving an offer correctly auto-achieved the
+  pre-existing Phase 9 "First Offer" milestone — verified live via the
+  Dashboard's Milestones card.
+
+**Marketing Plan Builder — `/tools/marketing-plan`**
+- New `MarketingPlan` model with the spec's exact 8 fields (Goal,
+  Audience, Channels, Content Pillars, Lead Magnet, Campaign, CTA,
+  Metrics). Verified live: created a full plan, confirmed every field
+  round-tripped and rendered correctly.
+
+**Sales Script Builder — `/tools/scripts`**
+- New `SalesScript` model and `SalesScriptType` enum for the spec's
+  exact 6 types (Discovery Call, Sales Call, DM Response, Follow-Up,
+  Objection Handling, Closing). "Generate/store" is met the same way
+  Phase 6's Document Generator met "generate a document" — a structured
+  starter template per type (`src/lib/tools/script-templates.ts`), no AI
+  call — selecting a type pre-fills the script text, which the member
+  then edits and saves as their own. Verified live: created a Discovery
+  Call script from its template and confirmed it saved and rendered with
+  a truncated preview on its card.
+
+**Content Planner — `/tools/content-planner`**
+- New `ContentPlanItem` model with `ContentCadence`
+  (Daily/Weekly/Monthly) and `ContentStatus`
+  (Idea/Drafted/Scheduled/Posted) enums, plus the spec's Platform and CTA
+  fields, grouped by cadence on the page. Verified live: created an idea,
+  changed its status via the inline quick-select control (Idea →
+  Drafted), confirmed the change persisted and rendered.
+
+**Tools hub, navigation, and Dashboard integration**
+- `/tools` hub page links all 8 tools with real descriptions; new "Tools"
+  sidebar/nav entry (between Money and Resources) and proxy matcher
+  entry, following the exact pattern of every gated route added in
+  Phases 8–9.
+- Dashboard gained a new "Advanced Tools" card (real open-lead count and
+  open pipeline value, computed the same way the CRM page computes its
+  own summary — no separate/divergent calculation) with quick links to
+  CRM, Offer Builder, and the full Tools hub. Verified live via
+  screenshot showing "1 open lead in your pipeline — $1500 potential"
+  matching the real test lead created that session.
+
+**Verification method**
+- Live end-to-end, not code review: a full test business (Patel Design
+  Studio) taken through Builder access unlock, one lead through a real
+  stage change, the full default Customer Journey plus a custom
+  add/rename/reorder/delete cycle, a complete SOP, two chained
+  Automation steps, an Offer (with its real My Blueprint sync verified
+  directly in Postgres and on the live My Blueprint page), a Marketing
+  Plan, a Sales Script from its template, and a Content Planner item
+  with a real status change — all confirmed via direct API calls, direct
+  Postgres queries, and eleven Playwright screenshots covering the hub,
+  all 8 tool pages, My Blueprint, and the Dashboard.
+- **Authorization isolation verified live**: a freshly signed-up user
+  with no business membership at all got 404 from every create, update,
+  and delete endpoint across all 8 tools (leads, journey stages, SOPs,
+  automation steps, offers, offer-save-to-blueprint, marketing plans,
+  scripts, content items) for the test business, and the outsider's
+  `/tools/crm` page load rendered only the generic "unlocks after your
+  Blueprint Session" notice — confirmed no real lead data was present in
+  that response. All test data (business, two test users, the
+  assessment/roadmap rows added to unlock the dashboard's Builder view)
+  removed afterward.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 9. Every prompt in the current build sequence (1–9) is complete.
+- Nothing left mid-implementation from Phase 1 through 10. Every prompt in the current build sequence (1–10) is complete.
 
 ## NOT STARTED
 
@@ -781,6 +912,16 @@ secure integration")**
 - A real DOCX export — only the printable/PDF path is implemented; see
   Important Decisions for why `documents.ts` is already shaped to add one
   without a rewrite.
+- **PROMPT 11 (Facilitator + Admin Command Center)** and **PROMPT 12
+  (Organizations + Cohorts + Future Scale)** — received alongside Prompt
+  10; not started per the explicit instruction not to begin the next
+  phase automatically after this one.
+- Full-field editing for the 8 Phase 10 tools — each supports Create,
+  Read, Delete, and (for CRM/Content Planner) a quick stage/status
+  change, but not yet editing every field of an existing SOP, Offer,
+  Marketing Plan, etc. in place. Matches the spec's literal acceptance
+  language ("saves"/"works"), not an editing requirement; see Important
+  Decisions.
 
 ## KNOWN ISSUES
 
@@ -908,9 +1049,58 @@ secure integration")**
     once has no in-app history view of every completed assessment — only
     the latest comparison. The underlying data (every completed
     `Assessment` row) is retained, so this is a UI gap, not a data one.
+24. **The 8 Phase 10 tools support Create/Read/Delete (+ quick stage or
+    status change for CRM and Content Planner), not full in-place editing
+    of every field.** To fix a typo in a saved SOP, Offer, Marketing
+    Plan, Automation step, or Script today, a member deletes and
+    re-creates it. Deliberate scope line for this phase — see Important
+    Decisions — revisit if member feedback asks for it.
+25. **The Automation Mapper's "Next Step" is free text, not a real link
+    to the next step in the sequence.** The spec's fields (Trigger,
+    Action, Tool, Timing, Owner, Message, Next Step) describe one step
+    each; "Allow visual sequence" is met by chaining `AutomationStep`
+    rows by `order` with a connected visual (see Important Decisions),
+    but nothing parses "Next Step" text back into an actual relation to
+    another row — it's a human-readable note, same as the spec shows it.
+26. **The Customer Journey Builder and Automation Mapper's up/down
+    reorder swaps two rows' `order` values with two sequential PATCH
+    calls, not a single atomic operation.** No unique constraint exists
+    on `(businessId, order)`, so a request that fails between the two
+    calls could briefly leave a duplicate order value — self-corrects on
+    the next successful reorder or page load, and was not observed in
+    live testing, but is worth a single-transaction endpoint if this
+    becomes a heavily-used feature.
+27. **Offer Builder's My Blueprint sync always targets a single
+    "Products & Services" section — saving a second offer overwrites
+    what the first one wrote.** This matches the existing My Blueprint
+    model (one section per title) and the spec's framing of "the"
+    business's offer; a business that wants to track several distinct
+    offers side-by-side sees them all listed on `/tools/offers`, but only
+    the most recently saved (or manually re-saved) one is reflected in
+    My Blueprint at a time.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810220000_advanced_business_tools`
+  — purely additive, no existing table touched.
+  - New enums `LeadStage` (7 values), `SalesScriptType` (6 values),
+    `ContentCadence` (3 values), `ContentStatus` (4 values).
+  - New models: `Lead` (businessId, the spec's 9 CRM fields, `stage`
+    default `NEW_LEAD`), `JourneyStage` (businessId, name, description,
+    order — no default rows written by the migration itself; seeded
+    lazily per business on first visit, see Important Decisions),
+    `Sop` (businessId, the spec's 9 SOP fields), `AutomationStep`
+    (businessId, order, the spec's 7 automation fields), `Offer`
+    (businessId, the spec's 9 offer fields, `savedToBlueprintAt`),
+    `MarketingPlan` (businessId, the spec's 8 fields), `SalesScript`
+    (businessId, type, title, content), `ContentPlanItem` (businessId,
+    cadence default `WEEKLY`, idea, platform, status default `IDEA`,
+    cta, plannedDate).
+  - `Business`: gained 8 new relation arrays (`leads`, `journeyStages`,
+    `sops`, `automationSteps`, `offers`, `marketingPlans`,
+    `salesScripts`, `contentPlanItems`) — no new scalar columns.
+  - Money fields (`Lead.valueCents`, `Offer.priceCents`) are integer
+    cents, matching this schema's existing convention.
 - New migration:
   `prisma/migrations/20260810210000_goals_money_progress_accountability`
   — purely additive.
@@ -1316,11 +1506,84 @@ secure integration")**
   lint error here, mirroring the pre-existing `greeting()` helper in
   `dashboard/page.tsx`.
 
+## IMPORTANT DECISIONS (Phase 10 additions)
+
+- **Create/Read/Delete (+ one quick-change control where the spec tracks
+  a status), not full field-by-field editing, for all 8 tools.** The
+  spec's acceptance checklist asks that each tool "works" or "saves" —
+  never "is editable" — and every one of these records is cheap enough
+  to delete and re-create if a member wants to change more than its
+  stage/status. Building a generic multi-field edit form for 8 different
+  shapes would have doubled this phase's surface area for a requirement
+  the spec never actually states; documented as Known Issue #24 so it's
+  easy to prioritize if real usage asks for it.
+- **One shared `DeleteButton` and one shared `ReorderButtons` component**
+  (`src/components/tools/`) instead of eight near-duplicate ones. Every
+  Phase 10 tool's delete affordance and (for Journey/Automation) reorder
+  affordance behaves identically — same confirm-then-DELETE flow, same
+  swap-two-`order`-values-via-two-PATCHes flow — which also means a
+  future bug fix or design change to either only has one place to happen.
+- **Customer Journey's default 9 stages are seeded lazily on first page
+  load** (`ensureJourneyStagesSeeded`), the same idempotent "ensure*"
+  pattern this app uses for Blueprint document creation, membership
+  activation, and roadmap generation — not a migration-time seed script.
+  A business that visits `/tools/journey` for the first time gets real
+  rows written to `JourneyStage` at that moment, not synthetic defaults
+  computed on every render, so renaming/reordering/deleting them behaves
+  identically to a stage the member added themselves.
+- **The Automation Mapper's "visual sequence" is one flat, ordered model
+  (`AutomationStep`) rendered with a connector line — not a separate
+  Flow/Step parent-child model.** The spec's 7 fields (Trigger, Action,
+  Tool, Timing, Owner, Message, Next Step) already describe exactly one
+  step; modeling a wrapping "Flow" entity would have added a table with
+  no fields of its own, just to hold an ordered list `order` already
+  provides directly on `AutomationStep`.
+- **`upsertBlueprintSection()` is a new general-purpose sibling to the
+  existing `saveTaskResponseToBlueprint()`**, not a special case bolted
+  onto the Offer Builder. Any future Phase 10-style tool that needs to
+  write into My Blueprint outside of a RoadmapTask response (the
+  Marketing Plan → "Marketing" section, or SOPs → "SOPs" section, are
+  natural future candidates flagged for a later phase, see Known Issues)
+  can call the same function Offers use, keeping upsert-by-title
+  semantics — and the automated-vs-manual `lastEditedAt` distinction
+  documented in Phase 6 — in exactly one place rather than reimplemented
+  per tool.
+- **Only Offer Builder syncs to My Blueprint**, matching the spec's
+  literal acceptance line ("Offer builder saves to My Blueprint") rather
+  than extending the same behavior to CRM, SOPs, Automation, Marketing
+  Plan, Scripts, or Content Planner — several of those already have a
+  matching `blueprintDestination` on existing Phase 5 tasks ("CRM",
+  "Customer Journey", "SOPs", "Automation", "Marketing", "Sales
+  Process", "Follow-Up") that a future phase could wire up the same way,
+  but Prompt 10 only asked for it explicitly on Offers.
+- **Sales Script templates are static starter text, not AI-generated**,
+  identical reasoning to Phase 6's Document Generator: zero new runtime
+  dependency, works fully offline in this sandbox, and "Generate/store"
+  is satisfied by generating a real, editable starting point rather than
+  requiring a live model call just to see a first draft.
+
 ## NEXT RECOMMENDED PHASE
 
-No further numbered prompt has been received yet. Prompts 1–9 are all
-complete; what's left is flagged by earlier phases as out of scope rather
-than part of any numbered prompt so far:
+Per the explicit instruction received with Prompts 10–12 ("Do not begin
+the next phase automatically"), work stops here pending confirmation.
+**PROMPT 11 — Facilitator + Admin Command Center** is the next in
+sequence: an expanded Facilitator Dashboard (assigned participants,
+scores, stage, last activity, stalled-status detection), a Participant
+Detail view (assessment/roadmap/Blueprint/goals/sessions/progress/notes
+in one place), Facilitator Actions (assign/reorder/unlock/pause tasks,
+recommend a session, add a note, send encouragement, set priority), an
+Admin Dashboard with real aggregate metrics (users, assessments,
+sessions, membership counts, average scores), a signup-to-paid-conversion
+funnel, and Content Management screens for the admin-editable data this
+build has flagged as DB-only since Phase 2 (`AssessmentScoringConfig`,
+sessions, task/roadmap templates, resources, milestones, AI prompt
+templates, programs). **PROMPT 12 — Organizations + Cohorts + Future
+Scale** follows after that (organization accounts, cohorts, sponsored
+membership access, aggregate-by-default privacy, a printable Impact
+Report, white-label architecture) — not started.
+
+What's left, flagged by earlier phases as out of scope rather than part
+of any numbered prompt so far:
 
 - **Admin content tooling** — `AssessmentScoringConfig`,
   `SessionOffering`, `FacilitatorAssignment`, and now
@@ -1336,11 +1599,15 @@ than part of any numbered prompt so far:
   this deploys to, to turn Phase 7/8's fully-built integrations from
   graceful-degradation messages into real AI responses and real payments.
 - **An automated test suite** (Known Issue #3, unchanged since Phase 2)
-  — every phase through 9 has been verified live against a real Postgres
-  database instead of a checked-in suite; formalizing the verification
-  scripts this build sequence has already been running into real
-  regression tests would be valuable before further phases build on top
-  of this much surface area.
+  — every phase through 10 has been verified live against a real
+  Postgres database instead of a checked-in suite; formalizing the
+  verification scripts this build sequence has already been running into
+  real regression tests would be valuable before further phases build on
+  top of this much surface area.
 - **A full assessment-history browser** (Known Issue #23) — only the two
   most recent completed assessments are ever compared; a member who
   reassesses multiple times has no in-app view of every past result.
+- **Full-field editing for the 8 Phase 10 tools** (Known Issue #24) —
+  Create/Read/Delete plus one quick status control today; editing every
+  field of an existing SOP, Offer, Marketing Plan, Automation step, or
+  Script in place is a natural follow-up if member usage asks for it.

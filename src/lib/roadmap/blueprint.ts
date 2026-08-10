@@ -85,3 +85,36 @@ export async function saveTaskResponseToBlueprint(roadmapTaskId: string): Promis
 
   await checkForNewMilestones(roadmap.businessId);
 }
+
+/**
+ * General-purpose "save this content into My Blueprint" upsert, for
+ * writes that don't originate from a RoadmapTask response — e.g. the
+ * Offer Builder (spec Prompt 10's one explicit "saves to My Blueprint"
+ * requirement). Shares the same upsert-by-(documentId, title) semantics
+ * as saveTaskResponseToBlueprint so a section always reflects its
+ * source's current data, never a stale duplicate.
+ */
+export async function upsertBlueprintSection(
+  businessId: string,
+  section: { stage: Stage; title: string; content: string; order?: number },
+): Promise<void> {
+  const document = await ensureBlueprintDocument(businessId);
+
+  await prisma.documentSection.upsert({
+    where: {
+      documentId_title: { documentId: document.id, title: section.title },
+    },
+    create: {
+      documentId: document.id,
+      stage: section.stage,
+      title: section.title,
+      content: section.content,
+      order: section.order ?? 0,
+    },
+    update: {
+      content: section.content,
+    },
+  });
+
+  await checkForNewMilestones(businessId);
+}

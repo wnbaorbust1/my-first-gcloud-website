@@ -240,6 +240,15 @@ model Business {
   weeklyCheckIns         WeeklyCheckIn[]
   milestones             BusinessMilestone[]
 
+  leads            Lead[]
+  journeyStages    JourneyStage[]
+  sops             Sop[]
+  automationSteps  AutomationStep[]
+  offers           Offer[]
+  marketingPlans   MarketingPlan[]
+  salesScripts     SalesScript[]
+  contentPlanItems ContentPlanItem[]
+
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
   @@index([status])
@@ -1271,4 +1280,219 @@ model AuditLog {
 
   @@index([userId])
   @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------------------------
+// Advanced Business Tools (spec Prompt 10)
+// ---------------------------------------------------------------------------
+
+/// LIGHTWEIGHT CRM (spec Prompt 10): the 7 pipeline stages.
+enum LeadStage {
+  NEW_LEAD
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  FOLLOW_UP
+  WON
+  LOST
+}
+
+/// One row per lead/prospect. `company` is the *lead's* business — kept
+/// distinct from the owning Blueprint `Business` this row belongs to.
+model Lead {
+  id         String    @id @default(cuid())
+  businessId String
+  name       String
+  company    String?
+  email      String?
+  phone      String?
+  offer      String?
+  valueCents Int?
+  stage      LeadStage @default(NEW_LEAD)
+  nextAction String?
+  notes      String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, stage])
+}
+
+/// CUSTOMER JOURNEY BUILDER (spec Prompt 10): default 9 stages
+/// (Awareness → Referral), seeded lazily per business — see
+/// src/lib/tools/journey.ts — and fully customizable afterward: rename,
+/// reorder, add, remove.
+model JourneyStage {
+  id          String  @id @default(cuid())
+  businessId  String
+  name        String
+  description String? @db.Text
+  order       Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, order])
+}
+
+/// SOP BUILDER (spec Prompt 10) — the exact 9 spec fields. `steps` is
+/// free text (one step per line), not a structured Json array — an SOP is
+/// read/printed as a document, not driven by app logic the way
+/// RoadmapTask instructions are.
+model Sop {
+  id                 String    @id @default(cuid())
+  businessId         String
+  name               String
+  purpose            String?   @db.Text
+  trigger            String?   @db.Text
+  owner              String?
+  tools              String?   @db.Text
+  steps              String?   @db.Text
+  completionCriteria String?   @db.Text
+  exceptions         String?   @db.Text
+  reviewDate         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// AUTOMATION MAPPER (spec Prompt 10). Each row is one step of a
+/// business's automation flow, rendered connected in `order` — "Allow
+/// visual sequence" is met by chaining these rows visually (mirrors the
+/// Roadmap's own chain visual) rather than adding a separate flow/step
+/// model, since the spec's fields already describe exactly one step.
+model AutomationStep {
+  id         String  @id @default(cuid())
+  businessId String
+  order      Int
+  trigger    String  @db.Text
+  action     String  @db.Text
+  tool       String?
+  timing     String?
+  owner      String?
+  message    String? @db.Text
+  nextStep   String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, order])
+}
+
+/// OFFER BUILDER (spec Prompt 10) — the only Phase 10 tool the spec
+/// explicitly requires to also save into My Blueprint (the "Products &
+/// Services" section, matching the existing Phase 5 task's
+/// `blueprintDestination`) — see src/lib/tools/offers.ts.
+model Offer {
+  id           String  @id @default(cuid())
+  businessId   String
+  name         String
+  audience     String? @db.Text
+  problem      String? @db.Text
+  outcome      String? @db.Text
+  features     String? @db.Text
+  benefits     String? @db.Text
+  deliverables String? @db.Text
+  priceCents   Int?
+  cta          String?
+
+  savedToBlueprintAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// MARKETING PLAN BUILDER (spec Prompt 10) — the exact 8 spec fields.
+model MarketingPlan {
+  id             String  @id @default(cuid())
+  businessId     String
+  goal           String? @db.Text
+  audience       String? @db.Text
+  channels       String? @db.Text
+  contentPillars String? @db.Text
+  leadMagnet     String? @db.Text
+  campaign       String? @db.Text
+  cta            String?
+  metrics        String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// SALES SCRIPT BUILDER (spec Prompt 10): the 6 spec script types, each
+/// generated from a structured starter template (same template-not-AI
+/// approach as Phase 6's Document Generator) and then freely
+/// editable/saveable per business.
+enum SalesScriptType {
+  DISCOVERY_CALL
+  SALES_CALL
+  DM_RESPONSE
+  FOLLOW_UP
+  OBJECTION_HANDLING
+  CLOSING
+}
+
+model SalesScript {
+  id         String          @id @default(cuid())
+  businessId String
+  type       SalesScriptType
+  title      String
+  content    String          @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, type])
+}
+
+/// CONTENT PLANNER (spec Prompt 10).
+enum ContentCadence {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ContentStatus {
+  IDEA
+  DRAFTED
+  SCHEDULED
+  POSTED
+}
+
+model ContentPlanItem {
+  id          String         @id @default(cuid())
+  businessId  String
+  cadence     ContentCadence @default(WEEKLY)
+  idea        String         @db.Text
+  platform    String?
+  status      ContentStatus  @default(IDEA)
+  cta         String?
+  plannedDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, cadence, status])
 }

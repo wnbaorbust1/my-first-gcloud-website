@@ -100,34 +100,44 @@ export async function getDashboardData(userId: string) {
       }),
     ) as Record<Stage, { completed: number; total: number; percent: number }>;
 
-  const [goal, lastAttendedRegistration, upcomingRegisteredRegistration, recommendedUpcoming, milestones] =
-    await Promise.all([
-      prisma.goal.findFirst({
-        where: { businessId: business.id, status: "ACTIVE" },
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.sessionRegistration.findFirst({
-        where: { businessId: business.id, status: { in: ["ATTENDED", "COMPLETED"] } },
-        orderBy: { checkedInAt: "desc" },
-        include: { session: true },
-      }),
-      prisma.sessionRegistration.findFirst({
-        where: {
-          businessId: business.id,
-          status: "REGISTERED",
-          session: { startsAt: { gte: new Date() } },
-        },
-        orderBy: { session: { startsAt: "asc" } },
-        include: { session: true },
-      }),
-      assessment.recommendedSessionType
-        ? getUpcomingSessions(assessment.recommendedSessionType)
-        : Promise.resolve([]),
-      prisma.businessMilestone.findMany({
-        where: { businessId: business.id },
-        orderBy: { achievedAt: "desc" },
-      }),
-    ]);
+  const [
+    goal,
+    lastAttendedRegistration,
+    upcomingRegisteredRegistration,
+    recommendedUpcoming,
+    milestones,
+    openLeads,
+  ] = await Promise.all([
+    prisma.goal.findFirst({
+      where: { businessId: business.id, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.sessionRegistration.findFirst({
+      where: { businessId: business.id, status: { in: ["ATTENDED", "COMPLETED"] } },
+      orderBy: { checkedInAt: "desc" },
+      include: { session: true },
+    }),
+    prisma.sessionRegistration.findFirst({
+      where: {
+        businessId: business.id,
+        status: "REGISTERED",
+        session: { startsAt: { gte: new Date() } },
+      },
+      orderBy: { session: { startsAt: "asc" } },
+      include: { session: true },
+    }),
+    assessment.recommendedSessionType
+      ? getUpcomingSessions(assessment.recommendedSessionType)
+      : Promise.resolve([]),
+    prisma.businessMilestone.findMany({
+      where: { businessId: business.id },
+      orderBy: { achievedAt: "desc" },
+    }),
+    prisma.lead.findMany({
+      where: { businessId: business.id, stage: { notIn: ["WON", "LOST"] } },
+      select: { valueCents: true },
+    }),
+  ]);
 
   const milestoneSnapshot = {
     achievedCount: milestones.length,
@@ -137,6 +147,11 @@ export async function getDashboardData(userId: string) {
       label: MILESTONE_CATALOG.find((c) => c.key === m.milestone)?.label ?? m.milestone,
       achievedAt: m.achievedAt,
     })),
+  };
+
+  const toolsSnapshot = {
+    openLeadCount: openLeads.length,
+    openPipelineCents: openLeads.reduce((sum, l) => sum + (l.valueCents ?? 0), 0),
   };
 
   const recentWins = tasks
@@ -158,6 +173,7 @@ export async function getDashboardData(userId: string) {
     recommendedUpcomingSession: recommendedUpcoming[0] ?? null,
     recentWins,
     milestoneSnapshot,
+    toolsSnapshot,
   };
 }
 

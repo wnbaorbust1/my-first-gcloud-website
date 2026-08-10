@@ -1,4 +1,5 @@
 import {
+  Briefcase,
   CalendarDays,
   CheckCircle2,
   Circle,
@@ -21,6 +22,7 @@ import { StageBadge } from "@/components/ui/stage-badge";
 import { TaskCard, type TaskPriority } from "@/components/ui/task-card";
 import { sessionLabelFor } from "@/lib/assessment/scoring";
 import { getDashboardData } from "@/lib/dashboard/data";
+import { formatCents } from "@/lib/money";
 import { requireUser } from "@/lib/session";
 import { STAGES, STAGE_META, type Stage } from "@/lib/utils";
 
@@ -564,6 +566,37 @@ export default async function DashboardPage() {
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href="/money">Money Tools</Link>
+          </Button>
+        </div>
+      </Card>
+
+      {/* Advanced Business Tools (spec Prompt 10) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Advanced Tools</CardTitle>
+            <Link href="/tools" className="text-xs font-medium text-navy-500 underline hover:text-navy-800">
+              View All
+            </Link>
+          </div>
+        </CardHeader>
+        <p className="text-sm text-navy-800">
+          {data.toolsSnapshot.openLeadCount === 0
+            ? "CRM, SOPs, Automation, Offers, Marketing, Scripts, and Content Planning are ready when you are."
+            : `${data.toolsSnapshot.openLeadCount} open lead${data.toolsSnapshot.openLeadCount === 1 ? "" : "s"} in your pipeline — ${formatCents(data.toolsSnapshot.openPipelineCents)} potential.`}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/tools/crm">
+              <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
+              CRM
+            </Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/tools/offers">Offer Builder</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/tools">All Tools</Link>
           </Button>
         </div>
       </Card>
