@@ -68,6 +68,16 @@ export async function assertBusinessAccess(
       select: { id: true },
     });
     if (assignment) return true;
+
+    // Also grant access when this facilitator is running a session the
+    // business has registered for — they don't need a standing
+    // FacilitatorAssignment just to mark attendance / write a note on
+    // someone in their own session roster.
+    const runsASessionForThisBusiness = await prisma.sessionRegistration.findFirst({
+      where: { businessId, session: { facilitatorId: userId } },
+      select: { id: true },
+    });
+    if (runsASessionForThisBusiness) return true;
   }
 
   const membership = await prisma.userBusinessMembership.findUnique({

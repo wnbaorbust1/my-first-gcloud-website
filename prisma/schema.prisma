@@ -64,11 +64,13 @@ model User {
   facilitatorAssignments  FacilitatorAssignment[] @relation("FacilitatorUser")
   facilitatorNotesWritten FacilitatorNote[]       @relation("FacilitatorNoteAuthor")
 
-  sessionRegistrations SessionRegistration[]
-  goals                Goal[]
-  notifications        Notification[]
-  subscriptions        Subscription[]
-  auditLogs            AuditLog[]
+  sessionRegistrations        SessionRegistration[]
+  sessionsFacilitated         SessionOffering[]     @relation("SessionFacilitator")
+  postSessionSummariesWritten PostSessionSummary[]  @relation("PostSessionSummaryAuthor")
+  goals                       Goal[]
+  notifications               Notification[]
+  subscriptions               Subscription[]
+  auditLogs                   AuditLog[]
 
   @@index([role])
 }
@@ -193,6 +195,16 @@ model Business {
   websiteStatus           String?
   registrationStatus      String?
 
+  /// Blueprint Builder Dashboard unlock flags (spec Prompt 3: "Create
+  /// proper data logic such as builder_access_eligible,
+  /// session_completed_at, qualifying_session_id"). Set together, in one
+  /// place — see src/lib/sessions/qualification.ts — when a facilitator/
+  /// admin marks a registration ATTENDED or COMPLETED. Never set by
+  /// billing; billing isn't implemented yet.
+  builderAccessEligible           Boolean   @default(false)
+  sessionCompletedAt              DateTime?
+  qualifyingSessionRegistrationId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -206,6 +218,9 @@ model Business {
   sessionRegistrations   SessionRegistration[]
   facilitatorAssignments FacilitatorAssignment[]
   facilitatorNotes       FacilitatorNote[]
+  postSessionSummaries   PostSessionSummary[]
+
+  qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
   @@index([status])
 }
@@ -426,31 +441,70 @@ enum SessionOfferingStatus {
   COMPLETED
 }
 
+enum SessionFormat {
+  VIRTUAL
+  IN_PERSON
+}
+
+/// A bookable instance of a session. `sessionType` is the closed set the
+/// assessment's recommendation engine matches against
+/// (RecommendedSessionType); Blueprint Passion/Power/Legacy sessions are
+/// just SessionOffering rows with that type. "Architecture must support
+/// unlimited future session types" (spec) is handled by NOT restricting
+/// titles/content to those three — an admin can create any number of
+/// differently-titled sessions under the same sessionType, or (in a
+/// future phase) this field could grow beyond the enum without touching
+/// registration/attendance logic, which only cares about the offering id.
 model SessionOffering {
-  id             String                @id @default(cuid())
-  organizationId String?
-  title          String
-  description    String?               @db.Text
-  stage          BlueprintStage?
-  status         SessionOfferingStatus @default(DRAFT)
-  startsAt       DateTime
-  endsAt         DateTime?
-  location       String?
-  capacity       Int?
+  id                      String                 @id @default(cuid())
+  organizationId          String?
+  sessionType             RecommendedSessionType
+  title                   String
+  description             String?                @db.Text
+  whoShouldAttend         String?                @db.Text
+  topics                  Json? // string[]
+  learningOutcomes        Json? // string[]
+  whatYoullBuild          String?                @db.Text
+  whatToBring             String?                @db.Text
+  preparationInstructions String?                @db.Text
+  resources               Json? // [{ "title": "...", "url": "..." }]
+
+  status      SessionOfferingStatus @default(DRAFT)
+  format      SessionFormat         @default(VIRTUAL)
+  startsAt    DateTime
+  endsAt      DateTime?
+  timezone    String                @default("America/New_York")
+  location    String?
+  virtualLink String?
+
+  capacity             Int?
+  priceCents           Int?
+  registrationDeadline DateTime?
+  facilitatorId        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization  Organization?         @relation(fields: [organizationId], references: [id])
+  facilitator   User?                 @relation("SessionFacilitator", fields: [facilitatorId], references: [id])
   registrations SessionRegistration[]
+  summaries     PostSessionSummary[]
 
   @@index([status, startsAt])
+  @@index([sessionType])
 }
 
+/// One lifecycle status per registration (spec: "Track: Registered,
+/// Waitlisted, Cancelled, Attended, No-Show, Completed") rather than a
+/// separate Attendance model — avoids two overlapping status concepts
+/// that could drift out of sync.
 enum RegistrationStatus {
   REGISTERED
   WAITLISTED
   CANCELLED
+  ATTENDED
+  NO_SHOW
+  COMPLETED
 }
 
 model SessionRegistration {
@@ -460,35 +514,55 @@ model SessionRegistration {
   businessId String?
   status     RegistrationStatus @default(REGISTERED)
 
+  /// Position in the waitlist queue at the time the member joined it
+  /// (null once REGISTERED). Not re-flowed when someone ahead cancels —
+  /// good enough for "You're #N on the waitlist" display in this phase.
+  waitlistPosition Int?
+
+  checkedInAt     DateTime?
+  attendanceNotes String?   @db.Text
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  session    SessionOffering @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business   Business?       @relation(fields: [businessId], references: [id])
-  attendance Attendance?
+  session              SessionOffering     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business             Business?           @relation(fields: [businessId], references: [id])
+  facilitatorNotes     FacilitatorNote[]
+  postSessionSummary   PostSessionSummary?
+  qualifiesForBusiness Business[]          @relation("QualifyingSessionRegistration")
 
   @@unique([sessionId, userId])
   @@index([userId])
+  @@index([sessionId, status])
 }
 
-enum AttendanceStatus {
-  ATTENDED
-  NO_SHOW
-  EXCUSED
-}
+/// Structured record generated after a qualifying session (spec POST-
+/// SESSION SUMMARY). Facilitator/admin-editable; not AI-generated yet.
+model PostSessionSummary {
+  id                    String  @id @default(cuid())
+  sessionRegistrationId String  @unique
+  sessionId             String
+  businessId            String
+  facilitatorId         String?
 
-model Attendance {
-  id             String           @id @default(cuid())
-  registrationId String           @unique
-  status         AttendanceStatus @default(ATTENDED)
-  checkedInAt    DateTime?
-  notes          String?          @db.Text
+  top3Priorities           Json // string[]
+  goal30Day                String?                 @db.Text
+  goal60Day                String?                 @db.Text
+  goal90Day                String?                 @db.Text
+  recommendedTasks         Json? // string[]
+  recommendedResources     Json? // string[]
+  nextSuggestedSessionType RecommendedSessionType?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  registration SessionRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registration SessionRegistration @relation(fields: [sessionRegistrationId], references: [id], onDelete: Cascade)
+  session      SessionOffering     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  business     Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  facilitator  User?               @relation("PostSessionSummaryAuthor", fields: [facilitatorId], references: [id])
+
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------
@@ -678,20 +752,33 @@ model FacilitatorAssignment {
   @@index([businessId])
 }
 
+/// spec: "Allow facilitator to create: Private Notes, Participant-Visible
+/// Notes, Recommendations, Assigned Priority, Custom Task Recommendation."
+enum FacilitatorNoteType {
+  PRIVATE
+  PARTICIPANT_VISIBLE
+  RECOMMENDATION
+  TASK_RECOMMENDATION
+}
+
 model FacilitatorNote {
-  id         String  @id @default(cuid())
-  authorId   String
-  businessId String
-  note       String  @db.Text
-  isPrivate  Boolean @default(true)
+  id                    String              @id @default(cuid())
+  authorId              String
+  businessId            String
+  sessionRegistrationId String?
+  noteType              FacilitatorNoteType @default(PRIVATE)
+  note                  String              @db.Text
+  assignedPriority      TaskPriority?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  author   User     @relation("FacilitatorNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  author       User                 @relation("FacilitatorNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  registration SessionRegistration? @relation(fields: [sessionRegistrationId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
+  @@index([sessionRegistrationId])
 }
 
 // ---------------------------------------------------------------------------

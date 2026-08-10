@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 2: Blueprint Business Assessment + Scoring_
+_Last updated: 2026-08-10 — Phase 3: Session System + Registration + Attendance_
 
 ## COMPLETE
 
@@ -118,20 +118,94 @@ _Last updated: 2026-08-10 — Phase 2: Blueprint Business Assessment + Scoring_
   completed assessments are never deleted, so reassessment (a future
   "retake" entry point) won't erase history.
 
+---
+
+### Phase 3 — Session System, Registration, Attendance
+
+**Session content**
+- `SessionOffering` extended with every spec field (who should attend,
+  topics, learning outcomes, what you'll build, what to bring, prep
+  instructions, resources, format/location/virtual link, timezone,
+  price, facilitator, registration deadline) plus a `sessionType`
+  (`RecommendedSessionType`: PASSION/POWER/LEGACY/GROWTH) matching the
+  assessment's recommendation output.
+- 4 session templates × 2 upcoming dated instances, idempotently
+  self-seeded on first visit to `/sessions` (same lazy pattern as
+  assessment content) — Blueprint Passion/Power/Legacy Sessions (spec)
+  plus a Growth session for the GROWTH recommendation branch.
+  "Architecture must support unlimited future session types" is handled
+  by not constraining title/content to those four — any number of
+  differently-titled offerings can share one `sessionType`.
+
+**Registration, waitlist, attendance**
+- `SessionRegistration.status` is one lifecycle enum — REGISTERED,
+  WAITLISTED, CANCELLED, ATTENDED, NO_SHOW, COMPLETED — replacing the
+  separate `Attendance` model from Phase 1 (never used, would have let
+  the two statuses drift out of sync).
+- `src/lib/sessions/qualification.ts`: `registerForSession` waitlists
+  automatically once capacity is full and stores queue position;
+  `cancelRegistration` promotes the longest-waiting waitlisted member
+  into a freed seat. Both verified live: a capacity-1 session correctly
+  waitlisted a second registrant at position 1, and cancelling the first
+  promoted the second to REGISTERED.
+- `markAttendance` is the **only** place `Business.builderAccessEligible`
+  / `sessionCompletedAt` / `qualifyingSessionRegistrationId` get written
+  — set together, in one transaction, only when a facilitator/admin marks
+  a registration ATTENDED or COMPLETED. Verified live: marking one
+  business's registration ATTENDED unlocked it while an unrelated
+  business with no attended session stayed locked.
+
+**Member session page**
+- `/sessions`: recommended session shown first (why it was recommended,
+  description, what you'll learn/build, what to bring, available dates)
+  above an "Other Sessions" list grouped by type. Register / Join
+  Waitlist / cancel are real, working actions against real capacity.
+
+**Facilitator participant view & notes**
+- `/facilitator/participants`: every business a facilitator is either
+  assigned to (`FacilitatorAssignment`) or is running a session for
+  (`SessionOffering.facilitatorId`) — with real assessment scores,
+  top strengths/priorities, primary goal/challenge, recommended session,
+  and their session registrations with an inline attendance control.
+- `FacilitatorNote` extended with `noteType` (Private / Participant-
+  Visible / Recommendation / Task Recommendation) and `assignedPriority`,
+  replacing the old single `isPrivate` boolean; addable from the
+  participant view.
+
+**Post-session summary**
+- New `PostSessionSummary` model + `/facilitator/participants/summary/[registrationId]`
+  editor: top 3 priorities, 30/60/90-day goals, recommended tasks and
+  resources, next suggested session — facilitator/admin-editable, no AI.
+
+**Authorization fix found by live testing:** `assertBusinessAccess`
+originally only granted a facilitator access via a standing
+`FacilitatorAssignment` row, which meant a facilitator running a session
+could *see* a participant (the participant-list query already checked
+both paths) but got a 403 trying to mark their attendance. Fixed by
+extending `assertBusinessAccess` itself to also recognize "this
+facilitator runs a session this business registered for," so every route
+that depends on it (attendance, notes, summary) is consistent with what
+the UI shows. Verified: a member cannot mark their own attendance, edit
+someone else's summary, or read another business's summary — all 403.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 or Phase 2.
+- Nothing left mid-implementation from Phase 1, 2, or 3.
 
 ## NOT STARTED
 
-- Session registration/attendance, facilitator participant view,
-  post-session summaries (next phase).
 - Personalized Roadmap generation, Business Builder activities, Blueprint
-  AI, My Blueprint binder, Goals UI, Resources library.
+  AI, My Blueprint binder, Goals UI, Resources library, Progress story
+  (next phase covers the dashboard shell around these).
 - Admin/Facilitator functionality beyond role-gated placeholder shells
-  (including any admin UI to edit `AssessmentScoringConfig` — the data
-  model supports it, no UI yet).
+  and the participant view built this phase (no admin UI yet to edit
+  `AssessmentScoringConfig`, create `SessionOffering`s, or assign
+  `FacilitatorAssignment`s — all three are real data operations today,
+  just not yet exposed with a form).
 - Billing. Transactional email (see Known Issues).
+- A member-facing view of their own Post-Session Summary (facilitators
+  can create/edit it and the member can already `GET` it via the API as
+  its owner; there's no page rendering it for them yet).
 
 ## KNOWN ISSUES
 
@@ -155,9 +229,41 @@ _Last updated: 2026-08-10 — Phase 2: Blueprint Business Assessment + Scoring_
    unless *all three* also clear `excellenceThreshold` (default 85), in
    which case recommend a general GROWTH session. Documented here and in
    `src/lib/assessment/scoring.ts` so it's easy to revise.
+6. **Correcting a mis-marked attendance doesn't revoke Builder access.**
+   Once `builderAccessEligible` flips true it stays true even if a
+   facilitator later changes ATTENDED back to NO_SHOW — documented in
+   `src/lib/sessions/qualification.ts`. Revisit if this becomes a real
+   workflow need.
+7. **No UI yet to create a `SessionOffering`, assign a
+   `FacilitatorAssignment`, or set `SessionOffering.facilitatorId`.**
+   This phase's tests set these via direct DB writes to exercise the
+   registration/attendance/participant-view logic; an admin content tool
+   is the natural next home for them.
+8. **Seat counts are computed, not cached.** `getSeatsRemaining` counts
+   REGISTERED rows on every read rather than maintaining a denormalized
+   counter on `SessionOffering` — simpler and always correct, at the cost
+   of an extra query per session shown. Fine at this scale; revisit if a
+   session list ever needs to render hundreds of offerings at once.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810181044_sessions_registration_attendance`.
+  - `SessionOffering`: added `sessionType` (new enum
+    `RecommendedSessionType`, replacing the unused `stage` field),
+    `whoShouldAttend`, `topics`, `learningOutcomes`, `whatYoullBuild`,
+    `whatToBring`, `preparationInstructions`, `resources`, `format` (new
+    enum `SessionFormat`), `timezone`, `virtualLink`, `priceCents`,
+    `registrationDeadline`, `facilitatorId`.
+  - `SessionRegistration`: `RegistrationStatus` gained `ATTENDED`,
+    `NO_SHOW`, `COMPLETED`; added `waitlistPosition`, `checkedInAt`,
+    `attendanceNotes`.
+  - Removed the `Attendance` model (merged into `SessionRegistration`,
+    see Phase 3 summary above).
+  - `FacilitatorNote`: added `sessionRegistrationId`, `noteType` (new
+    enum `FacilitatorNoteType`), `assignedPriority`; removed `isPrivate`.
+  - New model `PostSessionSummary`.
+  - `Business`: added `builderAccessEligible`, `sessionCompletedAt`,
+    `qualifyingSessionRegistrationId`.
 - New migration: `prisma/migrations/20260810175322_assessment_scoring`.
 - `AssessmentQuestion` gained `category`, `questionType` (new enum
   `QuestionType`), `options` (Json, choice questions), `minValue`/
@@ -206,11 +312,27 @@ _Last updated: 2026-08-10 — Phase 2: Blueprint Business Assessment + Scoring_
   one question counts the same as one with several, so breadth across
   categories matters more than depth in any single one.
 
+## IMPORTANT DECISIONS (Phase 3 additions)
+
+- **One registration status enum instead of a separate Attendance
+  model.** See Phase 3 summary — avoids two status concepts that could
+  disagree about whether someone attended.
+- **`markAttendance` is the single writer of the Builder-unlock fields.**
+  Anything that needs to know "why is this business unlocked" can trace
+  it to one registration via `qualifyingSessionRegistrationId`, instead
+  of unlock logic being duplicated wherever attendance might be marked.
+- **Facilitator access = assigned OR running the session**, checked in
+  `assertBusinessAccess` itself (not just the participant-list query) so
+  every route behind that check — attendance, notes, summaries — agrees
+  with what the UI shows a facilitator they can do.
+
 ## NEXT RECOMMENDED PHASE
 
-Build the **Blueprint Session system**: session offerings, member
-registration/waitlist, facilitator attendance marking, and the
-qualifying-session unlock flag — so a completed assessment's recommended
-session becomes something a member can actually register for, and
-attendance becomes the gate for the post-session Blueprint Builder
-dashboard.
+Build the **Personalized Blueprint Builder Dashboard**: generate an
+initial Roadmap (from `TaskTemplate`s) the moment a business's
+`builderAccessEligible` flips true, then rebuild `/dashboard` to show the
+pre-session state (assessment → registration → attendance checklist) for
+locked businesses and the full Builder dashboard (Next Best Action,
+Today's Blueprint, stage progress, roadmap snapshot, goal snapshot,
+session info, recent wins) for unlocked ones — all from real data, no
+placeholders passing as content.

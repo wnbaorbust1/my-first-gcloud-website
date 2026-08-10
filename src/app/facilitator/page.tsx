@@ -1,16 +1,23 @@
 import { Users } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const metadata: Metadata = { title: "Facilitator Dashboard — Blueprint" };
 
 export default function FacilitatorDashboardPage() {
   return (
-    <ComingSoon
+    <EmptyState
       icon={Users}
-      title="Facilitator Dashboard"
-      description="Your assigned participants, their progress, and session rosters will appear here in a future phase."
+      title="See your participants"
+      description="Assessment scores, session registrations, and attendance for everyone assigned to you or registered in a session you're facilitating."
+      action={
+        <Button asChild size="sm">
+          <Link href="/facilitator/participants">View Participants</Link>
+        </Button>
+      }
     />
   );
 }
