@@ -1,0 +1,666 @@
+// Blueprint Business Growth OS — core database schema.
+//
+// This is the Phase 1 (foundation) schema: it establishes every core entity
+// named in /docs/BLUEPRINT_MASTER_SPEC.md so later phases (assessment,
+// sessions, roadmap, Business Builder, Blueprint AI, billing) can extend it
+// without a rewrite. Fields for those later phases are intentionally kept
+// minimal — this is not the final shape of any given module, only enough
+// structure to unblock navigation, auth, and the business-profile flow.
+//
+// NOTE on enums: Postgres enums are used for closed, code-referenced sets
+// (Role, business status, session status, etc.). Open-ended categorical
+// fields that product/content will likely extend (industry, business
+// stage, revenue range, etc.) are modeled as `String` with app-level (zod)
+// validation instead, so adding a new option never requires a migration.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth & Users
+// ---------------------------------------------------------------------------
+
+/// Platform-wide roles. See docs/BLUEPRINT_MASTER_SPEC.md Task 4 for the
+/// permission model. IMPLEMENTATION_SPECIALIST is reserved for a future
+/// phase — the authorization system (src/lib/rbac.ts) already accounts for
+/// it so adding it later is additive, not a rewrite.
+enum Role {
+  MEMBER
+  FACILITATOR
+  ADMIN
+  SUPER_ADMIN
+  // Reserved for a future phase — see src/lib/rbac.ts
+  IMPLEMENTATION_SPECIALIST
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  role          Role      @default(MEMBER)
+  image         String?
+  phone         String?
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+
+  businessMemberships UserBusinessMembership[]
+  organizationMembers OrganizationMembership[]
+
+  facilitatorAssignments  FacilitatorAssignment[] @relation("FacilitatorUser")
+  facilitatorNotesWritten FacilitatorNote[]       @relation("FacilitatorNoteAuthor")
+
+  sessionRegistrations SessionRegistration[]
+  goals                Goal[]
+  notifications        Notification[]
+  subscriptions        Subscription[]
+  auditLogs            AuditLog[]
+
+  @@index([role])
+}
+
+/// OAuth account link (e.g. Google). Architected now per Task 3 even
+/// though only the Credentials provider is enabled in this phase.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Organizations (facilitator / program-provider level grouping)
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id     String @id @default(cuid())
+  name   String
+  status String @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  OrganizationMembership[]
+  sessions SessionOffering[]
+
+  @@index([status])
+}
+
+model OrganizationMembership {
+  id             String @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String @default("MEMBER")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Businesses
+// ---------------------------------------------------------------------------
+
+/// A member-owned business profile. Task 6: one User may (eventually) own
+/// or collaborate on multiple Businesses via UserBusinessMembership; every
+/// stage-specific entity (assessment, roadmap, blueprint, goals) hangs off
+/// a single Business, not the User, so multi-business support requires no
+/// structural change later.
+model Business {
+  id     String @id @default(cuid())
+  name   String
+  status String @default("ACTIVE")
+
+  industry                String?
+  description             String? @db.Text
+  website                 String?
+  location                String?
+  businessStage           String?
+  yearsInBusiness         String?
+  annualRevenueRange      String?
+  monthlyRevenueRange     String?
+  numberOfEmployees       String?
+  primaryProductOrService String? @db.Text
+  idealCustomer           String? @db.Text
+  primaryChallenge        String? @db.Text
+  primaryGoal             String? @db.Text
+  hoursAvailablePerWeek   String?
+  crmUsed                 String?
+  websiteStatus           String?
+  registrationStatus      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships UserBusinessMembership[]
+
+  assessments Assessment[]
+  roadmaps    Roadmap[]
+  goals       Goal[]
+  documents   Document[]
+
+  sessionRegistrations   SessionRegistration[]
+  facilitatorAssignments FacilitatorAssignment[]
+  facilitatorNotes       FacilitatorNote[]
+
+  @@index([status])
+}
+
+enum BusinessMembershipRole {
+  OWNER
+  COLLABORATOR
+}
+
+model UserBusinessMembership {
+  id         String                 @id @default(cuid())
+  userId     String
+  businessId String
+  role       BusinessMembershipRole @default(OWNER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Assessments (Passion / Power / Legacy)
+// ---------------------------------------------------------------------------
+
+enum BlueprintStage {
+  PASSION
+  POWER
+  LEGACY
+}
+
+enum AssessmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model Assessment {
+  id         String           @id @default(cuid())
+  businessId String
+  status     AssessmentStatus @default(NOT_STARTED)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business  Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses AssessmentResponse[]
+  scores    AssessmentScore[]
+
+  @@index([businessId])
+}
+
+model AssessmentQuestion {
+  id         String         @id @default(cuid())
+  stage      BlueprintStage
+  order      Int
+  prompt     String         @db.Text
+  helperText String?        @db.Text
+  isActive   Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  responses AssessmentResponse[]
+
+  @@index([stage, order])
+}
+
+model AssessmentResponse {
+  id           String @id @default(cuid())
+  assessmentId String
+  questionId   String
+  value        Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question   AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, questionId])
+  @@index([questionId])
+}
+
+model AssessmentScore {
+  id           String         @id @default(cuid())
+  assessmentId String
+  stage        BlueprintStage
+  scorePercent Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, stage])
+  @@index([assessmentId])
+}
+
+// ---------------------------------------------------------------------------
+// Sessions (facilitator-led sessions members register/attend)
+// ---------------------------------------------------------------------------
+
+enum SessionOfferingStatus {
+  DRAFT
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+model SessionOffering {
+  id             String                @id @default(cuid())
+  organizationId String?
+  title          String
+  description    String?               @db.Text
+  stage          BlueprintStage?
+  status         SessionOfferingStatus @default(DRAFT)
+  startsAt       DateTime
+  endsAt         DateTime?
+  location       String?
+  capacity       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization  Organization?         @relation(fields: [organizationId], references: [id])
+  registrations SessionRegistration[]
+
+  @@index([status, startsAt])
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  WAITLISTED
+  CANCELLED
+}
+
+model SessionRegistration {
+  id         String             @id @default(cuid())
+  sessionId  String
+  userId     String
+  businessId String?
+  status     RegistrationStatus @default(REGISTERED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session    SessionOffering @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business?       @relation(fields: [businessId], references: [id])
+  attendance Attendance?
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+}
+
+enum AttendanceStatus {
+  ATTENDED
+  NO_SHOW
+  EXCUSED
+}
+
+model Attendance {
+  id             String           @id @default(cuid())
+  registrationId String           @unique
+  status         AttendanceStatus @default(ATTENDED)
+  checkedInAt    DateTime?
+  notes          String?          @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  registration SessionRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Roadmap / Business Builder
+// ---------------------------------------------------------------------------
+
+enum RoadmapStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Roadmap {
+  id         String        @id @default(cuid())
+  businessId String
+  status     RoadmapStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tasks    RoadmapTask[]
+
+  @@index([businessId])
+}
+
+enum TaskStatus {
+  LOCKED
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum TaskPriority {
+  MUST_DO
+  SHOULD_DO
+  BONUS
+}
+
+model TaskTemplate {
+  id            String         @id @default(cuid())
+  stage         BlueprintStage
+  title         String
+  description   String?        @db.Text
+  estimatedMins Int?
+  order         Int
+  isActive      Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmapTasks RoadmapTask[]
+
+  @@index([stage, order])
+}
+
+model RoadmapTask {
+  id             String         @id @default(cuid())
+  roadmapId      String
+  taskTemplateId String?
+  stage          BlueprintStage
+  title          String
+  description    String?        @db.Text
+  status         TaskStatus     @default(NOT_STARTED)
+  priority       TaskPriority   @default(SHOULD_DO)
+  estimatedMins  Int?
+  order          Int            @default(0)
+  completedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmap      Roadmap        @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  taskTemplate TaskTemplate?  @relation(fields: [taskTemplateId], references: [id])
+  responses    TaskResponse[]
+
+  @@index([roadmapId, status])
+}
+
+model TaskResponse {
+  id            String @id @default(cuid())
+  roadmapTaskId String
+  content       String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmapTask RoadmapTask @relation(fields: [roadmapTaskId], references: [id], onDelete: Cascade)
+
+  @@index([roadmapTaskId])
+}
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  businessId  String
+  userId      String
+  title       String
+  description String?    @db.Text
+  targetDate  DateTime?
+  status      GoalStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// My Blueprint (business binder) & Resources
+// ---------------------------------------------------------------------------
+
+model Document {
+  id         String @id @default(cuid())
+  businessId String
+  title      String
+  kind       String @default("BLUEPRINT")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sections DocumentSection[]
+
+  @@index([businessId])
+}
+
+model DocumentSection {
+  id         String          @id @default(cuid())
+  documentId String
+  stage      BlueprintStage?
+  title      String
+  content    String?         @db.Text
+  order      Int             @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, order])
+}
+
+model Resource {
+  id          String          @id @default(cuid())
+  title       String
+  description String?         @db.Text
+  url         String?
+  stage       BlueprintStage?
+  category    String?
+  isActive    Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stage])
+}
+
+// ---------------------------------------------------------------------------
+// Facilitator relationships
+// ---------------------------------------------------------------------------
+
+model FacilitatorAssignment {
+  id            String @id @default(cuid())
+  facilitatorId String
+  businessId    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  facilitator User     @relation("FacilitatorUser", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([facilitatorId, businessId])
+  @@index([businessId])
+}
+
+model FacilitatorNote {
+  id         String  @id @default(cuid())
+  authorId   String
+  businessId String
+  note       String  @db.Text
+  isPrivate  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User     @relation("FacilitatorNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id     String    @id @default(cuid())
+  userId String
+  title  String
+  body   String?   @db.Text
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// Subscriptions (billing not implemented yet — see BUILD_STATUS.md)
+// ---------------------------------------------------------------------------
+
+enum SubscriptionPlan {
+  FREE_MONTH
+  MONTHLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+model Subscription {
+  id     String             @id @default(cuid())
+  userId String
+  plan   SubscriptionPlan   @default(FREE_MONTH)
+  status SubscriptionStatus @default(NONE)
+
+  trialEndsAt         DateTime?
+  currentPeriodEndsAt DateTime?
+  cancelledAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+}

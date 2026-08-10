@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/*
+ * Blueprint design tokens.
+ * Source of truth: /docs/BLUEPRINT_MASTER_SPEC.md, "Blueprint Visual
+ * Experience Directive" — sections 2 (Brand Color System) and 31
+ * (Typography). Every color a Blueprint screen uses should resolve back
+ * to one of these tokens rather than an ad-hoc Tailwind gray/blue/etc.
+ *
+ * The directive calls for warm, light backgrounds (not a dark-mode admin
+ * panel), so Blueprint intentionally ships one considered light theme
+ * instead of following the OS color scheme.
+ */
+:root {
+  /* Global foundation */
+  --color-navy-50: #f2f4f8;
+  --color-navy-100: #e1e6ef;
+  --color-navy-200: #c1cadd;
+  --color-navy-300: #96a4c0;
+  --color-navy-400: #64769c;
+  --color-navy-500: #435378;
+  --color-navy-600: #2f3d5c;
+  --color-navy-700: #212b45;
+  --color-navy-800: #141a30;
+  --color-navy-900: #0c0f1f;
+
+  --color-cream-50: #fffdf9;
+  --color-cream-100: #fdf8ef;
+  --color-cream-200: #faf1e0;
+  --color-cream-300: #f3e6cc;
+  --color-cream-400: #e8d5ab;
+
+  --color-gold-50: #fdf8ec;
+  --color-gold-100: #f9edc9;
+  --color-gold-200: #f1da92;
+  --color-gold-300: #e5c05e;
+  --color-gold-400: #d4a938;
+  --color-gold-500: #b8862a;
+  --color-gold-600: #966a20;
+  --color-gold-700: #74521c;
+
+  /* Passion — pink / magenta */
+  --color-passion-50: #fdf1f6;
+  --color-passion-100: #fbdfeb;
+  --color-passion-200: #f6bdd8;
+  --color-passion-300: #ee8fbd;
+  --color-passion-400: #e35a9c;
+  --color-passion-500: #d1327d;
+  --color-passion-600: #ab2166;
+  --color-passion-700: #841853;
+  --color-passion-800: #5c1139;
+
+  /* Power — orange / warm gold */
+  --color-power-50: #fef6ec;
+  --color-power-100: #fce8cc;
+  --color-power-200: #f8cd93;
+  --color-power-300: #f2ab5c;
+  --color-power-400: #ea8a2e;
+  --color-power-500: #d16f16;
+  --color-power-600: #a8570f;
+  --color-power-700: #7e410e;
+  --color-power-800: #562c0b;
+
+  /* Legacy — royal purple */
+  --color-legacy-50: #f5f1fb;
+  --color-legacy-100: #e7dbf5;
+  --color-legacy-200: #cdb2e9;
+  --color-legacy-300: #ab84d9;
+  --color-legacy-400: #8a5cc6;
+  --color-legacy-500: #6f3fac;
+  --color-legacy-600: #572f88;
+  --color-legacy-700: #402366;
+  --color-legacy-800: #2a1745;
+
+  /* Semantic surfaces */
+  --background: var(--color-cream-100);
+  --surface: #ffffff;
+  --surface-muted: var(--color-cream-50);
+  --foreground: var(--color-navy-800);
+  --foreground-muted: var(--color-navy-500);
+  --border-subtle: var(--color-navy-100);
+
+  /* Semantic feedback */
+  --color-success: #1f8a5f;
+  --color-success-bg: #ecf8f2;
+  --color-warning: #b8862a;
+  --color-warning-bg: #fdf8ec;
+  --color-danger: #c23b4c;
+  --color-danger-bg: #fdedef;
+  --color-info: var(--color-navy-500);
+  --color-info-bg: var(--color-navy-50);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border-subtle: var(--border-subtle);
+
+  --color-navy-50: var(--color-navy-50);
+  --color-navy-100: var(--color-navy-100);
+  --color-navy-200: var(--color-navy-200);
+  --color-navy-300: var(--color-navy-300);
+  --color-navy-400: var(--color-navy-400);
+  --color-navy-500: var(--color-navy-500);
+  --color-navy-600: var(--color-navy-600);
+  --color-navy-700: var(--color-navy-700);
+  --color-navy-800: var(--color-navy-800);
+  --color-navy-900: var(--color-navy-900);
+
+  --color-cream-50: var(--color-cream-50);
+  --color-cream-100: var(--color-cream-100);
+  --color-cream-200: var(--color-cream-200);
+  --color-cream-300: var(--color-cream-300);
+  --color-cream-400: var(--color-cream-400);
+
+  --color-gold-50: var(--color-gold-50);
+  --color-gold-100: var(--color-gold-100);
+  --color-gold-200: var(--color-gold-200);
+  --color-gold-300: var(--color-gold-300);
+  --color-gold-400: var(--color-gold-400);
+  --color-gold-500: var(--color-gold-500);
+  --color-gold-600: var(--color-gold-600);
+  --color-gold-700: var(--color-gold-700);
+
+  --color-passion-50: var(--color-passion-50);
+  --color-passion-100: var(--color-passion-100);
+  --color-passion-200: var(--color-passion-200);
+  --color-passion-300: var(--color-passion-300);
+  --color-passion-400: var(--color-passion-400);
+  --color-passion-500: var(--color-passion-500);
+  --color-passion-600: var(--color-passion-600);
+  --color-passion-700: var(--color-passion-700);
+  --color-passion-800: var(--color-passion-800);
+
+  --color-power-50: var(--color-power-50);
+  --color-power-100: var(--color-power-100);
+  --color-power-200: var(--color-power-200);
+  --color-power-300: var(--color-power-300);
+  --color-power-400: var(--color-power-400);
+  --color-power-500: var(--color-power-500);
+  --color-power-600: var(--color-power-600);
+  --color-power-700: var(--color-power-700);
+  --color-power-800: var(--color-power-800);
+
+  --color-legacy-50: var(--color-legacy-50);
+  --color-legacy-100: var(--color-legacy-100);
+  --color-legacy-200: var(--color-legacy-200);
+  --color-legacy-300: var(--color-legacy-300);
+  --color-legacy-400: var(--color-legacy-400);
+  --color-legacy-500: var(--color-legacy-500);
+  --color-legacy-600: var(--color-legacy-600);
+  --color-legacy-700: var(--color-legacy-700);
+  --color-legacy-800: var(--color-legacy-800);
+
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-danger: var(--color-danger);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-fraunces);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Keyboard-navigation accessibility (spec section 30). */
+:focus-visible {
+  outline: 2px solid var(--color-gold-500);
+  outline-offset: 2px;
+}
