@@ -11,8 +11,9 @@ II).
 This is a from-scratch rebuild, being built in phases.
 
 - **Phase 1** (done): project scaffold, design system, folder structure, Supabase client wiring.
-- **Phase 2** (done): authentication and the core database schema — see below.
-- Curriculum, gradebook, portfolios, billing, etc. land in later phases.
+- **Phase 2** (done): authentication and the core database schema.
+- **Phase 3** (done): the curriculum data model (units/weeks/lessons/TEKS) and a read-only browser UI — see below. No create/edit UI or AI generation yet.
+- Gradebook, portfolios, billing, etc. land in later phases.
 
 ## Tech stack
 
@@ -92,13 +93,21 @@ app/
   auth/callback/route.ts      OAuth + email-link code exchange (signup confirm, password reset)
   (app)/                      Route group: signed-in app chrome (<Shell>)
     dashboard/                 Protected placeholder — proves the auth wiring end-to-end
+    curriculum/                Course picker → per-course outline+lesson browser
+      page.tsx                  Course picker (cards)
+      [courseSlug]/layout.tsx    Fetches units+weeks, renders <CurriculumSpine> + children
+      [courseSlug]/page.tsx      Course overview ("select a week")
+      [courseSlug]/[weekNumber]/page.tsx             Week's lessons (Mon-Fri, ledger rows)
+      [courseSlug]/[weekNumber]/[dayNumber]/page.tsx  Lesson detail
 
 components/
   layout/                    Shell, NavRail — signed-in app chrome
   ui/                        Shared primitives (LedgerRow, StatusStamp, CourseTag)
   auth/                      LoginForm, SignupForm, ForgotPasswordForm, ResetPasswordForm,
                               GoogleSignInButton, SignOutButton, form primitives
-  curriculum/ assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
+  curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
+                              (course-scoped planner spine), LessonDetailView
+  assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
 
 lib/
   supabase/
@@ -115,16 +124,24 @@ lib/
     errors.ts                    Supabase AuthError → user-facing copy
     validation.ts                 Zod schemas for all four forms
     types.ts                      Shared Server Action state shape
+  curriculum/
+    queries.ts                  getCourseBySlug/getAllCourses/getCourseUnitsWithWeeks/
+                                 getWeekWithLessons/getLessonDetail — all RLS-only access control
+    constants.ts                 Segment order/labels, day labels, the 70-min/5-question constants
   utils.ts                    cn() class-merge helper
-  curriculum/ assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
+  assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
 
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
+  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks + composed types
+                                (UnitWithWeeks, WeekWithLessons, LessonDetail)
   index.ts                    Barrel export
 
 supabase/
   migrations/                 SQL migrations — profiles, courses, subscriptions,
-                               academic_calendars/calendar_days, auth_rate_limit_attempts
+                               academic_calendars/calendar_days, auth_rate_limit_attempts,
+                               teks, units, weeks, lessons/lesson_segments
+  seed.sql                    Local-dev-only demo curriculum content (not run against hosted projects)
   README.md                   Supabase CLI workflow notes
 
 middleware.ts                 Protects every route by default except an explicit public allowlist
@@ -195,9 +212,7 @@ RLS policies, not just "does it parse") before being committed.
 - **subscriptions** — `tier` / `status` / Stripe IDs / `course_ids`
   (which courses a subscription unlocks). Teachers can only read their
   own row; all writes are admin/service-role (Stripe webhooks land in the
-  billing phase). `has_course_access(course_id)` is defined now — not yet
-  called by any policy — so future curriculum-content tables can gate
-  reads with one line: `using (public.has_course_access(course_id))`.
+  billing phase). `has_course_access(course_id)` gates lesson reads below.
 - **academic_calendars** / **calendar_days** — one calendar per teacher
   per school year, with dated day types (regular/holiday/testing/
   early_release/block_day). RLS scopes both to their owning teacher.
@@ -208,6 +223,80 @@ RLS policies, not just "does it parse") before being committed.
 `is_admin()` is a `SECURITY DEFINER` helper every other policy calls
 instead of querying `profiles` directly — querying `profiles` from within
 `profiles`' own RLS policy would recurse.
+
+## Curriculum data model
+
+**Entities** (`units` → `weeks` → `lessons` → `lesson_segments`, plus the
+`teks` reference table):
+
+- **teks** — TEKS standard reference data (code/subject/description).
+  Seeded with a small illustrative sample per subject — clearly marked as
+  placeholder, not verified official text; a full import replaces it
+  later without a schema change.
+- **units** — a course's top-level groupings (`unit_number`, `title`,
+  `teks_focus_summary`). A unit's `course_id` is immutable after creation
+  (enforced by a trigger) — reorganizing *within* a course is a real
+  workflow, moving a unit to a different course isn't.
+- **weeks** — one row per school-year week (1-36), scoped to the
+  *course* (not the unit), so "week 12" means the same thing regardless
+  of which unit currently contains it. `course_id` is denormalized from
+  the parent unit by a trigger.
+- **lessons** — one 70-minute class period (`day_number` 1-5, Mon-Fri).
+  Holds the four gradual-release fields (`i_do`/`we_do`/
+  `you_do_together`/`you_do`), the five QSSSA fields, `homework` (capped
+  at 5 questions even in draft), `teks_ids` (validated against `teks` by
+  trigger — Postgres can't FK individual array elements), and `status`
+  (`draft`/`published`). `course_id` is denormalized from the parent week.
+- **lesson_segments** — the bell-to-bell schedule: `bell_ringer`,
+  `mini_lesson`, `modeling`, `activity`, `debrief`, `exit_ticket`, each
+  with a title/description/`duration_minutes`. A normalized child table
+  (not JSONB) so duration is a real, queryable, constrainable column.
+
+**The publish gate**: a lesson can only move to `status = 'published'`
+once it has all 6 segments totaling exactly 70 minutes, all four
+gradual-release fields, all five QSSSA fields, exactly 5 homework
+questions, and at least one TEKS code — enforced by a trigger on
+`lessons`. A second, `DEFERRABLE INITIALLY DEFERRED` constraint trigger
+on `lesson_segments` closes the other direction: once published, editing
+segments down to an invalid state is rejected too, but a single
+transaction can still delete-and-reinsert all 6 at once (e.g. AI
+regenerating a lesson) without tripping over the mid-transaction gap.
+Drafts have no such requirements — they can be as incomplete as the
+author likes while being built out.
+
+**RLS**: `units`/`weeks` are readable by any signed-in teacher (the
+*shape* of the curriculum isn't paywalled) — only `lessons`/
+`lesson_segments` are gated by `status = 'published' AND
+public.has_course_access(course_id)`. All writes are admin-only (this
+schema doesn't yet have a separate "content-owner" role distinct from
+admin — `role` is still just `teacher | admin`).
+
+## Curriculum browser UI
+
+Course picker → course outline → week → lesson, all Server Components
+reading straight off RLS (no manual "can this teacher see this" checks in
+app code — a teacher without access just gets an empty result, same as
+the content not existing yet):
+
+- `/curriculum` — the 8 course tiles as **cards** — the one place in this
+  app cards are the right call (a course is a genuinely discrete object,
+  per the design system) — see `components/curriculum/course-card.tsx`.
+- `/curriculum/[courseSlug]` — a course-scoped **planner spine**
+  (`components/curriculum/curriculum-spine.tsx`), nested inside the main
+  NavRail, listing that course's units → weeks with the Ledger Line rule
+  under every week row (the first real usage of the signature motif).
+- `/curriculum/[courseSlug]/[weekNumber]` — that week's lessons
+  (Monday-Friday) as ledger rows, gold-leaf stamped when published.
+- `/curriculum/[courseSlug]/[weekNumber]/[dayNumber]` — the lesson
+  detail view (`components/curriculum/lesson-detail.tsx`): bell-to-bell
+  schedule, gradual release, QSSSA, homework, and TEKS tags — every
+  section is a list of `<LedgerRow>`s, reusing the exact same component
+  as everywhere else rather than inventing a one-off layout.
+
+No create/edit UI or AI generation yet — this phase is browse-only, per
+the current scope. `supabase/seed.sql` has demo content (one Algebra I
+unit, 3 weeks, one fully worked published lesson, one draft) so the
+browser has something real to show in local dev.
 
 ## Environment variables
 
@@ -221,6 +310,8 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Project scaffold, design system, folder structure, Supabase client wiring
 ✅ Auth (email/password + Google, password reset, rate limiting)
 ✅ Core database schema + RLS (profiles, courses, subscriptions, academic calendars)
-⬜ Curriculum / assignments / assessments / gradebook / portfolio features
+✅ Curriculum data model + read-only browser (units/weeks/lessons/TEKS)
+⬜ Curriculum create/edit UI + AI generation
+⬜ Assignments / assessments / gradebook / portfolio features
 ⬜ Stripe billing
 ⬜ Deployment config

@@ -1,0 +1,86 @@
+-- Local-dev-only demo curriculum content. Applied by `supabase db reset`
+-- (or `supabase db push --include-seed`) AFTER migrations — never as part
+-- of a migration itself, since this is illustrative sample content, not
+-- real reference data that belongs in every environment.
+--
+-- Gives the curriculum browser something real to show locally: one
+-- Algebra I unit with 3 weeks, a fully worked published lesson, and a
+-- draft lesson to demonstrate the publish gate / RLS visibility split.
+--
+-- Note the insert order below is not arbitrary: a lesson must exist
+-- before its segments can reference it, and it can only move to
+-- status = 'published' once all 6 segments + required fields are present
+-- (see check_lesson_publishable() in the lessons migration) — so every
+-- lesson here is created as a draft, filled in, then published last.
+
+do $$
+declare
+  algebra_course_id uuid;
+  unit1_id uuid;
+  week1_id uuid;
+  week2_id uuid;
+  week3_id uuid;
+  lesson1_id uuid;
+  teks_linear_id uuid;
+  teks_quadratic_id uuid;
+begin
+  select id into algebra_course_id from public.courses where slug = 'algebra-1';
+  select id into teks_linear_id from public.teks where code = '111.39(c)(6)(A)';
+  select id into teks_quadratic_id from public.teks where code = '111.39(c)(10)(A)';
+
+  insert into public.units (course_id, unit_number, title, teks_focus_summary)
+  values (algebra_course_id, 1, 'Linear Functions', 'Writing and graphing linear functions in multiple forms.')
+  returning id into unit1_id;
+
+  insert into public.weeks (unit_id, week_number, title)
+  values (unit1_id, 1, 'Week 1: Intro to Functions')
+  returning id into week1_id;
+
+  insert into public.weeks (unit_id, week_number, title)
+  values (unit1_id, 2, 'Week 2: Rate of Change')
+  returning id into week2_id;
+
+  insert into public.weeks (unit_id, week_number, title)
+  values (unit1_id, 3, 'Week 3: Slope-Intercept Form')
+  returning id into week3_id;
+
+  -- Published lesson: Monday of Week 3
+  insert into public.lessons (week_id, day_number, title)
+  values (week3_id, 1, 'Graphing Lines in Slope-Intercept Form')
+  returning id into lesson1_id;
+
+  insert into public.lesson_segments (lesson_id, segment_key, title, description, duration_minutes) values
+    (lesson1_id, 'bell_ringer', 'Warm-up: Identify slope', 'Students find slope from two points on a handout.', 8),
+    (lesson1_id, 'mini_lesson', 'Slope-intercept form', 'Direct instruction on y = mx + b.', 12),
+    (lesson1_id, 'modeling', 'Teacher models graphing', 'Teacher works 2 examples on the board.', 12),
+    (lesson1_id, 'activity', 'Partner practice', 'Students graph 6 lines in pairs on whiteboards.', 25),
+    (lesson1_id, 'debrief', 'Whole-class check', 'Review common errors together.', 8),
+    (lesson1_id, 'exit_ticket', 'Exit ticket', 'Graph one line independently.', 5);
+
+  update public.lessons set
+    i_do = 'I model graphing y = 2x + 3 on the board, labeling slope and y-intercept step by step.',
+    we_do = 'We graph y = -1/2x + 4 together, calling on students for each step.',
+    you_do_together = 'In pairs, students graph 3 more lines using whiteboards.',
+    you_do = 'Students independently complete the practice set.',
+    qsssa_question = 'What does the slope of a line tell you about its steepness and direction?',
+    qsssa_signal = 'Thumbs up when ready to share.',
+    qsssa_stem = 'The slope tells me ___ because ___.',
+    qsssa_share = 'Turn and talk with a partner, then two pairs share whole-class.',
+    qsssa_assess = 'Cold-call two students; check whiteboards during pair work.',
+    homework = array[
+      'Graph y = 3x - 2 and label the slope and y-intercept.',
+      'Write the equation of a line with slope -2 and y-intercept 5.',
+      'Given the graph of a line, identify its slope and y-intercept.',
+      'Explain in one sentence what the "b" in y = mx + b represents.',
+      'Create your own linear equation and graph it.'
+    ],
+    teks_ids = array[teks_linear_id, teks_quadratic_id]
+  where id = lesson1_id;
+
+  update public.lessons set status = 'published' where id = lesson1_id;
+
+  -- Draft lesson: Tuesday of Week 3 — intentionally incomplete, to show
+  -- the draft/published split (admins see it; teachers don't).
+  insert into public.lessons (week_id, day_number, title)
+  values (week3_id, 2, 'Point-Slope Form (draft)');
+end $$;

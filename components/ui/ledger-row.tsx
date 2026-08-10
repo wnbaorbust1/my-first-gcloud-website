@@ -21,11 +21,11 @@ export function LedgerRow({
   className?: string;
 }) {
   return (
-    <div className={cn("ledger-row flex items-center gap-3", className)}>
-      <div className="w-5 shrink-0">{stamp}</div>
+    <div className={cn("ledger-row flex items-start gap-3", className)}>
+      <div className="w-5 shrink-0 pt-0.5">{stamp}</div>
       <div className="min-w-0 flex-1 text-sm text-ink">{children}</div>
       {meta && (
-        <div className="shrink-0 font-mono text-xs text-slate">{meta}</div>
+        <div className="shrink-0 pt-0.5 font-mono text-xs text-slate">{meta}</div>
       )}
     </div>
   );

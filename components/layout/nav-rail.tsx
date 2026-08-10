@@ -16,7 +16,7 @@ type NavSection = {
 
 const NAV_SECTIONS: NavSection[] = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Curriculum", href: "#" },
+  { label: "Curriculum", href: "/curriculum" },
   { label: "Assignments", href: "#" },
   { label: "Assessments", href: "#" },
   { label: "Gradebook", href: "#" },

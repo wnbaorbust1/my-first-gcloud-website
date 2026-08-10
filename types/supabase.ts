@@ -36,6 +36,14 @@ export type CalendarDayType =
   | "early_release"
   | "block_day";
 export type RateLimitAction = "signup" | "login" | "password_reset";
+export type LessonStatus = "draft" | "published";
+export type LessonSegmentKey =
+  | "bell_ringer"
+  | "mini_lesson"
+  | "modeling"
+  | "activity"
+  | "debrief"
+  | "exit_ticket";
 
 export type Database = {
   public: {
@@ -216,6 +224,191 @@ export type Database = {
         >;
         Relationships: [];
       };
+      teks: {
+        Row: {
+          id: string;
+          code: string;
+          subject: string;
+          description: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          subject: string;
+          description: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["teks"]["Insert"]>;
+        Relationships: [];
+      };
+      units: {
+        Row: {
+          id: string;
+          course_id: string;
+          unit_number: number;
+          title: string;
+          teks_focus_summary: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          course_id: string;
+          unit_number: number;
+          title: string;
+          teks_focus_summary?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["units"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "units_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      weeks: {
+        Row: {
+          id: string;
+          unit_id: string;
+          course_id: string;
+          week_number: number;
+          title: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          unit_id: string;
+          // Denormalized server-side by a trigger from unit_id — safe (and
+          // simplest) to omit on insert; if supplied it's overwritten anyway.
+          course_id?: string;
+          week_number: number;
+          title: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["weeks"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "weeks_unit_id_fkey";
+            columns: ["unit_id"];
+            isOneToOne: false;
+            referencedRelation: "units";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "weeks_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      lessons: {
+        Row: {
+          id: string;
+          week_id: string;
+          course_id: string;
+          day_number: number;
+          title: string;
+          i_do: string | null;
+          we_do: string | null;
+          you_do_together: string | null;
+          you_do: string | null;
+          qsssa_question: string | null;
+          qsssa_signal: string | null;
+          qsssa_stem: string | null;
+          qsssa_share: string | null;
+          qsssa_assess: string | null;
+          homework: string[];
+          teks_ids: string[];
+          status: LessonStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          week_id: string;
+          // Denormalized server-side by a trigger from week_id.
+          course_id?: string;
+          day_number: number;
+          title: string;
+          i_do?: string | null;
+          we_do?: string | null;
+          you_do_together?: string | null;
+          you_do?: string | null;
+          qsssa_question?: string | null;
+          qsssa_signal?: string | null;
+          qsssa_stem?: string | null;
+          qsssa_share?: string | null;
+          qsssa_assess?: string | null;
+          homework?: string[];
+          teks_ids?: string[];
+          status?: LessonStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["lessons"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "lessons_week_id_fkey";
+            columns: ["week_id"];
+            isOneToOne: false;
+            referencedRelation: "weeks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lessons_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      lesson_segments: {
+        Row: {
+          id: string;
+          lesson_id: string;
+          segment_key: LessonSegmentKey;
+          title: string;
+          description: string | null;
+          duration_minutes: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          lesson_id: string;
+          segment_key: LessonSegmentKey;
+          title: string;
+          description?: string | null;
+          duration_minutes: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["lesson_segments"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "lesson_segments_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "lessons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -230,6 +423,7 @@ export type Database = {
     };
     Enums: {
       calendar_day_type: CalendarDayType;
+      lesson_segment_key: LessonSegmentKey;
     };
     CompositeTypes: Record<string, never>;
   };
