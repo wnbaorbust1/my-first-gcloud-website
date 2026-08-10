@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 5: Personalized Roadmap + Business Builder_
+_Last updated: 2026-08-10 — Phase 6: My Blueprint Business Book + Documents_
 
 ## COMPLETE
 
@@ -323,19 +323,116 @@ platform, not just read about it.
   from every facilitator-only route and a LOCKED task can't be completed
   by anyone (409).
 
+---
+
+### Phase 6 — My Blueprint Business Book + Documents
+
+**My Blueprint page**
+- `/my-blueprint`: the spec's exact PASSION/POWER/LEGACY section list
+  (`src/lib/blueprint/sections.ts` — the single source of truth for what
+  sections exist, independent of which Builder tasks happen to populate
+  them), rendered as stage tabs of section cards. Every business sees
+  every spec section, whether or not a `DocumentSection` row exists for
+  it yet — populated sections show real content; unpopulated ones show
+  an honest empty state with a "Build \"‹task title›\"" link straight to
+  the Business Builder task that will fill them in (or "add it yourself"
+  when no task maps there at all).
+- Gated behind `builderAccessEligible`, same as `/roadmap` and `/build` —
+  My Blueprint only has content once a member starts Building.
+
+**Auto-population (unchanged from Phase 5) + in-place editing (new)**
+- "Save to My Blueprint" already upserted `DocumentSection` rows by title
+  (Phase 5); this phase adds `PATCH /api/blueprint/sections` so a member
+  can edit any section directly from My Blueprint — including sections no
+  Builder task has ever touched. Validates the section title against the
+  spec's fixed list, re-checks `assertBusinessAccess`, and upserts the
+  same `(documentId, title)` row "Save to Blueprint" writes to, so a
+  manual edit and a future Builder save never fight over two rows for one
+  section.
+- `sourceRoadmapTaskId` (which task last *auto-populated* this section) is
+  left untouched by a manual edit — verified live: hand-editing "Purpose"
+  after it was auto-populated from "Define Business Purpose" kept the
+  "From: Define Business Purpose" provenance link, while "Edited ‹date›"
+  replaced "Saved ‹date›" to reflect the more recent human edit.
+- **Activity history, kept reasonable**: rather than a new audit table,
+  each manual edit writes one row to the existing `AuditLog` model
+  (`action: "blueprint_section_edited"`) and the section itself already
+  carries `lastEditedAt` (Phase 5) — enough to show "who touched this and
+  when" without a parallel history model to keep in sync.
+
+**Document Generator**
+- `src/lib/blueprint/documents.ts`: all 12 spec document types (Business
+  Overview, Executive Summary, Mission and Vision, Ideal Customer
+  Profile, Offer Summary, Marketing Plan, Sales Plan, Customer Journey,
+  SOP, Revenue Plan, 30/60/90-Day Plan, Legacy Plan), each a pure function
+  from real data — My Blueprint sections, `Business` profile fields, the
+  active `Goal`, and the latest `PostSessionSummary`'s 30/60/90-day
+  goals — to a renderer-agnostic `{ blocks: [{ heading, paragraphs }] }`
+  structure. No AI call (spec: "structured template generation is
+  acceptable"); a block with nothing to say renders "Not yet defined —
+  build this in My Blueprint" instead of fabricated text.
+- `/my-blueprint/documents` lists all 12 as cards; `/my-blueprint/documents/[slug]`
+  renders one, generated fresh on every load (verified live: editing
+  "Purpose" and reloading the Business Overview document showed the
+  edited text immediately — documents are views, not snapshots).
+
+**Download / print**
+- New `(print)` route group (`src/app/(print)/`) — its own minimal
+  `layout.tsx` (auth-gated, no sidebar/bottom nav) so generated documents
+  and the Scorecard render as plain, chrome-free pages rather than
+  fighting print CSS to hide the app shell. A shared `PrintButton` client
+  component calls `window.print()`; `globals.css` gained `.no-print` /
+  `.print-page` rules so the browser's own Print → Save as PDF produces a
+  clean one-pager — spec's stated minimum ("at minimum generate a
+  polished PDF or printable view"), with no new PDF-rendering dependency.
+  Verified with a Playwright screenshot under `emulateMedia({media:
+  "print"})`: the back-link/print-button bar disappears, only the
+  document remains.
+- Architected for DOCX later, not just described as such:
+  `GeneratedDocument` is plain headings + paragraphs with zero HTML baked
+  in, so a future DOCX exporter (e.g. walking blocks into the `docx`
+  package's `Paragraph`/`Heading` builders) reads the exact same object
+  the HTML view does — no change to `documents.ts`, just a new renderer.
+
+**Blueprint Scorecard**
+- `/my-blueprint/scorecard`: one printable page with every spec field —
+  Business, Date, Passion/Power/Legacy scores, Business Health, Strength,
+  Priority Gap, Current Goal, Next Best Action, Recommended Session — all
+  read from the business's real latest completed assessment, active
+  goal, and roadmap (`src/lib/blueprint/scorecard.ts`). A field with no
+  underlying data (e.g. no active goal) renders "—", never a guess.
+  Verified live against a real assessment: Passion 100% / Power 37% /
+  Legacy 54% / Health 64%, Strength "Purpose (100%)", Priority Gap
+  "Automation (25%)", Next Best Action "Create Mission Statement",
+  Recommended Session "Blueprint Power Session" — all traceable back to
+  the actual scored responses.
+
+**Verification method**
+- Live end-to-end: signed up a member, created a business, answered all
+  36 assessment questions through the real autosave API, registered for
+  and (as an admin account) marked ATTENDED on a session to unlock
+  Builder access and generate a roadmap, then drove three real tasks
+  through Save Draft → Save to Blueprint → Mark Complete via the actual
+  `/api/roadmap/tasks/*` routes used by the Builder UI. Confirmed in the
+  rendered HTML and via direct Postgres queries: real content appears in
+  the right sections, empty sections link to the right Builder tasks,
+  manual edits persist and are attributed correctly, generated documents
+  reflect the latest edits, and the Scorecard's numbers match the scored
+  assessment. Authorization verified: an unrelated member gets 404 from
+  both the section-edit API and a document/scorecard URL for someone
+  else's business; an unauthenticated request gets 401; none of these
+  altered the real data. All test users/business/audit rows removed
+  afterward.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 5.
+- Nothing left mid-implementation from Phase 1 through 6.
 
 ## NOT STARTED
 
-- Blueprint AI, My Blueprint's dedicated navigation page (sections exist
-  as `DocumentSection` rows populated by Builder tasks; there's no page
-  yet organizing them into the spec's PASSION/POWER/LEGACY layout — next
-  phase), document generation/download, Resources library, Progress
-  page's "story" narrative.
+- Blueprint AI, Resources library, Progress page's "story" narrative.
 - Admin/Facilitator functionality beyond role-gated placeholder shells,
-  the participant view, and the roadmap control page built this phase
+  the participant view, and the roadmap control page built in Phase 5
   (no admin UI yet to edit `AssessmentScoringConfig`, create
   `SessionOffering`s, or assign `FacilitatorAssignment`s directly).
 - Billing. Transactional email (see Known Issues).
@@ -343,10 +440,9 @@ platform, not just read about it.
 - Per-stage roadmap sub-pages — Stage Progress cards all link to the one
   `/roadmap` page rather than a stage-scoped view (spec says "each opens
   respective roadmap"; simplified to one page showing every stage).
-- "My Blueprint" sections with no task mapping yet: **Technology** and
-  **Impact** (Prompt 6's section list has a couple more entries than
-  Phase 5's 30-task library directly populates — see Important
-  Decisions). They'll render an honest empty state, not fake content.
+- A real DOCX export — only the printable/PDF path is implemented; see
+  Important Decisions for why `documents.ts` is already shaped to add one
+  without a rewrite.
 
 ## KNOWN ISSUES
 
@@ -389,7 +485,9 @@ platform, not just read about it.
    mapping yet.** The 30-task library maps almost 1:1 to Prompt 6's
    section list, but not perfectly — see Important Decisions. Adding a
    task later that targets either `blueprintDestination` fills them in
-   automatically, no migration needed.
+   automatically, no migration needed. Both remain freely hand-editable
+   from My Blueprint in the meantime (Phase 6) — "no task populates it
+   yet" only means no Builder task fills it in *automatically*.
 10. **`prisma migrate dev` doesn't work in this non-interactive
     environment** (it wants a TTY to confirm destructive-looking
     warnings, e.g. new unique constraints on empty tables). Every Phase 5
@@ -397,9 +495,25 @@ platform, not just read about it.
     applied with `prisma migrate deploy` instead — same resulting SQL,
     just without the interactive confirmation step. Worth trying
     `prisma migrate dev` directly in a normal terminal in later phases.
+11. **PDF generation is the browser's, not the server's.** "Download" is
+    a print-CSS'd HTML page plus `window.print()` → Save as PDF, not a
+    server-rendered PDF file — meets the spec's stated minimum without a
+    new rendering dependency (headless Chromium, `pdfkit`, etc.), but
+    there's no server-side "email me the PDF" path yet since there's no
+    file being produced server-side to attach.
+12. **Documents regenerate on every view; nothing is saved as a
+    named/versioned artifact.** `/my-blueprint/documents/[slug]` always
+    reflects the business's current data, which is the correct behavior
+    for "always current" but means there's no "documents I've generated
+    before" history — only My Blueprint's own edit history exists.
 
 ## DATABASE CHANGES
 
+- **Phase 6: no schema migration.** Every model this phase needed
+  (`Document`, `DocumentSection` with `lastEditedAt`/`sourceRoadmapTaskId`,
+  `AuditLog`) already existed from Phase 1/5 — My Blueprint, the Document
+  Generator, and the Scorecard are all built entirely on data phases 1–5
+  already had a home for.
 - New migration: `prisma/migrations/20260810183045_roadmap_builder_dependencies`.
   - `TaskTemplate`: added `category`, `whyItMatters`, `thinkPrompt`,
     `instructions` (Json), `implementGuidance`, `measurePrompt`,
@@ -560,11 +674,58 @@ platform, not just read about it.
   with `diff` and applying it with `deploy` produces an identical
   migration file with the same guarantees, just without the prompt.
 
+## IMPORTANT DECISIONS (Phase 6 additions)
+
+- **"Products" and "Services" are one My Blueprint section, not two.**
+  Prompt 6 lists them separately, but Phase 5's task library defines a
+  single Builder task ("Finalize Products and Services") for both —
+  they're one cohesive offer definition for a small business. Binding two
+  separately-editable UI sections to the same underlying data would let
+  editing one silently overwrite the other, so they're presented as one
+  section, "Products & Services," instead. Documented here rather than
+  quietly diverging from the spec's list.
+- **The section registry (`src/lib/blueprint/sections.ts`) is the source
+  of truth for My Blueprint's layout — not the set of `DocumentSection`
+  rows that happen to exist.** A business always sees all 32 spec
+  sections; content is either real or an honest empty state, never
+  inferred from "whatever rows exist." This is what makes an unedited,
+  un-Built section ("Technology," "Impact," or any section a member just
+  hasn't gotten to) look like an invitation rather than a bug.
+- **Manual edits never clear `sourceRoadmapTaskId`.** A section's
+  provenance ("From: ‹task›") is a record of the last *automated*
+  population, which stays true and useful even after a human polishes
+  the wording — clearing it on every hand-edit would make the provenance
+  link disappear the moment anyone touched their own content.
+- **Print, not a PDF library.** Chose the browser's native Print → Save
+  as PDF over adding a server-side PDF renderer (`puppeteer`, `pdfkit`,
+  etc.). It meets the spec's literal minimum ("at minimum generate a
+  polished PDF or printable view"), needs zero new dependencies or fonts
+  to keep in sync with the design system, and print CSS + a dedicated
+  chrome-free `(print)` route group was enough to make it "polished."
+  Revisit only if a requirement appears for a document to exist as a
+  file server-side (e.g. to email or archive).
+- **`GeneratedDocument` is headings + paragraphs, not HTML.** Keeping the
+  Document Generator's output renderer-agnostic (`documents.ts` has zero
+  knowledge of Tailwind classes or JSX) is what makes "architect for
+  DOCX later" true rather than aspirational — a DOCX renderer is a
+  peer to the HTML one, not a rewrite of the data layer.
+- **Activity history reuses `AuditLog` instead of a new model.** Prompt
+  6 says "keep activity history where reasonable" — a general-purpose
+  audit table that already exists (and already has `entityType`/
+  `entityId`/`metadata`) is a reasonable amount of history for a manual
+  edit; a parallel section-specific history table would duplicate what
+  `AuditLog` + `DocumentSection.lastEditedAt` already cover.
+
 ## NEXT RECOMMENDED PHASE
 
-Build **My Blueprint**: a dedicated navigation page organizing every
-`DocumentSection` a completed Builder task has already populated into
-the spec's PASSION/POWER/LEGACY layout, with in-place editing — the
-structured data has existed since this phase's "Save to Blueprint," it
-just doesn't have a home page yet. Blueprint AI
-and billing remain explicitly out of scope until their own phases.
+Build **Blueprint AI**: the context-aware assistant integrated into the
+Business Builder, now that there's a real, structured business context
+(assessment scores, roadmap, My Blueprint sections, Business profile) for
+it to actually be "business-specific" about rather than generic. No
+`ANTHROPIC_API_KEY` is configured in this sandbox, so the integration
+should be built in full — context assembly, the 8 modes, the 9 Builder
+action buttons, conversation history with favorite/rename/continue, and
+the required safety disclaimers — but gated behind that env var with a
+graceful "AI isn't configured yet" degradation, the same pattern already
+used for the missing email provider (Known Issue #1). Billing remains
+explicitly out of scope until its own phase.

@@ -180,3 +180,25 @@ body {
   outline: 2px solid var(--color-gold-500);
   outline-offset: 2px;
 }
+
+/*
+ * Printable views (Phase 6: generated Documents + Blueprint Scorecard).
+ * These pages live outside the app shell already (see src/app/(print)),
+ * so this just strips screen-only chrome and lets the page's own white
+ * background print cleanly, at minimum giving "a polished PDF" via the
+ * browser's own Print > Save as PDF (spec: "At minimum generate a
+ * polished PDF or printable view").
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #ffffff;
+  }
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+  }
+}
