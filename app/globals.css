@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand tokens, as "R G B" channel triples so Tailwind's opacity
+     modifiers (e.g. border-rose-gold/40) work via rgb(var(...) / <alpha>).
+     Hex source of truth is in the comments alongside each. */
+  --ink: 43 36 32; /* #2b2420 */
+  --cream: 250 247 240; /* #faf7f0 */
+  --rose-gold: 183 110 121; /* #b76e79 */
+  --gold-leaf: 201 162 75; /* #c9a24b */
+  --slate: 107 100 89; /* #6b6459 */
+
+  /* One unique accent hue per course, used only for that course's small
+     tag/icon — never a full background. Placeholders until curriculum
+     data lands; safe, muted hues so nothing looks unfinished meanwhile. */
+  --accent-money-matters: #4f7a6b;
+  --accent-dollars-and-sense: #8a6bb1;
+  --accent-algebra-1: #3f7ab0;
+  --accent-biology: #5f8a3f;
+  --accent-english-1: #b0553f;
+  --accent-us-history: #a3833f;
+  --accent-accounting-1: #3f8a86;
+  --accent-accounting-2: #8a5f3f;
+
+  /* Fonts (populated by next/font in app/layout.tsx) */
+  --font-display: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+* {
+  border-color: rgb(var(--slate));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: rgb(var(--ink));
+  background: rgb(var(--cream));
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Visible keyboard focus everywhere, brand-colored instead of browser default */
+:focus-visible {
+  outline: 2px solid rgb(var(--rose-gold));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@layer components {
+  /**
+   * Ledger Line — the signature hand-ruled rule under every table row /
+   * list item (lessons, TEKS rows, gradebook rows, portfolio items),
+   * echoing a physical grade book. Apply to each row/item, not the
+   * container, so the rule sits under the content it belongs to.
+   */
+  .ledger-row {
+    @apply relative border-b border-rose-gold/40 py-3;
+  }
+
+  .ledger-row:last-child {
+    @apply border-b-0;
+  }
+
+  /**
+   * Status stamp — a small gold-leaf mark in the margin for status
+   * changes (mastered, graded, submitted), used instead of a generic
+   * colored pill badge.
+   */
+  .status-stamp {
+    @apply inline-flex h-5 w-5 items-center justify-center rounded-full border border-gold-leaf text-gold-leaf;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* animate-page-turn / animate-stamp-land come from the keyframes/animation
+   entries in tailwind.config.ts. Reduced-motion users get them flattened
+   to instant by the rule below rather than opted out entirely, so state
+   still changes — just without the motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
