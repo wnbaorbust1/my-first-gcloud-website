@@ -71,6 +71,7 @@ model User {
   notifications               Notification[]
   subscriptions               Subscription[]
   auditLogs                   AuditLog[]
+  aiConversations             AiConversation[]
 
   @@index([role])
 }
@@ -219,6 +220,7 @@ model Business {
   facilitatorAssignments FacilitatorAssignment[]
   facilitatorNotes       FacilitatorNote[]
   postSessionSummaries   PostSessionSummary[]
+  aiConversations        AiConversation[]
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
@@ -689,6 +691,8 @@ model RoadmapTask {
   taskTemplate TaskTemplate? @relation(fields: [taskTemplateId], references: [id])
   response     TaskResponse?
 
+  aiConversations AiConversation[]
+
   @@index([roadmapId, status])
 }
 
@@ -741,6 +745,81 @@ model Goal {
 
   @@index([businessId])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint AI (spec Prompt 7)
+// ---------------------------------------------------------------------------
+
+/// The 8 spec AI MODES — each is a distinct system-prompt framing, not a
+/// separate feature. A conversation has one "current" mode (switchable
+/// mid-conversation, spec doesn't say a conversation is locked to one),
+/// stamped on each message so history shows which mode produced it.
+enum AiMode {
+  BUSINESS_COACH
+  STRATEGIST
+  COPYWRITER
+  MARKETING_ASSISTANT
+  SALES_COACH
+  SYSTEMS_BUILDER
+  FINANCE_GUIDE
+  IMPLEMENTATION_GUIDE
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+}
+
+/// AI HISTORY (spec): "Store conversations by Business, User, Topic,
+/// Related Task, Date." `topic` is a short free-text label (a Builder
+/// task's category when started from Builder, "General" otherwise) —
+/// open-ended like every other categorical field in this schema, not an
+/// enum, since it's meant to read naturally in a conversation list.
+model AiConversation {
+  id         String @id @default(cuid())
+  businessId String
+  userId     String
+  /// User-editable (spec: "Rename conversation"); defaults to a short
+  /// label derived from the first message on creation.
+  title      String
+  topic      String @default("General")
+  mode       AiMode @default(BUSINESS_COACH)
+
+  relatedTaskId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedTask RoadmapTask? @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  messages    AiMessage[]
+
+  @@index([businessId, userId, updatedAt])
+  @@index([relatedTaskId])
+}
+
+model AiMessage {
+  id             String        @id @default(cuid())
+  conversationId String
+  role           AiMessageRole
+  content        String        @db.Text
+  /// The mode active when this message was sent/generated — kept even if
+  /// the conversation's current mode later changes.
+  mode           AiMode?
+  /// Which of the 9 spec AI ACTIONS buttons produced this (USER
+  /// messages only) — e.g. "IMPROVE_THIS" — null for freely-typed
+  /// messages.
+  actionType     String?
+  /// spec: "Favorite response" — ASSISTANT messages only in practice.
+  isFavorite     Boolean       @default(false)
+
+  createdAt DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

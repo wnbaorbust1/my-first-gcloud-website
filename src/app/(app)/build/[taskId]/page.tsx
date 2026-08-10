@@ -111,6 +111,10 @@ export default async function BuildTaskPage({
       <div className="mt-6 rounded-2xl border border-navy-100 bg-surface p-6 sm:p-8">
         <TaskBuilderForm
           taskId={task.id}
+          businessId={task.roadmap.businessId}
+          title={task.title}
+          category={task.category ?? "General"}
+          whyItMatters={template?.whyItMatters ?? ""}
           instructions={instructions}
           initialAnswers={initialAnswers}
           isComplete={isComplete}

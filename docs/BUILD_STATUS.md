@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 6: My Blueprint Business Book + Documents_
+_Last updated: 2026-08-10 — Phase 7: Blueprint AI_
 
 ## COMPLETE
 
@@ -424,13 +424,50 @@ platform, not just read about it.
   altered the real data. All test users/business/audit rows removed
   afterward.
 
+---
+
+### Phase 7 — Blueprint AI
+
+**The rule that shaped everything else**: spec Prompt 7 opens with "Do not allow the AI to operate as a generic chatbot disconnected from the member's business." Every piece below exists to make that true — the business context block is not optional or an afterthought, it's assembled first and is always in the system prompt before the conversation even starts.
+
+**Schema**
+- New models `AiConversation` (businessId, userId, title, topic, mode, relatedTaskId) and `AiMessage` (role, content, mode, actionType, isFavorite) — additive only, migration `20260810193000_blueprint_ai`.
+- AI HISTORY (spec): "Store conversations by Business, User, Topic, Related Task, Date" — all five are real columns/relations, not derived. "Favorite response," "Rename conversation," and "Continue conversation" are all real, working actions (see Verification).
+
+**AI Context — `src/lib/ai/context.ts`**
+- `assembleAiContext(businessId)` gathers, fresh on every message (never a stale cache): Business profile fields, Assessment Scores + Top Strengths/Priority Gaps, Active Goal, Completed + current Roadmap tasks, every populated My Blueprint section, and facilitator notes explicitly marked `PARTICIPANT_VISIBLE` or `RECOMMENDATION` — never a `PRIVATE` note, verified live (see below).
+- "Previous AI conversations" (also spec AI CONTEXT) is handled the correct way for a chat model — as real prior turns in *that* conversation's own history, passed straight through, not summarized into this block.
+
+**AI Modes, Actions, Safety — `src/lib/ai/modes.ts`, `actions.ts`, `system-prompt.ts`**
+- All 8 spec AI MODES (Business Coach, Strategist, Copywriter, Marketing Assistant, Sales Coach, Systems Builder, Finance Guide, AI Implementation Guide) are real, switchable system-prompt framings over the same shared context — switchable mid-conversation, stamped on each message so history shows which mode produced it.
+- All 9 spec AI ACTIONS buttons (Ask Blueprint AI, Help Me Answer, Improve This, Explain This, Show Me an Example, Build This With Me, Make This Simpler, Check My Work, Create a First Draft) build a real, task-specific prompt from the Builder task's title/category/why-it-matters *and the member's current, unsaved draft answers* — "Improve This"/"Check My Work" reflect what's actually in the form right now, verified live with a task that had no saved answers yet.
+- Every system prompt bakes in AI RESPONSE STYLE (practical/clear/actionable/beginner-friendly/business-specific, no motivational filler, "help create an actual asset") and AI SAFETY (never claims to replace an attorney/CPA/financial adviser/licensed medical professional; must flag when professional review is needed) verbatim from the spec — not just documented intent, the literal instruction text sent to the model on every request.
+
+**AI Client — `src/lib/ai/client.ts`**
+- Calls the Anthropic Messages API directly via server-only `fetch` (no new SDK dependency) — `ANTHROPIC_API_KEY` never leaves this one function, satisfying "No sensitive keys exposed client-side" by construction, not by review.
+- **Gated, graceful degradation**: no `ANTHROPIC_API_KEY` is configured in this sandbox, so every response is a clear, honest "Blueprint AI isn't fully connected... real answers will start appearing the moment a key is added" message — mirroring the Phase 1 "no email provider" pattern. Everything *around* the missing key is fully real and was verified live: conversations and messages persist correctly, context assembly runs and was inspected directly (see Verification), modes/actions/history/favoriting/renaming all work end-to-end. Adding a real key requires no code change.
+
+**Builder integration**
+- Every Business Builder task page (`/build/[taskId]`) gets a collapsible "Ask Blueprint AI about this task" panel with all 9 action buttons, a visible safety line, and a follow-up input — "Add buttons throughout Builder" (spec) means every task, not a one-off demo page.
+- "Continue in Blueprint AI" links from the panel into the full `/ai` console at that exact conversation (`?conversation=<id>`), verified live to auto-select it.
+
+**Blueprint AI console — `/ai`**
+- Full chat UI: conversation sidebar (title, topic, related task, last-updated), mode selector, message thread, inline rename, favorite toggle per assistant response, "New Conversation."
+- Replaces the Phase 1 `ComingSoon` placeholder; the sidebar's existing "Blueprint AI" nav entry (`/ai`) needed no changes.
+
+**Verification method**
+- Live end-to-end: signed up a member, completed a real assessment, unlocked Builder access via a real attendance flow, and started/continued real AI conversations both from the full `/ai` console and from a Builder task's action buttons (all 9 buttons individually confirmed to build the correct task-specific prompt).
+- **Context correctness inspected directly**: temporarily logged the exact assembled system prompt server-side (removed before commit — see `src/lib/ai/client.ts` git history if ever needed again) and confirmed it contained this test business's real name/industry/products/ideal customer/goal, real assessment scores and top strengths/priority gaps, real roadmap tasks, a real Saved Blueprint Section ("Ideal Customer") after using Save to Blueprint, and a real `PARTICIPANT_VISIBLE` facilitator note — while a `PRIVATE` note created in the same test was confirmed absent from the context every time.
+- **Isolation verified** (spec: "One user cannot access another user's context"): a second member gets 404 reading another user's conversation, 404 posting into it, an empty list filtering another user's business, and 404 starting a new conversation against a business they don't belong to; an unauthenticated request gets 401. None of these altered the real data.
+- Favorite, rename, and mode-switch-mid-conversation all confirmed via direct API calls and a Playwright screenshot of the rendered console. Test users/business/conversations removed afterward.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 6.
+- Nothing left mid-implementation from Phase 1 through 7. Every prompt in the current build sequence (1–7) is complete.
 
 ## NOT STARTED
 
-- Blueprint AI, Resources library, Progress page's "story" narrative.
+- Resources library, Progress page's "story" narrative.
 - Admin/Facilitator functionality beyond role-gated placeholder shells,
   the participant view, and the roadmap control page built in Phase 5
   (no admin UI yet to edit `AssessmentScoringConfig`, create
@@ -506,9 +543,30 @@ platform, not just read about it.
     reflects the business's current data, which is the correct behavior
     for "always current" but means there's no "documents I've generated
     before" history — only My Blueprint's own edit history exists.
+13. **No `ANTHROPIC_API_KEY` is configured in this sandbox.** Every
+    Blueprint AI response is the honest "not connected yet" message (see
+    Phase 7's client.ts) rather than a real model response — the entire
+    surrounding system (context assembly, modes, actions, conversation
+    persistence, history, favoriting, renaming, Builder integration,
+    authorization) is fully built and was verified live around that one
+    gap. Set `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`) in
+    `.env` to turn real responses on — no code change needed.
+14. **Blueprint AI has no per-user or per-business rate limiting.** Fine
+    at this scale/for this sandbox; worth adding before real API costs
+    are on the line.
+15. **A conversation's "topic" is free text set once at creation**, not
+    editable after the fact the way title is — spec only lists "Rename
+    conversation" as an action, not "re-topic," so this was left as
+    intentionally out of scope rather than guessed at.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810193000_blueprint_ai` — new
+  enums `AiMode` (8 values) and `AiMessageRole`; new models
+  `AiConversation` (businessId, userId, title, topic, mode,
+  relatedTaskId → `RoadmapTask`, `onDelete: SetNull`) and `AiMessage`
+  (conversationId, role, content, mode, actionType, isFavorite). Purely
+  additive — no existing table touched.
 - **Phase 6: no schema migration.** Every model this phase needed
   (`Document`, `DocumentSection` with `lastEditedAt`/`sourceRoadmapTaskId`,
   `AuditLog`) already existed from Phase 1/5 — My Blueprint, the Document
@@ -716,16 +774,61 @@ platform, not just read about it.
   edit; a parallel section-specific history table would duplicate what
   `AuditLog` + `DocumentSection.lastEditedAt` already cover.
 
+## IMPORTANT DECISIONS (Phase 7 additions)
+
+- **Anthropic called via raw `fetch`, not the `@anthropic-ai/sdk`
+  package.** Exactly one function (`callBlueprintAi` in
+  `src/lib/ai/client.ts`) ever needs it; a server-only `fetch` call gives
+  the same "key never leaves the server" guarantee with zero new
+  dependencies to keep patched.
+- **A missing/failed AI call degrades to a message, never an error
+  page.** Same shape as the Phase 1 "no email provider" decision: the
+  conversation, the message, and the context that *would* have been sent
+  are all real and saved either way — only the model's reply is a stand-
+  in. This is what let every other Phase 7 acceptance-checklist item
+  (context correctness, isolation, history, Builder integration) be
+  verified live in this sandbox despite no key being configured.
+- **AI conversations are owned by exactly one user, no staff override.**
+  Every other business-scoped model in this app (roadmap, Blueprint
+  sections, goals) is readable by an assigned facilitator/admin; AI
+  conversations deliberately are not — `loadOwnedConversation` checks
+  `conversation.userId === callerId` only. The spec's own acceptance
+  checklist says "one user cannot access another user's context," and a
+  private chat log is exactly the kind of data where a staff-access
+  carve-out could be too easily misread as "of course a facilitator can
+  read this."
+- **"Facilitator-approved notes where appropriate" = `PARTICIPANT_VISIBLE`
+  and `RECOMMENDATION` note types only**, never `PRIVATE` (obviously) and
+  never `TASK_RECOMMENDATION` — that type is an internal signal the
+  roadmap engine already consumes (Phase 5), not text written for a
+  member to read verbatim from an AI response.
+- **The 9 AI Actions build their prompt from the Builder form's live,
+  unsaved `answers` state, not the last-saved `TaskResponse`.** "Improve
+  This" and "Check My Work" only mean something if they see what the
+  member is looking at right now — passing `answers` down from
+  `TaskBuilderForm` into `AiPanel` was the one piece of state-lifting
+  Phase 7 needed, in an otherwise fully server-rendered page.
+- **One shared `assembleAiContext()`, called fresh on every message, not
+  cached on the conversation.** A business's assessment scores, roadmap,
+  or Blueprint sections can change between messages in a long-running
+  conversation; re-assembling context every time is the only way the AI
+  is never reasoning from stale data — the small extra query cost is
+  worth that guarantee.
+
 ## NEXT RECOMMENDED PHASE
 
-Build **Blueprint AI**: the context-aware assistant integrated into the
-Business Builder, now that there's a real, structured business context
-(assessment scores, roadmap, My Blueprint sections, Business profile) for
-it to actually be "business-specific" about rather than generic. No
-`ANTHROPIC_API_KEY` is configured in this sandbox, so the integration
-should be built in full — context assembly, the 8 modes, the 9 Builder
-action buttons, conversation history with favorite/rename/continue, and
-the required safety disclaimers — but gated behind that env var with a
-graceful "AI isn't configured yet" degradation, the same pattern already
-used for the missing email provider (Known Issue #1). Billing remains
-explicitly out of scope until its own phase.
+All seven prompts in the current build sequence are complete. What's left
+is everything each phase already flagged as out of scope rather than a
+new numbered prompt:
+
+- **Billing** (`Subscription` model exists, no Stripe/payment integration
+  or plan-gating logic yet).
+- **Admin content tooling** — `AssessmentScoringConfig`,
+  `SessionOffering`, and `FacilitatorAssignment` are all currently
+  editable only via direct DB writes in test scripts; an admin UI is the
+  natural next home for them.
+- **Resources library** and the **Progress page's "story" narrative** —
+  both still `ComingSoon` placeholders.
+- **A real `ANTHROPIC_API_KEY`** in whatever environment this deploys
+  to, to turn Phase 7's fully-built AI integration from graceful-
+  degradation messages into real responses.
