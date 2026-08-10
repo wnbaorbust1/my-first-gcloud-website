@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { RegistrationStatus } from "@/generated/prisma/enums";
+import { ensureRoadmapGenerated } from "@/lib/roadmap/generate";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -47,12 +48,15 @@ export async function markAttendance(
     }),
   ];
 
+  let justUnlocked = false;
+
   if (isQualifying && registration.businessId) {
     const business = await prisma.business.findUnique({
       where: { id: registration.businessId },
       select: { builderAccessEligible: true },
     });
     if (business && !business.builderAccessEligible) {
+      justUnlocked = true;
       updates.push(
         prisma.business.update({
           where: { id: registration.businessId },
@@ -67,6 +71,13 @@ export async function markAttendance(
   }
 
   await prisma.$transaction(updates);
+
+  // Generate the starter Roadmap right when Builder unlocks, so the
+  // dashboard has real tasks to show on the very next load rather than
+  // an empty state. Runs after the transaction (it does its own writes).
+  if (justUnlocked && registration.businessId) {
+    await ensureRoadmapGenerated(registration.businessId);
+  }
 }
 
 /**

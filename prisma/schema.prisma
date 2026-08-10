@@ -606,6 +606,7 @@ model TaskTemplate {
   stage         BlueprintStage
   title         String
   description   String?        @db.Text
+  priority      TaskPriority   @default(SHOULD_DO)
   estimatedMins Int?
   order         Int
   isActive      Boolean        @default(true)
@@ -672,6 +673,11 @@ model Goal {
   description String?    @db.Text
   targetDate  DateTime?
   status      GoalStatus @default(ACTIVE)
+
+  /// User-set, never derived — the Goal Snapshot shows real progress or
+  /// none at all (spec: "No fake analytics"), not a fabricated
+  /// time-elapsed percentage.
+  progressPercent Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

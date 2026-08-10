@@ -1,14 +1,27 @@
-import { CalendarDays, Compass, ListChecks, Sparkles } from "lucide-react";
+import {
+  CalendarDays,
+  CheckCircle2,
+  Circle,
+  Compass,
+  Lock,
+  Sparkles,
+  Target,
+  Trophy,
+} from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from "next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { ScoreCard } from "@/components/ui/score-card";
-import { prisma } from "@/lib/prisma";
+import { StageBadge } from "@/components/ui/stage-badge";
+import { TaskCard, type TaskPriority } from "@/components/ui/task-card";
+import { sessionLabelFor } from "@/lib/assessment/scoring";
+import { getDashboardData } from "@/lib/dashboard/data";
 import { requireUser } from "@/lib/session";
-import { STAGES } from "@/lib/utils";
+import { STAGES, STAGE_META, type Stage } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -20,38 +33,36 @@ function greeting() {
   return "Good evening";
 }
 
+const IMPACT_BY_PRIORITY: Record<TaskPriority, string> = {
+  MUST_DO: "HIGH",
+  SHOULD_DO: "MEDIUM",
+  BONUS: "LOW",
+};
+
 export default async function DashboardPage() {
   const user = await requireUser();
+  const data = await getDashboardData(user.id);
 
-  const membership = await prisma.userBusinessMembership.findFirst({
-    where: { userId: user.id },
-    include: { business: true },
-    orderBy: { createdAt: "asc" },
-  });
-  const business = membership?.business ?? null;
+  const header = (
+    <div>
+      <h1 className="font-display text-3xl font-semibold text-navy-900">
+        {greeting()}, {user.firstName}
+      </h1>
+      <p className="mt-1 text-foreground-muted">
+        {data.state === "no-business"
+          ? "Let's set up your business to get started."
+          : data.state === "builder"
+            ? "Let's keep building your Blueprint."
+            : `Let's keep building ${data.business.name}.`}
+      </p>
+    </div>
+  );
 
-  const assessment = business
-    ? await prisma.assessment.findFirst({
-        where: { businessId: business.id },
-        include: { scores: true },
-        orderBy: { createdAt: "desc" },
-      })
-    : null;
-
-  return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="font-display text-3xl font-semibold text-navy-900">
-          {greeting()}, {user.firstName}
-        </h1>
-        <p className="mt-1 text-foreground-muted">
-          {business
-            ? `Let's keep building ${business.name}.`
-            : "Let's set up your business to get started."}
-        </p>
-      </div>
-
-      {!business && (
+  // ---- No business yet -----------------------------------------------
+  if (data.state === "no-business") {
+    return (
+      <div className="flex flex-col gap-8">
+        {header}
         <EmptyState
           icon={Compass}
           title="Set up your business profile"
@@ -62,9 +73,15 @@ export default async function DashboardPage() {
             </Button>
           }
         />
-      )}
+      </div>
+    );
+  }
 
-      {business && assessment?.status !== "COMPLETED" && (
+  // ---- No completed assessment yet ------------------------------------
+  if (data.state === "no-assessment") {
+    return (
+      <div className="flex flex-col gap-8">
+        {header}
         <Card className="border-gold-200 bg-gradient-to-br from-gold-50 to-surface">
           <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
             <div>
@@ -80,99 +97,365 @@ export default async function DashboardPage() {
               </p>
             </div>
             <Button asChild size="lg" variant="gold" className="w-full shrink-0 sm:w-auto">
-              <Link href="/assessment">
-                {assessment?.status === "IN_PROGRESS" ? "Continue My Assessment" : "Start My Assessment"}
-              </Link>
+              <Link href="/assessment">Start My Assessment</Link>
             </Button>
           </div>
         </Card>
-      )}
+      </div>
+    );
+  }
 
-      {business && (
+  // ---- Pre-session: assessment done, Builder not unlocked yet ---------
+  if (data.state === "pre-session") {
+    const reg = data.latestRegistration;
+    const isRegistered = reg && ["REGISTERED", "WAITLISTED"].includes(reg.status);
+    const isAttended = reg && ["ATTENDED", "COMPLETED"].includes(reg.status);
+
+    const checklist = [
+      { label: "Assessment Complete", done: true },
+      { label: "Session Registered", done: Boolean(isRegistered || isAttended) },
+      { label: "Session Attendance", done: Boolean(isAttended), pending: true },
+      { label: "Blueprint Builder", done: false, locked: true },
+    ];
+
+    return (
+      <div className="flex flex-col gap-8">
+        {header}
+
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-400">
-              Blueprint Scores
-            </h2>
-            {assessment?.status === "COMPLETED" && (
-              <Link
-                href={`/assessment/results/${assessment.id}`}
-                className="text-sm font-medium text-navy-600 hover:text-navy-900"
-              >
-                View My Full Results
-              </Link>
-            )}
-          </div>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-navy-400">
+            Blueprint Scores
+          </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {STAGES.map((stage) => {
-              const score = assessment?.scores.find((s) => s.stage === stage);
-              const card = (
-                <ScoreCard
-                  stage={stage}
-                  scorePercent={score?.scorePercent ?? null}
-                  statusLabel={score ? undefined : "Not started yet"}
-                />
-              );
-              return assessment?.status === "COMPLETED" ? (
-                <Link key={stage} href={`/assessment/results/${assessment.id}/stage/${stage}`}>
-                  {card}
+              const score = data.assessment.scores.find((s) => s.stage === stage);
+              return (
+                <Link key={stage} href={`/assessment/results/${data.assessment.id}/stage/${stage}`}>
+                  <ScoreCard stage={stage} scorePercent={score?.scorePercent ?? null} />
                 </Link>
-              ) : (
-                <div key={stage}>{card}</div>
               );
             })}
           </div>
         </section>
-      )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Your Path to Blueprint Builder</CardTitle>
+          </CardHeader>
+          <ul className="flex flex-col gap-3">
+            {checklist.map((item) => (
+              <li key={item.label} className="flex items-center gap-3 text-sm">
+                {item.done ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-success" aria-hidden="true" />
+                ) : item.locked ? (
+                  <Lock className="h-5 w-5 shrink-0 text-navy-300" aria-hidden="true" />
+                ) : (
+                  <Circle className="h-5 w-5 shrink-0 text-navy-300" aria-hidden="true" />
+                )}
+                <span className={item.done ? "text-navy-900" : "text-foreground-muted"}>
+                  {item.label}
+                </span>
+                {item.done && <span aria-hidden="true">✅</span>}
+                {!item.done && item.pending && <span aria-hidden="true">⏳</span>}
+                {!item.done && item.locked && <span aria-hidden="true">🔒</span>}
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-4 text-sm text-foreground-muted">
+            Your personalized Blueprint Builder unlocks after your session is completed.
+          </p>
+
+          {reg ? (
+            <p className="mt-4 rounded-xl bg-navy-50 px-4 py-3 text-sm text-navy-700">
+              You&apos;re {reg.status === "WAITLISTED" ? "waitlisted for" : "registered for"}{" "}
+              <span className="font-medium">{reg.session.title}</span> on{" "}
+              {reg.session.startsAt.toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+              .
+            </p>
+          ) : (
+            <Button asChild size="lg" variant="gold" className="mt-4">
+              <Link href="/sessions">View My Recommended Session</Link>
+            </Button>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  // ---- Builder unlocked: the full post-session dashboard ---------------
+  const { nextBestAction, todaysBlueprint, roadmapSnapshot, progressByStage } = data;
+
+  return (
+    <div className="flex flex-col gap-8">
+      {header}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+            Current Business
+          </p>
+          <p className="mt-1 text-lg font-semibold text-navy-900">{data.business.name}</p>
+        </Card>
+        {data.assessment.recommendedSessionType && (
+          <Card>
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+              Current Blueprint Stage
+            </p>
+            <p className="mt-1 text-lg font-semibold text-navy-900">
+              {sessionLabelFor(data.assessment.recommendedSessionType).replace("Blueprint ", "")}
+            </p>
+          </Card>
+        )}
+        {data.assessment.healthScorePercent !== null && (
+          <Card>
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+              Business Health
+            </p>
+            <p className="mt-1 text-lg font-semibold text-navy-900">
+              {data.assessment.healthScorePercent}%
+            </p>
+          </Card>
+        )}
+      </div>
+
+      {/* Next Best Action — the single most important thing on this page. */}
+      <Card className="border-gold-200 bg-gradient-to-br from-gold-50 to-surface">
+        <p className="text-sm font-semibold uppercase tracking-wide text-gold-600">
+          Your Next Best Move
+        </p>
+        {nextBestAction ? (
+          <>
+            <h2 className="mt-1 text-xl font-semibold text-navy-900">{nextBestAction.title}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-foreground-muted">
+              <StageBadge stage={nextBestAction.stage as Stage} />
+              <span>~{nextBestAction.estimatedMins ?? "a few"} min</span>
+              <span>
+                Impact:{" "}
+                <span className="font-semibold text-navy-700">
+                  {IMPACT_BY_PRIORITY[nextBestAction.priority]}
+                </span>
+              </span>
+            </div>
+            {nextBestAction.description && (
+              <p className="mt-3 text-sm text-navy-700">
+                <span className="font-medium">Why this matters: </span>
+                {nextBestAction.description}
+              </p>
+            )}
+            <Button asChild size="lg" variant="gold" className="mt-5">
+              <Link href="/build">Start Building</Link>
+            </Button>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-foreground-muted">
+            Your facilitator is preparing your Blueprint Roadmap.
+          </p>
+        )}
+      </Card>
+
+      {/* Today's Blueprint */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-navy-400">
+          Today&apos;s Blueprint
+        </h2>
+        <div className="flex flex-col gap-3">
+          {todaysBlueprint.mustDo && (
+            <TaskCard
+              title={todaysBlueprint.mustDo.title}
+              stage={todaysBlueprint.mustDo.stage as Stage}
+              priority="MUST_DO"
+              estimatedMins={todaysBlueprint.mustDo.estimatedMins ?? undefined}
+              href="/build"
+            />
+          )}
+          {todaysBlueprint.shouldDo && (
+            <TaskCard
+              title={todaysBlueprint.shouldDo.title}
+              stage={todaysBlueprint.shouldDo.stage as Stage}
+              priority="SHOULD_DO"
+              estimatedMins={todaysBlueprint.shouldDo.estimatedMins ?? undefined}
+              href="/build"
+            />
+          )}
+          {todaysBlueprint.bonus && (
+            <TaskCard
+              title={todaysBlueprint.bonus.title}
+              stage={todaysBlueprint.bonus.stage as Stage}
+              priority="BONUS"
+              estimatedMins={todaysBlueprint.bonus.estimatedMins ?? undefined}
+              href="/build"
+            />
+          )}
+          {!todaysBlueprint.mustDo && !todaysBlueprint.shouldDo && !todaysBlueprint.bonus && (
+            <EmptyState
+              icon={Sparkles}
+              title="Nothing left in your active tasks"
+              description="Check your full roadmap for what's next."
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/roadmap">View Roadmap</Link>
+                </Button>
+              }
+            />
+          )}
+        </div>
+      </section>
+
+      {/* Progress cards */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-navy-400">
+          Stage Progress
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {STAGES.map((stage) => {
+            const p = progressByStage[stage];
+            return (
+              <Link key={stage} href="/roadmap">
+                <Card>
+                  <p className="text-sm font-semibold text-navy-800">
+                    <span aria-hidden="true">{STAGE_META[stage].icon}</span> {STAGE_META[stage].label}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-navy-900">{p.percent}%</p>
+                  <ProgressBar value={p.percent} stage={stage} className="mt-2" />
+                  <p className="mt-1 text-xs text-foreground-muted">
+                    {p.completed} of {p.total} tasks complete
+                  </p>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Roadmap snapshot */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Next Best Move</CardTitle>
+            <CardTitle>Roadmap Snapshot</CardTitle>
           </CardHeader>
-          <EmptyState
-            icon={Sparkles}
-            title="Nothing to show yet"
-            description="Your personalized next action appears here once your assessment and roadmap are set up."
-          />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                ["Completed", roadmapSnapshot.completed],
+                ["In Progress", roadmapSnapshot.inProgress],
+                ["Ready", roadmapSnapshot.ready],
+                ["Locked", roadmapSnapshot.locked],
+              ] as const
+            ).map(([label, count]) => (
+              <div key={label} className="rounded-xl bg-navy-50 p-3 text-center">
+                <p className="text-xl font-semibold text-navy-900">{count}</p>
+                <p className="text-xs text-foreground-muted">{label}</p>
+              </div>
+            ))}
+          </div>
+          <Button asChild size="sm" variant="outline" className="mt-4">
+            <Link href="/roadmap">View Full Roadmap</Link>
+          </Button>
         </Card>
 
+        {/* Goal snapshot */}
         <Card>
           <CardHeader>
-            <CardTitle>Today&apos;s Blueprint</CardTitle>
+            <CardTitle>Goal Snapshot</CardTitle>
           </CardHeader>
-          <EmptyState
-            icon={ListChecks}
-            title="No tasks yet"
-            description="Must-do, should-do, and bonus tasks will show up here once your roadmap is built."
-          />
+          {data.goal ? (
+            <>
+              <p className="text-sm font-semibold text-navy-900">{data.goal.title}</p>
+              {data.goal.targetDate && (
+                <p className="mt-1 text-xs text-foreground-muted">
+                  Target: {data.goal.targetDate.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+                </p>
+              )}
+              <ProgressBar value={data.goal.progressPercent} className="mt-3" showValue />
+              {nextBestAction && (
+                <p className="mt-3 text-xs text-foreground-muted">
+                  <span className="font-medium text-navy-600">Next milestone: </span>
+                  {nextBestAction.title}
+                </p>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              icon={Target}
+              title="Set your first 90-day Blueprint goal"
+              action={
+                <Button asChild size="sm">
+                  <Link href="/goals">Create My Goal</Link>
+                </Button>
+              }
+            />
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Session info */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Sessions</CardTitle>
+          </CardHeader>
+          <div className="flex flex-col gap-3 text-sm">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+                Last Session
+              </p>
+              <p className="text-foreground-muted">
+                {data.lastSession ? data.lastSession.session.title : "None yet"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+                Upcoming Registered Session
+              </p>
+              <p className="text-foreground-muted">
+                {data.upcomingRegisteredSession
+                  ? `${data.upcomingRegisteredSession.session.title} — ${data.upcomingRegisteredSession.session.startsAt.toLocaleDateString(undefined, { month: "long", day: "numeric" })}`
+                  : "None yet"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+                Next Recommended Session
+              </p>
+              <p className="text-foreground-muted">
+                {data.recommendedUpcomingSession
+                  ? data.recommendedUpcomingSession.title
+                  : "None scheduled right now"}
+              </p>
+            </div>
+          </div>
+          <Button asChild size="sm" variant="outline" className="mt-4">
+            <Link href="/sessions">
+              <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+              Browse Sessions
+            </Link>
+          </Button>
         </Card>
 
+        {/* Recent wins */}
         <Card>
           <CardHeader>
-            <CardTitle>Roadmap Progress</CardTitle>
+            <CardTitle>Recent Wins</CardTitle>
           </CardHeader>
-          <EmptyState
-            icon={Compass}
-            title="Your roadmap isn't built yet"
-            description="Complete your assessment to generate a personalized roadmap."
-          />
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Session</CardTitle>
-          </CardHeader>
-          <EmptyState
-            icon={CalendarDays}
-            title="No upcoming sessions"
-            description="Sessions you register for will appear here."
-            action={
-              <Button asChild size="sm" variant="outline">
-                <Link href="/sessions">Browse Sessions</Link>
-              </Button>
-            }
-          />
+          {data.recentWins.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {data.recentWins.map((task) => (
+                <li key={task.id} className="flex items-center gap-2 text-sm text-navy-800">
+                  <Trophy className="h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />
+                  {task.title}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-foreground-muted">
+              Complete your first task to see it here.
+            </p>
+          )}
         </Card>
       </div>
     </div>

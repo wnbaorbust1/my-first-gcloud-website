@@ -1,5 +1,6 @@
 import { Clock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,6 +22,8 @@ interface TaskCardProps {
   icon?: LucideIcon;
   ctaLabel?: string;
   onAction?: () => void;
+  /** Renders the CTA as a link instead of a button — use for server components, which can't pass onAction. */
+  href?: string;
   className?: string;
 }
 
@@ -32,6 +35,7 @@ export function TaskCard({
   icon: Icon = Clock,
   ctaLabel = "Start",
   onAction,
+  href,
   className,
 }: TaskCardProps) {
   const priorityMeta = PRIORITY_META[priority];
@@ -63,9 +67,15 @@ export function TaskCard({
           </p>
         )}
       </div>
-      <Button size="sm" variant="outline" onClick={onAction} className="shrink-0">
-        {ctaLabel}
-      </Button>
+      {href ? (
+        <Button size="sm" variant="outline" asChild className="shrink-0">
+          <Link href={href}>{ctaLabel}</Link>
+        </Button>
+      ) : (
+        <Button size="sm" variant="outline" onClick={onAction} className="shrink-0">
+          {ctaLabel}
+        </Button>
+      )}
     </Card>
   );
 }

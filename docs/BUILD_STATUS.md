@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 3: Session System + Registration + Attendance_
+_Last updated: 2026-08-10 — Phase 4: Personalized Blueprint Dashboard_
 
 ## COMPLETE
 
@@ -188,24 +188,95 @@ that depends on it (attendance, notes, summary) is consistent with what
 the UI shows. Verified: a member cannot mark their own attendance, edit
 someone else's summary, or read another business's summary — all 403.
 
+---
+
+### Phase 4 — Personalized Blueprint Dashboard
+
+**Roadmap generation on unlock**
+- `TaskTemplate` seeded (lazily, same pattern as assessment/session
+  content) with 15 starter tasks — 5 per stage, each Must Do/Should Do/
+  Bonus — framed as a checklist, not the interactive Business Builder
+  workbook (still out of scope per this prompt and the last two).
+- `src/lib/roadmap/generate.ts`: `ensureRoadmapGenerated(businessId)` is
+  called once, automatically, the moment `markAttendance` unlocks
+  `builderAccessEligible` — no manual step. "Personalization" is a
+  deterministic rule, not AI: stages are ordered by the business's own
+  assessment scores, weakest first, and only that first stage's tasks
+  start `NOT_STARTED` — every later stage's tasks start `LOCKED`.
+  Verified live: a business scoring Passion 75 / Power 79 / Legacy 77 got
+  Passion tasks unlocked first, then Legacy (77 < 79), then Power last —
+  exactly the weakest-first order the scores implied.
+
+**Dashboard funnel**
+- `src/lib/dashboard/data.ts` is one query bundle returning a
+  discriminated state: `no-business` → `no-assessment` → `pre-session`
+  → `builder`. `/dashboard` renders a genuinely different screen for
+  each, per spec:
+  - **pre-session**: real stage scores (clickable through to score
+    detail), a checklist (Assessment Complete ✅ / Session Registered /
+    Session Attendance ⏳ / Blueprint Builder 🔒) built from actual
+    registration status, and the exact unlock message from the spec.
+  - **builder**: Current Business/Stage/Health header, a dominant Next
+    Best Action card (single highest-priority `NOT_STARTED` task, real
+    "why it matters" copy, Impact derived from priority), Today's
+    Blueprint (one task per Must/Should/Bonus tier), Stage Progress
+    cards (real roadmap-completion percent per stage, linking to
+    `/roadmap`), Roadmap Snapshot (real Completed/In Progress/Ready/
+    Locked counts), Goal Snapshot (real user-set progress, never
+    fabricated), Sessions (last/upcoming/next-recommended, all real
+    registrations), Recent Wins.
+  - Both smart empty states from the spec are wired to real conditions:
+    "Your facilitator is preparing your Blueprint Roadmap" (no roadmap
+    tasks yet) and "Set your first 90-day Blueprint goal" (no active
+    goal), not shown unconditionally.
+- Verified live end-to-end: a fresh business walked through
+  no-assessment → pre-session (registered, not yet attended) →
+  attendance marked → builder-unlocked dashboard with the real,
+  weakest-first roadmap, in one continuous test. A second, unrelated
+  business with no attended session was confirmed to stay on the locked
+  `/roadmap` empty state the whole time — no cross-contamination.
+
+**Real destinations for dashboard links**
+- `/roadmap` now renders the actual `RoadmapItem` stepper (checkmarks,
+  current-stage highlight, locks) from real `RoadmapTask` rows, replacing
+  the Phase 1 placeholder — needed since Stage Progress cards and the
+  Roadmap Snapshot both link here.
+- `/goals` now supports real creation (`POST /api/goals`) and progress
+  updates (`PATCH /api/goals/[id]`, 0/25/50/75/100%, auto-completes at
+  100%) — needed since the Goal Snapshot empty state links here.
+- `TaskCard` gained an `href` prop so its CTA can render as a real link
+  (to `/build`) from a server component — the Today's Blueprint cards
+  no longer have an inert "Start" button.
+
+**Mobile**
+- No special-cased mobile layout logic was needed: the builder
+  dashboard's DOM order already puts Next Best Action immediately after
+  the header stats and before Today's Blueprint and Stage Progress,
+  which is the spec's mobile priority order — verified with a 390px
+  viewport screenshot.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1, 2, or 3.
+- Nothing left mid-implementation from Phase 1, 2, 3, or 4.
 
 ## NOT STARTED
 
-- Personalized Roadmap generation, Business Builder activities, Blueprint
-  AI, My Blueprint binder, Goals UI, Resources library, Progress story
-  (next phase covers the dashboard shell around these).
+- Business Builder activities (the interactive workbook UI — `/build`
+  is still a placeholder; the dashboard now links to it correctly, it
+  just isn't built yet), Blueprint AI, My Blueprint binder, Resources
+  library, Progress page's "story" narrative.
 - Admin/Facilitator functionality beyond role-gated placeholder shells
-  and the participant view built this phase (no admin UI yet to edit
-  `AssessmentScoringConfig`, create `SessionOffering`s, or assign
-  `FacilitatorAssignment`s — all three are real data operations today,
+  and the participant view (no admin UI yet to edit
+  `AssessmentScoringConfig`, create `SessionOffering`s/`TaskTemplate`s,
+  or assign `FacilitatorAssignment`s — all real data operations today,
   just not yet exposed with a form).
 - Billing. Transactional email (see Known Issues).
 - A member-facing view of their own Post-Session Summary (facilitators
   can create/edit it and the member can already `GET` it via the API as
   its owner; there's no page rendering it for them yet).
+- Per-stage roadmap sub-pages — Stage Progress cards all link to the one
+  `/roadmap` page rather than a stage-scoped view (spec says "each opens
+  respective roadmap"; simplified to one page showing every stage).
 
 ## KNOWN ISSUES
 
@@ -247,6 +318,11 @@ someone else's summary, or read another business's summary — all 403.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260810182749_task_template_priority`
+  — `TaskTemplate` gained `priority` (`TaskPriority`), so a generated
+  `RoadmapTask` can inherit Must Do/Should Do/Bonus from its template.
+- New migration: `prisma/migrations/20260810182438_goal_progress` —
+  `Goal` gained `progressPercent` (`Int`, default 0, user-set only).
 - New migration: `prisma/migrations/20260810181044_sessions_registration_attendance`.
   - `SessionOffering`: added `sessionType` (new enum
     `RecommendedSessionType`, replacing the unused `stage` field),
@@ -326,13 +402,34 @@ someone else's summary, or read another business's summary — all 403.
   every route behind that check — attendance, notes, summaries — agrees
   with what the UI shows a facilitator they can do.
 
+## IMPORTANT DECISIONS (Phase 4 additions)
+
+- **Roadmap "personalization" is a deterministic scoring-based rule, not
+  AI.** Stage order = assessment stage scores ascending; only the first
+  stage unlocks. No LLM call, no per-user prompt — matches "Do not add
+  full AI functionality yet" while still giving each business a
+  genuinely different starting roadmap based on their own data.
+- **Goal progress is user-set, never derived.** Rejected computing it
+  from elapsed time toward the target date (misleading — a goal isn't
+  25% done just because 25% of the time has passed) or from linked task
+  completion (no Goal↔Task linking model exists yet). A manual 0/25/50/
+  75/100% control is honest about what's actually known.
+- **`TaskCard` gained an `href` prop rather than adding client-side
+  interactivity to the dashboard.** Keeps `/dashboard` a server
+  component (one query bundle, no client-side data fetching) while still
+  giving every task card a working, real destination.
+- **One `/roadmap` page, not one per stage.** The spec's Stage Progress
+  cards say "each opens respective roadmap"; since all stages already
+  render together on one page in priority order (with locks), a second
+  navigation layer would fragment the same information without adding
+  clarity. Revisit if the roadmap grows large enough that stage-scoped
+  views become genuinely useful.
+
 ## NEXT RECOMMENDED PHASE
 
-Build the **Personalized Blueprint Builder Dashboard**: generate an
-initial Roadmap (from `TaskTemplate`s) the moment a business's
-`builderAccessEligible` flips true, then rebuild `/dashboard` to show the
-pre-session state (assessment → registration → attendance checklist) for
-locked businesses and the full Builder dashboard (Next Best Action,
-Today's Blueprint, stage progress, roadmap snapshot, goal snapshot,
-session info, recent wins) for unlocked ones — all from real data, no
-placeholders passing as content.
+Build the **Business Builder** interactive workbook: turn `/build` (and
+each roadmap task) from a checklist item into the guided, per-task
+activity the spec describes (lesson/why-it-matters, the activity itself,
+tips/example, "Ask Blueprint AI") — the last major placeholder the
+dashboard now correctly links to but doesn't yet implement. Blueprint AI
+and billing remain explicitly out of scope until their own phases.
