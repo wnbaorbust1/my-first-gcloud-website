@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { checkForNewMilestones } from "@/lib/progress/milestones";
 import { ensureBlueprintDocument } from "@/lib/roadmap/blueprint";
 import { prisma } from "@/lib/prisma";
 import { SECTION_STAGE } from "@/lib/blueprint/sections";
@@ -55,6 +56,8 @@ export async function PATCH(request: Request) {
       metadata: { businessId, title },
     },
   });
+
+  await checkForNewMilestones(businessId);
 
   return NextResponse.json({ ok: true, updatedAt: section.updatedAt });
 }

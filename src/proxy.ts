@@ -15,6 +15,7 @@ export const config = {
     "/ai/:path*",
     "/my-blueprint/:path*",
     "/goals/:path*",
+    "/money/:path*",
     "/resources/:path*",
     "/sessions/:path*",
     "/progress/:path*",

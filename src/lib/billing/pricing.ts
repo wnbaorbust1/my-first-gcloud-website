@@ -15,6 +15,4 @@ export const ANNUAL_SAVINGS_CENTS = MONTHLY_PRICE_CENTS * 12 - ANNUAL_PRICE_CENT
 /** "approximately 17%" per spec's PRICING PAGE copy. */
 export const ANNUAL_SAVINGS_PERCENT = Math.round((ANNUAL_SAVINGS_CENTS / (MONTHLY_PRICE_CENTS * 12)) * 100);
 
-export function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
-}
+export { formatCents } from "@/lib/money";

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { CADENCE_LABELS, GOAL_TYPE_LABELS } from "@/lib/goals/meta";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -55,7 +56,15 @@ export default async function GoalsPage() {
         {goals.map((goal) => (
           <Card key={goal.id}>
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
+                <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-navy-500">
+                    {CADENCE_LABELS[goal.cadence]}
+                  </span>
+                  <span className="rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gold-700">
+                    {GOAL_TYPE_LABELS[goal.goalType]}
+                  </span>
+                </div>
                 <p
                   className={
                     goal.status === "COMPLETED"
@@ -65,12 +74,19 @@ export default async function GoalsPage() {
                 >
                   {goal.title}
                 </p>
+                {goal.targetValue !== null && (
+                  <p className="mt-1 text-xs font-medium text-navy-600">
+                    Target: {goal.unit === "$" ? "$" : ""}
+                    {goal.targetValue.toLocaleString()}
+                    {goal.unit && goal.unit !== "$" ? ` ${goal.unit}` : ""}
+                  </p>
+                )}
                 {goal.description && (
                   <p className="mt-1 text-sm text-foreground-muted">{goal.description}</p>
                 )}
                 {goal.targetDate && (
                   <p className="mt-1 text-xs text-foreground-muted">
-                    Target:{" "}
+                    Target date:{" "}
                     {goal.targetDate.toLocaleDateString(undefined, {
                       month: "long",
                       day: "numeric",

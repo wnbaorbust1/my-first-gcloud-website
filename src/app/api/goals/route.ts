@@ -43,6 +43,10 @@ export async function POST(request: Request) {
       title: input.title,
       description: input.description,
       targetDate: input.targetDate ? new Date(input.targetDate) : undefined,
+      ...(input.cadence ? { cadence: input.cadence } : {}),
+      ...(input.goalType ? { goalType: input.goalType } : {}),
+      targetValue: input.targetValue,
+      unit: input.unit,
     },
   });
 

@@ -72,6 +72,7 @@ model User {
   auditLogs                   AuditLog[]
   aiConversations             AiConversation[]
   membershipsGranted          Membership[]          @relation("MembershipGrantedBy")
+  weeklyCheckIns              WeeklyCheckIn[]
 
   @@index([role])
 }
@@ -208,6 +209,16 @@ model Business {
   sessionCompletedAt              DateTime?
   qualifyingSessionRegistrationId String?
 
+  /// ACCOUNTABILITY (spec Prompt 9): the member's chosen check-in cadence
+  /// — open string ("2_DAYS_WEEK" | "3_DAYS_WEEK" | "5_DAYS_WEEK" |
+  /// "CUSTOM"), consistent with this schema's other open categorical
+  /// fields. `accountabilityCustomDays` only applies when CUSTOM.
+  /// `lastActiveAt` is what drives the non-shaming "Welcome back" message
+  /// — a gap, not a missed-day counter (spec: "Do not shame missed days").
+  accountabilityCadence    String?
+  accountabilityCustomDays Int?
+  lastActiveAt             DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -224,6 +235,10 @@ model Business {
   postSessionSummaries   PostSessionSummary[]
   aiConversations        AiConversation[]
   membership             Membership?
+  revenuePlans           RevenuePlan[]
+  pricingPlans           PricingPlan[]
+  weeklyCheckIns         WeeklyCheckIn[]
+  milestones             BusinessMilestone[]
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
@@ -726,14 +741,46 @@ enum GoalStatus {
   ABANDONED
 }
 
+/// spec Prompt 9 GOALS: "Allow: Annual, Quarterly, 90-Day, Monthly, Weekly."
+enum GoalCadence {
+  WEEKLY
+  MONTHLY
+  NINETY_DAY
+  QUARTERLY
+  ANNUAL
+}
+
+/// spec Prompt 9 GOALS: the 9 named goal types.
+enum GoalType {
+  REVENUE
+  PROFIT
+  LEADS
+  CUSTOMERS
+  LAUNCH
+  MARKETING
+  SYSTEMS
+  TEAM
+  PERSONAL_CEO
+}
+
 model Goal {
-  id          String     @id @default(cuid())
+  id          String      @id @default(cuid())
   businessId  String
   userId      String
   title       String
-  description String?    @db.Text
+  description String?     @db.Text
   targetDate  DateTime?
-  status      GoalStatus @default(ACTIVE)
+  status      GoalStatus  @default(ACTIVE)
+  cadence     GoalCadence @default(NINETY_DAY)
+  goalType    GoalType    @default(PERSONAL_CEO)
+
+  /// Optional numeric target for measurable goal types (Revenue, Leads,
+  /// Customers, Profit) — e.g. 10000 for "$10,000" or 25 for "25 leads."
+  /// Free-text `unit` (not an enum) keeps it flexible across goal types
+  /// without a migration, matching this schema's open-categorical-field
+  /// convention elsewhere.
+  targetValue Float?
+  unit        String?
 
   /// User-set, never derived — the Goal Snapshot shows real progress or
   /// none at all (spec: "No fake analytics"), not a fabricated
@@ -748,6 +795,140 @@ model Goal {
 
   @@index([businessId])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Money tools (spec Prompt 9: Revenue Planner, Pricing Builder)
+// ---------------------------------------------------------------------------
+
+/// One saved run of the Revenue Planner calculator (spec Prompt 9). Every
+/// run is kept (not just the latest) so Monthly Review can reference "the
+/// plan you set" without it having been overwritten by a later what-if.
+/// All money fields are cents (this schema's existing convention — see
+/// Membership) for exact arithmetic; percentages are stored as entered
+/// (e.g. 2.5 for 2.5%), not pre-divided.
+model RevenuePlan {
+  id                    String @id @default(cuid())
+  businessId            String
+  revenueGoalCents      Int
+  offerPriceCents       Int
+  conversionRatePercent Float
+  workingWeeks          Int
+
+  /// Calculated, never re-derived after save — a later change to the
+  /// calculator's formula shouldn't silently rewrite historical plans.
+  salesNeeded        Int
+  leadsNeeded        Int
+  monthlyTargetCents Int
+  weeklyTargetCents  Int
+
+  createdAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+}
+
+/// One saved run of the Pricing Builder (spec Prompt 9). `considerations`
+/// is the honest, non-guaranteed framing text the spec requires ("Do not
+/// portray result as guaranteed market pricing") — generated alongside
+/// the range, not a separate disclaimer bolted on by the UI.
+model PricingPlan {
+  id                 String @id @default(cuid())
+  businessId         String
+  offerName          String
+  deliveryTimeHours  Float
+  directCostsCents   Int
+  desiredProfitCents Int
+  capacityPerMonth   Int
+
+  estimatedLowCents  Int
+  estimatedHighCents Int
+  considerations     String @db.Text
+
+  createdAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Progress & Accountability (spec Prompt 9)
+// ---------------------------------------------------------------------------
+
+/// WEEKLY CEO CHECK-IN (spec): the exact 8 questions as columns, plus 3
+/// structured numbers (Leads/Sales/Revenue) that Monthly Review and the
+/// revenue Milestones both roll up from — the only place this app
+/// collects self-reported revenue, since nothing else in the schema
+/// tracks actual money changing hands.
+model WeeklyCheckIn {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  /// The Monday of the week this check-in covers — one check-in per
+  /// business per week (spec doesn't ask for multiple check-ins in the
+  /// same week; a member revisiting theirs should edit it, not fork it).
+  weekOf     DateTime
+
+  completed        String? @db.Text
+  slowedDown       String? @db.Text
+  biggestWin       String? @db.Text
+  biggestChallenge String? @db.Text
+  leads            Int?
+  sales            Int?
+  revenueCents     Int?
+  nextWeekFocus    String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, weekOf])
+  @@index([businessId, weekOf])
+}
+
+/// The 15 spec MILESTONES, as a closed set (code-referenced, like every
+/// other enum in this schema) rather than a free-text catalog table —
+/// the list is fixed by the spec, not admin-editable content.
+enum MilestoneKey {
+  MISSION_DEFINED
+  IDEAL_CUSTOMER_DEFINED
+  FIRST_OFFER
+  PRICING_COMPLETE
+  FIRST_LEAD_SYSTEM
+  FIRST_CUSTOMER
+  FIRST_1K
+  FIRST_5K_MONTH
+  FIRST_10K_MONTH
+  FIRST_SOP
+  FIRST_AUTOMATION
+  FIRST_CONTRACTOR
+  FIRST_EMPLOYEE
+  CEO_MODE
+  LEGACY_BUILDER
+}
+
+/// One row per business per achieved milestone — never deleted, so
+/// "achieved" is permanent even if the underlying Blueprint content is
+/// later edited away. `source` distinguishes milestones detected from
+/// real data ("auto" — e.g. a Blueprint section being saved) from ones a
+/// member confirms themselves ("manual" — e.g. First Employee, which
+/// nothing in this schema tracks automatically) — both are equally real,
+/// neither is fabricated.
+model BusinessMilestone {
+  id         String       @id @default(cuid())
+  businessId String
+  milestone  MilestoneKey
+  achievedAt DateTime     @default(now())
+  source     String       @default("auto")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, milestone])
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------

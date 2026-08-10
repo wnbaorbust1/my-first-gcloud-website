@@ -531,6 +531,42 @@ export default async function DashboardPage() {
           )}
         </Card>
       </div>
+
+      {/* Milestones */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Milestones</CardTitle>
+            <Link href="/progress" className="text-xs font-medium text-navy-500 underline hover:text-navy-800">
+              View All
+            </Link>
+          </div>
+        </CardHeader>
+        <p className="text-sm text-navy-800">
+          {data.milestoneSnapshot.achievedCount} of {data.milestoneSnapshot.total} reached
+        </p>
+        {data.milestoneSnapshot.recent.length > 0 ? (
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {data.milestoneSnapshot.recent.map((m) => (
+              <li key={m.key} className="rounded-full bg-gold-50 px-3 py-1 text-xs font-medium text-gold-700">
+                {m.label}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-foreground-muted">
+            Keep building — your first milestone is closer than you think.
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/progress">Weekly Check-In &amp; Progress</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/money">Money Tools</Link>
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

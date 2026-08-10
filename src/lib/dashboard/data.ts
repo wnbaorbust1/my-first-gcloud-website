@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
 import { STAGES, type Stage } from "@/lib/utils";
@@ -99,7 +100,7 @@ export async function getDashboardData(userId: string) {
       }),
     ) as Record<Stage, { completed: number; total: number; percent: number }>;
 
-  const [goal, lastAttendedRegistration, upcomingRegisteredRegistration, recommendedUpcoming] =
+  const [goal, lastAttendedRegistration, upcomingRegisteredRegistration, recommendedUpcoming, milestones] =
     await Promise.all([
       prisma.goal.findFirst({
         where: { businessId: business.id, status: "ACTIVE" },
@@ -122,7 +123,21 @@ export async function getDashboardData(userId: string) {
       assessment.recommendedSessionType
         ? getUpcomingSessions(assessment.recommendedSessionType)
         : Promise.resolve([]),
+      prisma.businessMilestone.findMany({
+        where: { businessId: business.id },
+        orderBy: { achievedAt: "desc" },
+      }),
     ]);
+
+  const milestoneSnapshot = {
+    achievedCount: milestones.length,
+    total: MILESTONE_CATALOG.length,
+    recent: milestones.slice(0, 3).map((m) => ({
+      key: m.milestone,
+      label: MILESTONE_CATALOG.find((c) => c.key === m.milestone)?.label ?? m.milestone,
+      achievedAt: m.achievedAt,
+    })),
+  };
 
   const recentWins = tasks
     .filter((t) => t.status === "COMPLETED")
@@ -142,6 +157,7 @@ export async function getDashboardData(userId: string) {
     upcomingRegisteredSession: upcomingRegisteredRegistration,
     recommendedUpcomingSession: recommendedUpcoming[0] ?? null,
     recentWins,
+    milestoneSnapshot,
   };
 }
 

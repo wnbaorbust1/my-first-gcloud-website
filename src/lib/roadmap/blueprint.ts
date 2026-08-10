@@ -1,5 +1,6 @@
 import "server-only";
 
+import { checkForNewMilestones } from "@/lib/progress/milestones";
 import { prisma } from "@/lib/prisma";
 import type { Stage } from "@/lib/utils";
 
@@ -81,4 +82,6 @@ export async function saveTaskResponseToBlueprint(roadmapTaskId: string): Promis
     where: { roadmapTaskId },
     data: { savedToBlueprintAt: new Date() },
   });
+
+  await checkForNewMilestones(roadmap.businessId);
 }

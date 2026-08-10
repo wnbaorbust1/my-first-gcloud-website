@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 8: Membership + Billing_
+_Last updated: 2026-08-10 — Phase 9: Goals + Money + Progress + Accountability_
 
 ## COMPLETE
 
@@ -604,15 +604,171 @@ secure integration")**
   "confirming" beat before redirecting to the real Billing page, so the
   webhook has a moment to land first.
 
+---
+
+### Phase 9 — Goals + Money + Progress + Accountability
+
+**Goals — 5 cadences × 9 types, all real**
+- `Goal` gained `cadence` (`GoalCadence`: WEEKLY, MONTHLY, NINETY_DAY,
+  QUARTERLY, ANNUAL — default NINETY_DAY, unchanged for pre-Phase-9
+  rows), `goalType` (`GoalType`: REVENUE, PROFIT, LEADS, CUSTOMERS,
+  LAUNCH, MARKETING, SYSTEMS, TEAM, PERSONAL_CEO), and `targetValue`/
+  `unit` (kept as `Float`/`String`, not cents, since a goal can target
+  dollars, leads, or customers). Verified live across four goals spanning
+  every axis (Weekly Revenue $2,000, 90-Day Personal CEO "fewer than 40
+  hrs/week," Annual Team "hire a full team," Monthly Leads 25) — each
+  rendered with correct cadence/type badges and, where numeric, the
+  right target/unit on `/goals`.
+
+**Revenue Planner and Pricing Builder — real math, not AI-guessed**
+- `calculateRevenuePlan` (`src/lib/money/revenue-planner.ts`): Revenue
+  Goal, Offer Price, Conversion Rate, Working Weeks → Sales Needed
+  (`ceil(goal / price)`), Leads Needed (`ceil(sales / conversion)`),
+  Weekly Target (`goal / workingWeeks`), Monthly Target
+  (`weeklyTarget × 52/12`). Verified live against a hand-calculation
+  ($1,200 goal / $100 price / 20% conversion / 48 weeks →
+  salesNeeded=12, leadsNeeded=60, weeklyTarget=$25.00,
+  monthlyTarget=$108.33) — exact match.
+- `calculatePricingPlan` (`src/lib/money/pricing-builder.ts`): Offer,
+  Delivery Time, Direct Costs, Desired Profit, Capacity →
+  `targetPrice = directCosts + desiredProfit / capacity`, then a ±15%
+  band as the estimated sustainable range, plus a $/hour framing and a
+  capacity-shortfall warning. The considerations text spells out, per
+  spec, that this is **not a guaranteed market price** — it's a
+  cost-plus sustainability floor, not a market-validated number.
+  Verified live ($20 costs + $2,000 profit / 20 capacity → $120 target →
+  $102.00–$138.00 range, $60/hr framing at 2hr delivery) — exact match.
+- Both calculators save their result (`RevenuePlan`, `PricingPlan`,
+  business-scoped) so a member's last calculation is there next time,
+  not just a one-off compute-and-forget.
+
+**Weekly CEO Check-In**
+- The spec's exact 8 fields: What did you complete, What slowed you
+  down, Biggest win, Biggest challenge, Leads, Sales, Revenue, What
+  needs attention next week. One `WeeklyCheckIn` row per
+  `(businessId, weekOf)` (Monday-anchored via `getWeekStart`), upserted
+  — resubmitting the same week updates in place rather than creating a
+  duplicate. Verified live: submitting the same week twice left exactly
+  one row (same `id`, `updatedAt` changed) via direct SQL.
+- Copy is deliberately non-punitive ("There's no penalty for missing a
+  day" sits right above the form) — same spirit as Accountability's
+  required "do not shame" language below.
+
+**Monthly Review — built entirely from real stored data**
+- `getMonthlyReview()` computes all nine spec-required sections from
+  actual rows, nothing fabricated: Roadmap progress (from `RoadmapTask`
+  status counts), Score changes (current completed `Assessment` vs. the
+  previous completed one — see Important Decisions for why this is
+  assessment-to-assessment, not same-month), Business Health change,
+  active Goals, Leads/Sales/Revenue (summed from that month's
+  `WeeklyCheckIn` rows), Achievements (`BusinessMilestone` rows earned
+  that month), Current Bottleneck (reuses Phase 2's
+  `topStrengthsAndPriorities`), and Recommended Focus (highest-priority
+  NOT_STARTED roadmap task, linked straight to `/build/[taskId]`).
+  Verified live via screenshot showing real numbers throughout: "August
+  2026," 10% Roadmap Complete, 12 Leads, 3 Sales, $6,500 Revenue,
+  Current Bottleneck "Impact (50%)," Recommended Focus correctly linked,
+  and 6 real Achievements listed.
+
+**Reassessment — eligibility, retake, and a real Previous-vs-Current comparison**
+- `getReassessmentEligibility()`: eligible after
+  `REASSESSMENT_DAYS = 90` since the last completed assessment, OR at
+  `REASSESSMENT_ROADMAP_PERCENT = 50`% roadmap completion — whichever
+  comes first, matching the spec's "after 90 days OR substantial
+  roadmap completion." `POST /api/assessment/retake` re-checks
+  eligibility server-side (never trusts the client) before calling the
+  existing (Phase 2) `getOrCreateActiveAssessment(..., { forceNew: true })`.
+  **Verified fully live, not just read from code**: backdated a real
+  completed `Assessment.completedAt` by 91 days via direct SQL, reloaded
+  `/progress`, and confirmed the page itself now read *"It's been 91
+  days since your last assessment. You're eligible to see how far you've
+  come."* Called the real retake API, answered all 36 questions of the
+  new assessment through the real autosave endpoint (each `SCALE_1_5`
+  answer bumped up from the first assessment's to produce an honest
+  improvement) and completed it through the real completion endpoint.
+  The Reassessment tab then rendered a real **Previous vs. Current**
+  comparison computed from the two actual completed assessments: Passion
+  50%→75% (+25), Power 58%→79% (+21), Legacy 54%→77% (+23), Business
+  Health 54%→77% — and eligibility correctly re-locked (back to "0 so
+  far") now that the most recent assessment is fresh.
+
+**15 Milestones — auto-detected from real signals, self-attested only where undetectable**
+- `MilestoneKey` enum, all 15 from the spec: Mission Defined, Ideal
+  Customer Defined, First Offer, Pricing Complete, First Lead System,
+  First Customer, First $1K, First $5K Month, First $10K Month, First
+  SOP, First Automation, First Contractor, First Employee, CEO Mode,
+  Legacy Builder. `checkForNewMilestones()` runs after every Blueprint
+  section save (both the automatic Save-to-Blueprint path and a manual
+  edit) and after every Weekly Check-in — never fabricated, only ever
+  derived from Blueprint section content presence or real cumulative/
+  monthly revenue and sales figures already in the database.
+- **Verified live**: completing the real "Define Business Purpose,"
+  "Define Ideal Customer," and "Create Mission Statement" Builder tasks
+  auto-achieved Mission Defined and Ideal Customer Defined with
+  `source: "auto"`. A single $6,500/3-sale Weekly Check-in correctly
+  auto-achieved First Customer, First $1K, and First $5K Month in the
+  same pass, and correctly did **not** achieve First $10K Month (since
+  $6,500 < $10,000). Manually marking First Employee via
+  `POST /api/progress/milestones/FIRST_EMPLOYEE/achieve` succeeded with
+  `source: "manual"`; attempting to manually mark the auto-detectable
+  Mission Defined the same way correctly returned 400 ("is
+  auto-detected, not self-reported") — `markMilestoneManually()` only
+  accepts the four milestones the catalog itself marks
+  `autoDetectable: false` (First Contractor, First Employee, CEO Mode,
+  Legacy Builder).
+
+**Accountability — cadence choice with no shame-based messaging**
+- 2/3/5 days per week or Custom (`Business.accountabilityCadence`/
+  `accountabilityCustomDays`), set from `/progress`. Copy reads "How
+  often do you want to show up here? There's no penalty for missing a
+  day" — never a streak counter or a missed-day warning, per spec ("Do
+  not shame missed days").
+- **Welcome Back banner, verified live with a real elapsed gap**: the
+  page reads `Business.lastActiveAt` *before* updating it on the same
+  load (`isWelcomeBack()`, gap threshold `WELCOME_BACK_GAP_DAYS = 5`).
+  Backdated `lastActiveAt` by 10 days via direct SQL, reloaded
+  `/progress`, and confirmed the rendered banner reads exactly *"**Welcome
+  back.** Let's continue where you left off."* — the spec's literal
+  copy.
+
+**Dashboard integration**
+- New Milestones card (achieved count / total, three most recent, quick
+  links to Progress and Money) and a Goal Snapshot card showing the
+  business's active goal's real progress — both added to the existing
+  `getDashboardData()` bundle in `src/lib/dashboard/data.ts` alongside
+  the Phase 8 EXPIRED ACCOUNT branch (unchanged this phase). New "Money"
+  nav item added alongside the existing sidebar/bottom-nav items.
+
+**Verification method**
+- Live end-to-end throughout, not code review: a full test business
+  (Quill Consulting) taken through assessment completion, session
+  attendance/Builder unlock, three real Builder task completions, all
+  four Goal combinations, both calculators, a check-in submitted twice
+  (upsert proof), milestone auto-detection and manual marking, an
+  accountability cadence change, the full 91-day-backdated reassessment
+  → retake → real second assessment → real score comparison flow above,
+  and the 10-day-backdated Welcome Back banner — all confirmed via
+  direct Postgres queries and six Playwright screenshots (Weekly
+  Check-In, Monthly Review, Milestones, Reassessment, Goals, Dashboard).
+- **Authorization isolation verified live**: a freshly signed-up user
+  with no business membership at all got 404 from Check-in, Revenue
+  Planner, Pricing Builder, Milestone-achieve, Accountability, and
+  Assessment Retake for the test business, and 403 from Goal creation
+  (matching that route's pre-existing Phase 4 pattern) — the same
+  "unrelated caller gets a flat denial" boundary every prior phase
+  establishes. All test data (business, three test users, the
+  second/retake assessment) removed afterward.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 8. Every prompt in the current build sequence (1–8) is complete.
+- Nothing left mid-implementation from Phase 1 through 9. Every prompt in the current build sequence (1–9) is complete.
 
 ## NOT STARTED
 
-- Resources library, Progress page's "story" narrative.
-- PROMPT 9 (Goals + Money + Progress + Accountability) — received during
-  this phase, not yet started.
+- Resources library, Progress page's "story" narrative (both still
+  `ComingSoon` placeholders — Prompt 9 gave Progress its check-in/review/
+  milestone/reassessment content but not a "story" narrative view, which
+  the spec never actually defined beyond the section heading).
 - Admin/Facilitator functionality beyond role-gated placeholder shells,
   the participant view, and the roadmap control page built in Phase 5
   (no admin UI yet to edit `AssessmentScoringConfig`, create
@@ -729,9 +885,60 @@ secure integration")**
     Billing page's "Payment Method" could show stale brand/last4 until
     the next `payment_method.attached` fires. Doesn't affect the
     subscription's actual billing — only that one display field.
+20. **Monthly Review's Score Change compares assessment-to-assessment,
+    not calendar-month-to-calendar-month.** If a member completes their
+    only assessment in August and reassesses in November, November's
+    Monthly Review shows that improvement — but August through October's
+    reviews show no change at all, since there's only ever one completed
+    assessment to compare against until a reassessment exists. See
+    Important Decisions for why this was chosen over a same-month delta.
+21. **Milestone auto-detection runs synchronously inside the check-in and
+    Blueprint-save request**, not as a background job. Fine at this
+    scale (a handful of cheap existence/threshold queries per save); a
+    business with a very large Blueprint or check-in history could see
+    this add measurable latency to those specific requests before it
+    would to anything else.
+22. **Reassessment's 90-day and 50%-roadmap thresholds are fixed
+    constants** (`REASSESSMENT_DAYS`, `REASSESSMENT_ROADMAP_PERCENT` in
+    `src/lib/progress/reassessment.ts`), not per-business configurable.
+    Matches the spec's flat numbers; revisit if a future phase needs
+    these tunable per plan or per business.
+23. **No UI yet to browse *all* past assessments, only the two most
+    recent (Previous vs. Current).** A member who reassesses more than
+    once has no in-app history view of every completed assessment — only
+    the latest comparison. The underlying data (every completed
+    `Assessment` row) is retained, so this is a UI gap, not a data one.
 
 ## DATABASE CHANGES
 
+- New migration:
+  `prisma/migrations/20260810210000_goals_money_progress_accountability`
+  — purely additive.
+  - New enums `GoalCadence` (5 values), `GoalType` (9 values),
+    `MilestoneKey` (15 values).
+  - `Goal`: added `cadence` (default `NINETY_DAY`, so existing rows stay
+    valid), `goalType` (default `PERSONAL_CEO`), `targetValue` (`Float?`),
+    `unit` (`String?`).
+  - New models: `RevenuePlan` (businessId, revenueGoalCents,
+    offerPriceCents, conversionRatePercent, workingWeeks, and the four
+    computed results — salesNeeded, leadsNeeded, monthlyTargetCents,
+    weeklyTargetCents — stored alongside the inputs, not recomputed on
+    every read), `PricingPlan` (businessId, offerName,
+    deliveryTimeHours, directCostsCents, desiredProfitCents,
+    capacityPerMonth, estimatedLowCents, estimatedHighCents,
+    considerations), `WeeklyCheckIn` (businessId, userId, weekOf with a
+    `@@unique([businessId, weekOf])` for the upsert-by-week behavior, the
+    8 spec fields), `BusinessMilestone` (businessId, milestone,
+    achievedAt, source — "auto" or "manual" — with a
+    `@@unique([businessId, milestone])` so `checkForNewMilestones()` can
+    safely `createMany({ skipDuplicates: true })`).
+  - `Business`: added `accountabilityCadence` (`String?`),
+    `accountabilityCustomDays` (`Int?`), `lastActiveAt` (`DateTime?`).
+  - Money fields (`RevenuePlan`, `PricingPlan`, `WeeklyCheckIn`) are
+    integer cents throughout, matching the Phase 8 convention; `Goal`
+    kept `targetValue` as `Float` since goals span both money and plain
+    counts (leads, customers) and forcing everything into cents would
+    make non-money goals nonsensical.
 - New migration: `prisma/migrations/20260810200000_membership_billing` —
   new enums `MembershipStatus` (8 values), `MembershipPlan`,
   `InvoiceStatus`; new models `Membership` (businessId unique, status,
@@ -1049,33 +1256,91 @@ secure integration")**
   caller allowed to do this" in the same handler, or an unconfigured
   sandbox silently stops exercising authorization at all.
 
+## IMPORTANT DECISIONS (Phase 9 additions)
+
+- **Score Change in Monthly Review compares the current completed
+  Assessment against the previous completed Assessment, not a
+  same-calendar-month delta.** Most members will have exactly one
+  completed assessment for a long time (reassessment is gated behind 90
+  days or 50% roadmap completion — it's not a monthly event), so a
+  "change since last month" framing would show "no change" for months on
+  end even while real Builder progress is happening. Comparing against
+  the previous *assessment* means the number only moves when there's a
+  real, deliberate reassessment behind it — documented as Known Issue #20
+  since it does mean the same review can repeat unchanged across several
+  calendar months.
+- **`RevenuePlan`/`PricingPlan` persist their computed outputs, not just
+  their inputs.** Both `POST` routes calculate and save in one call
+  (`salesNeeded`, `leadsNeeded`, the target cents, the estimated range)
+  rather than storing only the raw inputs and recomputing on every read.
+  Slightly more storage for a guarantee that what a member saw when they
+  last calculated is exactly what's shown next time, even if the
+  calculation formula itself is refined in a later phase.
+- **Milestone auto-detection re-runs on every Blueprint save and every
+  Weekly Check-in, using `createMany({ skipDuplicates: true })` against a
+  `(businessId, milestone)` unique constraint** — the same idempotent
+  "ensure*"-family pattern this app uses everywhere else (roadmap
+  generation, membership activation), rather than a one-time check at
+  task-completion time. A milestone whose trigger condition was already
+  true before Phase 9 shipped (e.g. an existing business already past
+  $5K in a check-in from before Milestones existed) gets picked up
+  correctly the very next time any of its trigger paths run, with no
+  backfill script needed.
+- **Self-attested milestones are exactly the four the spec itself
+  flags as undetectable from data this app has** (First Contractor,
+  First Employee, CEO Mode, Legacy Builder) — everything else always
+  goes through auto-detection, never a manual override, even though the
+  API technically could allow it. `markMilestoneManually()` enforces this
+  by checking `MILESTONE_CATALOG`'s own `autoDetectable` flag rather than
+  trusting the caller, so "which milestones can be self-reported" stays
+  defined in exactly one place.
+- **Reassessment's "Previous vs. Current" always compares the two most
+  recent completed assessments, not a member-chosen pair.** Simplest
+  reading of the spec's "show Previous/Current/Improvement" — there's no
+  requirement to compare arbitrary historical points, and a full
+  assessment-history browser is flagged as Known Issue #23 for a later
+  phase rather than guessed at here.
+- **Accountability cadence is a plain string + optional int
+  (`accountabilityCadence`, `accountabilityCustomDays`) on `Business`,
+  not a new enum-backed model.** The spec's four choices (2/3/5
+  days/week or Custom) are a single preference with no history or
+  audit-trail requirement attached — a whole new table would be
+  over-modeling one field.
+- **`isWelcomeBack()` reads `Business.lastActiveAt` *before* the same
+  request updates it, then updates it unconditionally afterward** — the
+  same "compute from what was true a moment ago, then correct forward"
+  shape as `resolveEffectiveStatus`/`syncMembershipIfStale` in Phase 8,
+  just applied to a single timestamp instead of a full status machine.
+  It's also why the extracted top-level `isWelcomeBack()` function (not
+  inline in the component body) was the fix for the `react-hooks/purity`
+  lint error here, mirroring the pre-existing `greeting()` helper in
+  `dashboard/page.tsx`.
+
 ## NEXT RECOMMENDED PHASE
 
-Begin **PROMPT 9 — Goals + Money + Progress + Accountability**, received
-mid-Phase-8 and not yet started: expanded Goals (5 cadences × 9 goal
-types), a Revenue Planner and Pricing Builder (both real calculators, not
-AI-guessed numbers — the Pricing Builder explicit per spec about not
-portraying its output as guaranteed market pricing), Weekly CEO Check-ins
-and a Monthly Review built from actual roadmap/score/revenue data,
-Reassessment (after 90 days or substantial roadmap completion, comparing
-real historical scores), 13 named Milestones, and Accountability check-in
-cadence preferences with no shame-based messaging. Everything before it
-(Membership/Billing's real trial dates, real assessment history, real
-roadmap completion data) is exactly the data this phase's calculators,
-reviews, and reassessment comparisons need to be honest rather than
-guessed — build it on top of that, not around it.
-
-What's left after Prompt 9, flagged by earlier phases as out of scope
-rather than part of any numbered prompt so far:
+No further numbered prompt has been received yet. Prompts 1–9 are all
+complete; what's left is flagged by earlier phases as out of scope rather
+than part of any numbered prompt so far:
 
 - **Admin content tooling** — `AssessmentScoringConfig`,
-  `SessionOffering`, and `FacilitatorAssignment` are all currently
-  editable only via direct DB writes in test scripts; an admin UI is the
-  natural next home for them.
-- **Resources library** and the **Progress page's "story" narrative** —
-  both still `ComingSoon` placeholders (Prompt 9 gives Progress its real
-  content).
+  `SessionOffering`, `FacilitatorAssignment`, and now
+  `AssessmentQuestion` seed content are all currently editable only via
+  direct DB writes in test scripts; an admin UI is the natural next home
+  for all of them.
+- **Resources library** and a real **Progress page "story" narrative** —
+  the Resources nav item is still a `ComingSoon` placeholder, and Phase 9
+  gave Progress its check-in/review/milestone/reassessment content but
+  never defined what a "story" narrative view would show beyond that.
 - **A real `ANTHROPIC_API_KEY`** and **real Stripe keys** (`STRIPE_SECRET_KEY`,
   `STRIPE_WEBHOOK_SECRET`, and two Price ids) in whatever environment
   this deploys to, to turn Phase 7/8's fully-built integrations from
   graceful-degradation messages into real AI responses and real payments.
+- **An automated test suite** (Known Issue #3, unchanged since Phase 2)
+  — every phase through 9 has been verified live against a real Postgres
+  database instead of a checked-in suite; formalizing the verification
+  scripts this build sequence has already been running into real
+  regression tests would be valuable before further phases build on top
+  of this much surface area.
+- **A full assessment-history browser** (Known Issue #23) — only the two
+  most recent completed assessments are ever compared; a member who
+  reassesses multiple times has no in-app view of every past result.
