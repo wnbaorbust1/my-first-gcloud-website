@@ -47,3 +47,27 @@ export async function requireUser() {
   if (!user) redirect("/login");
   return user;
 }
+
+/**
+ * For use at the top of a protected admin Server Component. Redirects
+ * non-admins to /dashboard rather than showing a 403 page — same
+ * defense-in-depth posture as requireUser(): the real access control is
+ * RLS (every curriculum write policy already requires is_admin()), this
+ * just keeps a non-admin from ever seeing the admin UI at all.
+ */
+export async function requireAdmin(): Promise<Profile> {
+  await requireUser();
+  const profile = await getCurrentProfile();
+  if (profile?.role !== "admin") redirect("/dashboard");
+  return profile;
+}
+
+/**
+ * Admin check for Route Handlers, where redirect() isn't the right tool —
+ * callers should return a 403 JSON response when this comes back null.
+ * Same underlying check as requireAdmin(), just without the redirect.
+ */
+export async function getAdminProfile(): Promise<Profile | null> {
+  const profile = await getCurrentProfile();
+  return profile?.role === "admin" ? profile : null;
+}

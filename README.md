@@ -99,6 +99,16 @@ app/
       [courseSlug]/page.tsx      Course overview ("select a week")
       [courseSlug]/[weekNumber]/page.tsx             Week's lessons (Mon-Fri, ledger rows)
       [courseSlug]/[weekNumber]/[dayNumber]/page.tsx  Lesson detail
+    admin/                      Admin-only curriculum authoring (requireAdmin() layout guard)
+      curriculum/page.tsx        Course picker for admins
+      curriculum/[courseSlug]/page.tsx                 Full outline incl. drafts + empty gaps,
+                                                        per-unit "fill gaps" trigger
+      curriculum/[courseSlug]/generate/page.tsx        AI lesson generation form
+      curriculum/[courseSlug]/[weekNumber]/[dayNumber]/edit/page.tsx   Lesson editor + AI assistant
+  api/ai/                      Server-only Claude-backed Route Handlers (see "AI lesson generation")
+    generate-lesson/route.ts    POST → generates + saves a new draft lesson
+    lesson-assistant/route.ts   POST → one field-scoped edit suggestion
+    fill-gaps/route.ts          POST → topic suggestions for a unit's empty week/day slots
 
 components/
   layout/                    Shell, NavRail — signed-in app chrome
@@ -107,7 +117,9 @@ components/
                               GoogleSignInButton, SignOutButton, form primitives
   curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
                               (course-scoped planner spine), LessonDetailView
-  assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
+  admin/                     LessonGenerateForm, LessonEditorForm, LessonAssistantPanel
+                              (chat-style AI panel), GapSuggestionsPanel
+  assignments/ assessments/ portfolio/ billing/   (empty, next phases)
 
 lib/
   supabase/
@@ -117,7 +129,8 @@ lib/
     middleware.ts              updateSession() — session refresh + route protection, called from middleware.ts
   auth/
     actions.ts                 Server Actions: signUp/signIn/signOut/requestPasswordReset/updatePassword
-    session.ts                  getCurrentUser/getCurrentProfile/requireUser for Server Components
+    session.ts                  getCurrentUser/getCurrentProfile/requireUser/requireAdmin/
+                                 getAdminProfile for Server Components and Route Handlers
     rate-limit.ts                checkRateLimit/recordAttempt against auth_rate_limit_attempts
     identifiers.ts               Builds the IP/email identifiers rate limiting checks
     account.ts                   accountExistsForEmail — powers the login "no account found" message
@@ -128,8 +141,21 @@ lib/
     queries.ts                  getCourseBySlug/getAllCourses/getCourseUnitsWithWeeks/
                                  getWeekWithLessons/getLessonDetail — all RLS-only access control
     constants.ts                 Segment order/labels, day labels, the 70-min/5-question constants
+  admin/
+    curriculum-queries.ts        getCourseOutlineForAdmin/getWeekByNumber/getAllTeks/getLessonForEdit
+                                  — admin reads, same RLS as teacher queries (is_admin() sees everything)
+    validation.ts                 lessonSaveSchema — the editor save form's Zod schema
+    actions.ts                    saveLessonAction Server Action (draft save / publish)
+  ai/
+    client.ts                    getAnthropicClient() singleton, AI_MODEL constant, server-only
+    prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders
+    schemas.ts                    Zod schemas for every AI structured output (also the shared
+                                  LessonSnapshot type used by the editor + assistant panel)
+    generate-lesson.ts            generateLesson() — full-lesson generation
+    lesson-assistant.ts           requestLessonAssistantEdit() — single-field edit
+    fill-gaps.ts                  fillCurriculumGaps() — gap-slot topic suggestions
   utils.ts                    cn() class-merge helper
-  assignments/ assessments/ portfolio/ admin/ billing/   (empty, next phases)
+  assignments/ assessments/ portfolio/ billing/   (empty, next phases)
 
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
@@ -293,15 +319,74 @@ the content not existing yet):
   section is a list of `<LedgerRow>`s, reusing the exact same component
   as everywhere else rather than inventing a one-off layout.
 
-No create/edit UI or AI generation yet — this phase is browse-only, per
-the current scope. `supabase/seed.sql` has demo content (one Algebra I
-unit, 3 weeks, one fully worked published lesson, one draft) so the
-browser has something real to show in local dev.
+`supabase/seed.sql` has demo content (one Algebra I unit, 3 weeks, one
+fully worked published lesson, one draft) so the browser has something
+real to show in local dev. Create/edit UI and AI generation are covered
+next.
+
+## AI lesson generation
+
+Admin-only tooling (`/admin/curriculum/...`) that drafts and edits lessons
+with Claude, matching the exact schema the curriculum browser reads. Every
+call goes through a server-side Route Handler under `app/api/ai/` — the
+Anthropic API key never reaches the browser, and each route re-checks
+`getAdminProfile()` itself (RLS backs it up on every write regardless).
+
+- **`lib/ai/prompts.ts`** is the single source of truth for lesson
+  structure: `PEDAGOGY_FRAMEWORK` encodes the 6 class-period segments
+  (bell ringer → exit ticket, minutes summing to 70), the 4 gradual-release
+  stages, the 5-part QSSSA framework, and the "exactly 5 homework
+  questions, TEKS chosen only from the given candidates" rules. Every
+  generation, edit, and gap-suggestion prompt is built on top of this same
+  text, so output stays structurally consistent regardless of which
+  endpoint produced it.
+- **Generate** (`POST /api/ai/generate-lesson`) — given course/unit/week/
+  day/topic/notes, resolves and validates the course→unit→week chain,
+  confirms the day slot is empty, calls Claude with structured output
+  (`generatedLessonSchema`), and saves the result as a `draft` lesson (never
+  auto-published). The form is a cascading unit → week → day picker at
+  `/admin/curriculum/[courseSlug]/generate`.
+- **Editor** (`/admin/curriculum/[courseSlug]/[weekNumber]/[dayNumber]/edit`,
+  `components/admin/lesson-editor-form.tsx`) — every field from the Phase 2
+  schema is directly editable (title, 6 segments, gradual release, QSSSA,
+  5 homework slots, TEKS multi-select). "Save draft" and "Publish" both go
+  through `saveLessonAction` (`lib/admin/actions.ts`), which upserts
+  segments before updating the lesson row so the publish-gate trigger sees
+  committed data (see the comment there for why order matters).
+- **AI Lesson Assistant** (`components/admin/lesson-assistant-panel.tsx`,
+  `POST /api/ai/lesson-assistant`) — a chat-style panel next to the editor.
+  Each turn is stateless: it sends the *current* in-progress lesson (including
+  unsaved edits) plus a free-text instruction, and Claude returns a change
+  to exactly one field (`assistantEditSchema`, discriminated by
+  `target_field`). Edits are never applied silently — the admin reviews the
+  explanation and clicks "Apply to lesson" to write it into the form state.
+- **Fill curriculum gaps** (`components/admin/gap-suggestions-panel.tsx`,
+  `POST /api/ai/fill-gaps`) — per unit, computes which (week, day) slots
+  have no lesson yet, sends them plus the unit's TEKS focus and neighboring
+  lesson titles to Claude, and gets back one topic suggestion per slot. The
+  route defensively filters the response down to the slots actually asked
+  about, dropping anything hallucinated or duplicated. Each suggestion
+  deep-links into the generate form, pre-filled.
+
+All three routes call `claude-opus-5` with adaptive thinking and
+`output_config.format` (structured outputs via `zodOutputFormat()`) — the
+SDK validates Claude's response against the same Zod schema client-side,
+so a malformed response fails cleanly with a retryable error instead of
+saving bad data.
+
+Admins reach this area from a nav-rail "Admin" entry, shown only when the
+signed-in profile's `role` is `admin` (`app/(app)/layout.tsx` →
+`components/layout/shell.tsx` → `components/layout/nav-rail.tsx`).
+`app/(app)/admin/layout.tsx` calls `requireAdmin()` as a second guard —
+the real boundary is still RLS (every curriculum write policy already
+requires `is_admin()`).
 
 ## Environment variables
 
 See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 - Supabase project URL + anon key (public), service role key (server-only)
+- `ANTHROPIC_API_KEY` (server-only) — powers all three `/api/ai/*` routes;
+  get one at https://console.anthropic.com/
 - Stripe publishable key (public), secret key + webhook secret (server-only)
 - `NEXT_PUBLIC_SITE_URL` — used to build auth email/OAuth redirect URLs
 
@@ -311,7 +396,7 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Auth (email/password + Google, password reset, rate limiting)
 ✅ Core database schema + RLS (profiles, courses, subscriptions, academic calendars)
 ✅ Curriculum data model + read-only browser (units/weeks/lessons/TEKS)
-⬜ Curriculum create/edit UI + AI generation
+✅ AI-powered lesson generation, editor, AI assistant panel, gap-filling (admin-only)
 ⬜ Assignments / assessments / gradebook / portfolio features
 ⬜ Stripe billing
 ⬜ Deployment config

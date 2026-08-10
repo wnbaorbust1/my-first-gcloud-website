@@ -25,7 +25,11 @@ const NAV_SECTIONS: NavSection[] = [
   { label: "Prep Checklist", href: "#" },
 ];
 
-export function NavRail() {
+export function NavRail({ isAdmin = false }: { isAdmin?: boolean }) {
+  const sections = isAdmin
+    ? [...NAV_SECTIONS, { label: "Admin", href: "/admin/curriculum" }]
+    : NAV_SECTIONS;
+
   return (
     <nav
       aria-label="Primary"
@@ -43,7 +47,7 @@ export function NavRail() {
       </div>
 
       <ol className="flex-1 overflow-y-auto px-3 pb-8">
-        {NAV_SECTIONS.map((section, index) => (
+        {sections.map((section, index) => (
           <li key={section.label} className="ledger-row">
             <Link
               href={section.href}

@@ -9,7 +9,13 @@ import { NavRail } from "@/components/layout/nav-rail";
  * the "bound planner" instinct rather than falling back to a generic
  * hamburger sidebar pattern on desktop.
  */
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({
+  children,
+  isAdmin = false,
+}: {
+  children: React.ReactNode;
+  isAdmin?: boolean;
+}) {
   const [navOpen, setNavOpen] = useState(false);
 
   return (
@@ -33,14 +39,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* Mobile slide-over nav */}
       {navOpen && (
         <div id="mobile-nav-rail" className="animate-page-turn md:hidden">
-          <NavRail />
+          <NavRail isAdmin={isAdmin} />
         </div>
       )}
 
       {/* Desktop rail */}
       <div className="hidden md:block md:w-64 md:shrink-0">
         <div className="sticky top-0 h-screen">
-          <NavRail />
+          <NavRail isAdmin={isAdmin} />
         </div>
       </div>
 
