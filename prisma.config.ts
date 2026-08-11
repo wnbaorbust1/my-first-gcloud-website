@@ -9,6 +9,13 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Prefer the unpooled connection for CLI operations (migrate/generate)
+    // when it exists — Neon's pooled (PgBouncer, transaction mode)
+    // connection doesn't support the advisory locks and prepared
+    // statements the migration engine needs. Falls back to DATABASE_URL
+    // for setups (like local dev) that don't have a separate unpooled
+    // URL. The runtime Prisma Client (src/lib/prisma.ts) always uses the
+    // pooled DATABASE_URL directly — this only affects `prisma` CLI runs.
+    url: process.env["DATABASE_URL_UNPOOLED"] ?? process.env["DATABASE_URL"],
   },
 });
