@@ -1190,6 +1190,9 @@ closes its "Top 10 Launch Risks" list.
   live end-to-end with no key set: forgot-password logged the
   would-have-sent message, returned a dev-only reset link, the link
   reset the password, and the new password logged in successfully.
+  (A real `RESEND_API_KEY` was provisioned in a later pass and
+  live-verified sending an actual email through this same route —
+  see Known Issue #1.)
 - **No legal pages / no support surface (HIGH, closed).** Added
   `/terms`, `/privacy`, `/refund-policy` (real, feature-specific drafted
   content — pricing, the 30-day trial, sponsored access, AI/Blueprint
@@ -1229,14 +1232,15 @@ closes its "Top 10 Launch Risks" list.
   overflow across the full matrix afterward.
 - **Automated test suite (MEDIUM, partially closed) — see revised Known
   Issue #3.**
-- **Not fixable by this pass — needs real credentials, not code:** real
-  `STRIPE_SECRET_KEY`/`ANTHROPIC_API_KEY`/`RESEND_API_KEY` still aren't
-  configured in this sandbox. Every surrounding system (webhook
+- ~~Not fixable by this pass — needs real credentials, not code~~
+  **Since resolved:** real `STRIPE_SECRET_KEY`/`ANTHROPIC_API_KEY`/
+  `RESEND_API_KEY` are all now provisioned in `.env` and live-verified —
+  see Known Issues #1, #13, #16, #17. Every surrounding system (webhook
   signature verification + idempotency, trial state machine, AI context
   assembly, the new email/error/rate-limit infrastructure) was built and
-  verified around that gap, the same pattern as every prior phase — but
-  real checkout, real AI answers, and real email delivery remain
-  unverified until those three keys exist somewhere.
+  verified around that gap, the same pattern as every prior phase — and
+  real checkout, real AI answers, and real email delivery are now
+  themselves live-verified too, not just the surrounding system.
 - **Deliberately not attempted this pass:** full-field editing on the 8
   Phase 10 tools (Known Issue #24) — a real feature addition, not a
   launch-blocking fix; left for a future phase rather than rushed.
@@ -1288,13 +1292,19 @@ closes its "Top 10 Launch Risks" list.
 
 ## KNOWN ISSUES
 
-1. ~~No email provider~~ **RESOLVED (Launch Hardening).** `src/lib/email/send.ts`
-   sends real email via Resend's REST API the moment `RESEND_API_KEY` +
-   `EMAIL_FROM` are set; with no key configured it still degrades
+1. ~~No email provider~~ **RESOLVED (Launch Hardening) — credential provisioned
+   and live-verified.** `src/lib/email/send.ts` sends real email via
+   Resend's REST API; with no key configured it still degrades
    gracefully to a log line (same pattern as AI/Stripe) rather than
-   silently failing. `forgot-password` and Support confirmations both use
-   it now. Still needs a real `RESEND_API_KEY` in whatever environment
-   this deploys to — the code path is real, the credential isn't.
+   silently failing. A real `RESEND_API_KEY` + `EMAIL_FROM` are now set
+   in `.env` (gitignored, never committed) and were verified live twice:
+   a direct call to `POST https://api.resend.com/emails` returned `200`
+   with a real message id, and driving the app's own
+   `POST /api/auth/forgot-password` route for a real signed-up test user
+   produced a genuine `PasswordResetToken` row with no "not configured"
+   log line and no `ErrorLog` entry — confirming the full app pathway
+   sends, not just the raw provider call. `forgot-password` and Support
+   confirmations both use it.
 2. **`next-auth@4` / `@auth/core` advisories** — unchanged from Phase 1,
    not reachable by the Credentials-only setup in use.
 3. ~~No automated test suite~~ **PARTIALLY RESOLVED (Launch Hardening).**
@@ -1360,14 +1370,16 @@ closes its "Top 10 Launch Risks" list.
     reflects the business's current data, which is the correct behavior
     for "always current" but means there's no "documents I've generated
     before" history — only My Blueprint's own edit history exists.
-13. **No `ANTHROPIC_API_KEY` is configured in this sandbox.** Every
-    Blueprint AI response is the honest "not connected yet" message (see
-    Phase 7's client.ts) rather than a real model response — the entire
-    surrounding system (context assembly, modes, actions, conversation
-    persistence, history, favoriting, renaming, Builder integration,
-    authorization) is fully built and was verified live around that one
-    gap. Set `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`) in
-    `.env` to turn real responses on — no code change needed.
+13. ~~No `ANTHROPIC_API_KEY` is configured in this sandbox~~ **RESOLVED —
+    credential provisioned and live-verified.** A real `ANTHROPIC_API_KEY`
+    is now set in `.env` (gitignored, never committed). Verified live: a
+    real model response came back that was demonstrably grounded in a
+    specific, distinctive test business profile (not generic boilerplate),
+    a coherent follow-up message continued the same conversation, and
+    cross-user conversation isolation was re-confirmed with the real key
+    in place. Context assembly, modes, actions, conversation persistence,
+    history, favoriting, renaming, Builder integration, and authorization
+    were already fully built; this closes the one remaining gap.
 14. **Blueprint AI has no per-user or per-business rate limiting.** Fine
     at this scale/for this sandbox; worth adding before real API costs
     are on the line.
@@ -1375,22 +1387,28 @@ closes its "Top 10 Launch Risks" list.
     editable after the fact the way title is — spec only lists "Rename
     conversation" as an action, not "re-topic," so this was left as
     intentionally out of scope rather than guessed at.
-16. **No `STRIPE_SECRET_KEY` (or a real `STRIPE_WEBHOOK_SECRET`) is
-    configured in this sandbox.** Real checkout/portal/cancel/reactivate
-    all return a clear 503 instead of working — the entire surrounding
-    system (trial activation, 30-day expiration, access gating, the
-    webhook's signature verification and full event-driven state
-    machine, Payment History, the admin grant path) was fully built and
-    verified live around that one gap, the same pattern as Blueprint AI
-    (Phase 7) and email (Phase 1). A local-only test `STRIPE_WEBHOOK_SECRET`
-    was used to verify webhook signature handling offline via Stripe's
-    own `generateTestHeaderString` helper (no live key needed for that
-    specific check) — see `docs/BUILD_STATUS.md` Phase 8 summary.
-17. **Stripe Price ids (`STRIPE_PRICE_ID_MONTHLY`/`STRIPE_PRICE_ID_ANNUAL`)
-    must be created in the Stripe Dashboard and set as env vars before
-    real checkout works** — nothing here can create them programmatically
-    (a Price is tied to a Product, which is a one-time dashboard/API setup
-    step, not a per-checkout action).
+16. ~~No `STRIPE_SECRET_KEY` (or a real `STRIPE_WEBHOOK_SECRET`) is
+    configured in this sandbox~~ **RESOLVED — credentials provisioned and
+    live-verified end to end.** A real `STRIPE_SECRET_KEY` is set in
+    `.env` (gitignored, never committed). A real Checkout Session was
+    created through the app's own `/api/billing/checkout` route and
+    independently confirmed via Stripe's own API as genuinely `open`
+    with the correct `amount_total`. Webhook signature verification was
+    then closed out for real: the Stripe CLI (built from source via
+    `go install`, since binary release downloads were blocked by this
+    session's repo scoping) was used to `listen`/`trigger`/`events resend`
+    real, live-signed webhook events at the running app — 7/7 accepted
+    with valid signatures, idempotency proven against a genuine Stripe
+    redelivery (not a synthetic replay), and the negative case (bad
+    signature → `400`) confirmed. `STRIPE_WEBHOOK_SECRET` in `.env` is
+    the CLI's forwarding secret and is only valid while `stripe listen`
+    is running; production should use the secret from a real Dashboard
+    (or `stripe listen`) webhook endpoint instead.
+17. ~~Stripe Price ids must be created in the Stripe Dashboard~~
+    **RESOLVED.** `STRIPE_PRICE_ID_MONTHLY` and `STRIPE_PRICE_ID_ANNUAL`
+    were created programmatically via the Stripe API (a Product plus two
+    Prices — $9.99/mo and $100/yr, matching the pricing page exactly) and
+    are set in `.env`.
 18. **No plan proration UI.** "Change Plan" routes through Stripe's
     Billing Portal, which handles proration on a plan switch itself —
     there's no custom in-app "switch to annual" flow with its own
@@ -1531,10 +1549,14 @@ closes its "Top 10 Launch Risks" list.
     describe this app's actual behavior, not generic boilerplate — but
     should be reviewed by a licensed attorney before a real public
     launch, same as any first-draft ToS/Privacy Policy.
-41. **Real `RESEND_API_KEY` (email), `STRIPE_SECRET_KEY` (billing), and
-    `ANTHROPIC_API_KEY` (AI) still aren't configured in this sandbox.**
-    All three integrations degrade gracefully and were verified around
-    the gap — see Known Issues #1, #13, #16 and Next Recommended Phase.
+41. ~~Real `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, and `ANTHROPIC_API_KEY`
+    still aren't configured in this sandbox~~ **RESOLVED — all three are
+    now provisioned in `.env` and live-verified.** See Known Issues #1,
+    #13, #16, #17. The one credential-shaped item genuinely still open is
+    a production `STRIPE_WEBHOOK_SECRET` from a real Dashboard/CLI
+    endpoint for whatever environment this deploys to — the local one in
+    `.env` is a Stripe CLI forwarding secret, valid only while `stripe
+    listen` runs.
 
 ## DATABASE CHANGES
 
@@ -2239,12 +2261,14 @@ surfaces, no error monitoring, a real mobile bug at 320px, and a start
 on an automated test suite). What's left below is follow-up work each
 phase flagged as out of scope, not a next numbered phase:
 
-- **Real `STRIPE_SECRET_KEY`, `ANTHROPIC_API_KEY`, and `RESEND_API_KEY`**
-  in whatever environment this deploys to — the only remaining item from
-  the audit's Top 10 that genuinely can't be closed by writing more
-  code; every system around all three (webhook verification, AI context
-  assembly, graceful email degradation) is built and tested around the
-  gap.
+- ~~Real `STRIPE_SECRET_KEY`, `ANTHROPIC_API_KEY`, and `RESEND_API_KEY`~~
+  **RESOLVED — all three provisioned in `.env` and live-verified** (real
+  Checkout Session + Stripe-signed webhooks including a genuine
+  redelivery, a context-grounded AI response, and a real password-reset
+  email accepted by Resend through the app's own route). What's left is
+  a production-grade `STRIPE_WEBHOOK_SECRET` for whatever environment
+  this actually deploys to — the local one is a Stripe CLI forwarding
+  secret, only valid while `stripe listen` runs.
 - **Expanding the automated test suite past pure functions** (Known
   Issue #3, now partially resolved) — the 31 Vitest cases cover scoring,
   recommendation, and membership-status logic; roadmap generation,
