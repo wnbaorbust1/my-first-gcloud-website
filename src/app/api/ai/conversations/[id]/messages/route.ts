@@ -6,6 +6,7 @@ import { callBlueprintAi, type AiChatTurn } from "@/lib/ai/client";
 import { loadOwnedConversation } from "@/lib/ai/conversation";
 import { buildSystemPrompt } from "@/lib/ai/system-prompt";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, RATE_LIMITS, TOO_MANY_REQUESTS_BODY } from "@/lib/rate-limit";
 import { getCurrentUser } from "@/lib/session";
 import { sendMessageSchema } from "@/lib/validations/ai";
 
@@ -15,6 +16,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit(`ai-message:${user.id}`, RATE_LIMITS.AI_MESSAGE);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(TOO_MANY_REQUESTS_BODY, { status: 429 });
   }
 
   const conversation = await loadOwnedConversation(id, user.id);

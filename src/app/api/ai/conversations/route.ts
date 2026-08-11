@@ -7,6 +7,7 @@ import { deriveConversationTitle } from "@/lib/ai/conversation";
 import { DEFAULT_AI_MODE } from "@/lib/ai/modes";
 import { buildSystemPrompt } from "@/lib/ai/system-prompt";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, RATE_LIMITS, TOO_MANY_REQUESTS_BODY } from "@/lib/rate-limit";
 import { assertBusinessAccess, getCurrentUser } from "@/lib/session";
 import { startConversationSchema } from "@/lib/validations/ai";
 
@@ -39,6 +40,14 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  // RATE LIMITING (launch-hardening audit finding): bounds per-account AI
+  // provider spend once a real ANTHROPIC_API_KEY is configured — nothing
+  // in this app throttled AI calls before this.
+  const rateLimit = await checkRateLimit(`ai-message:${user.id}`, RATE_LIMITS.AI_MESSAGE);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(TOO_MANY_REQUESTS_BODY, { status: 429 });
   }
 
   const body = await request.json().catch(() => null);

@@ -8,6 +8,7 @@ import {
   Home,
   Hammer,
   LibraryBig,
+  LifeBuoy,
   Settings,
   Sparkles,
   Target,
@@ -35,6 +36,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   { label: "Sessions", href: "/sessions", icon: CalendarDays },
   { label: "Progress", href: "/progress", icon: TrendingUp },
   { label: "Billing", href: "/billing", icon: CreditCard },
+  { label: "Support", href: "/support", icon: LifeBuoy },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

@@ -3,9 +3,15 @@ import { ZodError } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
+import { clientIp, checkRateLimit, RATE_LIMITS, TOO_MANY_REQUESTS_BODY } from "@/lib/rate-limit";
 import { signupSchema } from "@/lib/validations/auth";
 
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit(`signup:${clientIp(request)}`, RATE_LIMITS.SIGNUP);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(TOO_MANY_REQUESTS_BODY, { status: 429 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();

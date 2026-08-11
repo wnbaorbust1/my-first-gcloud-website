@@ -4,6 +4,7 @@ import GoogleProvider from "next-auth/providers/google";
 
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 
 const googleConfigured = Boolean(
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
@@ -42,6 +43,16 @@ export const authOptions: NextAuthOptions = {
         const email = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password;
         if (!email || !password) return null;
+
+        // RATE LIMITING (launch-hardening audit finding): keyed by the
+        // attempted email, not IP — NextAuth's authorize() has no access
+        // to the request here, and a per-email cap is what actually stops
+        // a credential-stuffing attack against one account. Returning
+        // null is indistinguishable from "wrong password" to the caller
+        // — deliberately, so this can't be used to fingerprint whether
+        // an account is rate-limited vs. just guessed wrong.
+        const rateLimit = await checkRateLimit(`login:${email}`, RATE_LIMITS.LOGIN_PER_EMAIL);
+        if (!rateLimit.allowed) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user || !user.passwordHash || !user.isActive) return null;

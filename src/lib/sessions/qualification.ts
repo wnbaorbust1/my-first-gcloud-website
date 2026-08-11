@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@/generated/prisma/client";
 import type { RegistrationStatus } from "@/generated/prisma/enums";
 import { ensureMembershipActivated } from "@/lib/billing/membership";
 import { ensureRoadmapGenerated } from "@/lib/roadmap/generate";
@@ -88,60 +89,95 @@ export async function markAttendance(
   }
 }
 
+const MAX_SERIALIZATION_RETRIES = 3;
+
 /**
  * Registers a member for a session, or waitlists them if it's full
  * (spec WAITLIST: "If capacity is full: JOIN WAITLIST. Store waitlist
  * order.").
+ *
+ * CAPACITY RACE (launch-hardening audit finding): the read-count / decide
+ * / write used to be three separate queries with no lock between them —
+ * two people registering for the last seat at the same instant could
+ * both read `activeCount < capacity` as true and both land as
+ * REGISTERED, overbooking the session. The whole read-decide-write now
+ * runs inside one `Serializable` interactive transaction, which makes
+ * Postgres itself detect the conflict: the loser gets a serialization
+ * failure (Prisma error code P2034) instead of a silently-wrong write.
+ * Retried a few times (the standard pattern for serializable
+ * transactions — a conflict is expected and transient, not a real
+ * error) before giving up.
  */
 export async function registerForSession(params: {
   userId: string;
   businessId: string | null;
   sessionId: string;
 }) {
-  const session = await prisma.sessionOffering.findUniqueOrThrow({
-    where: { id: params.sessionId },
-  });
+  for (let attempt = 0; attempt < MAX_SERIALIZATION_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const session = await tx.sessionOffering.findUniqueOrThrow({
+            where: { id: params.sessionId },
+          });
 
-  const existing = await prisma.sessionRegistration.findUnique({
-    where: { sessionId_userId: { sessionId: params.sessionId, userId: params.userId } },
-  });
-  if (existing && existing.status !== "CANCELLED") {
-    return existing;
+          const existing = await tx.sessionRegistration.findUnique({
+            where: { sessionId_userId: { sessionId: params.sessionId, userId: params.userId } },
+          });
+          if (existing && existing.status !== "CANCELLED") {
+            return existing;
+          }
+
+          const activeCount = await tx.sessionRegistration.count({
+            where: { sessionId: params.sessionId, status: "REGISTERED" },
+          });
+
+          const hasRoom = session.capacity === null || activeCount < session.capacity;
+
+          if (existing) {
+            // Re-registering after a prior cancellation.
+            return tx.sessionRegistration.update({
+              where: { id: existing.id },
+              data: hasRoom
+                ? { status: "REGISTERED", waitlistPosition: null, businessId: params.businessId }
+                : {
+                    status: "WAITLISTED",
+                    waitlistPosition: await nextWaitlistPosition(tx, params.sessionId),
+                    businessId: params.businessId,
+                  },
+            });
+          }
+
+          return tx.sessionRegistration.create({
+            data: {
+              sessionId: params.sessionId,
+              userId: params.userId,
+              businessId: params.businessId,
+              status: hasRoom ? "REGISTERED" : "WAITLISTED",
+              waitlistPosition: hasRoom ? null : await nextWaitlistPosition(tx, params.sessionId),
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (err) {
+      const isSerializationConflict =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034";
+      if (isSerializationConflict && attempt < MAX_SERIALIZATION_RETRIES - 1) {
+        continue;
+      }
+      throw err;
+    }
   }
-
-  const activeCount = await prisma.sessionRegistration.count({
-    where: { sessionId: params.sessionId, status: "REGISTERED" },
-  });
-
-  const hasRoom = session.capacity === null || activeCount < session.capacity;
-
-  if (existing) {
-    // Re-registering after a prior cancellation.
-    return prisma.sessionRegistration.update({
-      where: { id: existing.id },
-      data: hasRoom
-        ? { status: "REGISTERED", waitlistPosition: null, businessId: params.businessId }
-        : {
-            status: "WAITLISTED",
-            waitlistPosition: await nextWaitlistPosition(params.sessionId),
-            businessId: params.businessId,
-          },
-    });
-  }
-
-  return prisma.sessionRegistration.create({
-    data: {
-      sessionId: params.sessionId,
-      userId: params.userId,
-      businessId: params.businessId,
-      status: hasRoom ? "REGISTERED" : "WAITLISTED",
-      waitlistPosition: hasRoom ? null : await nextWaitlistPosition(params.sessionId),
-    },
-  });
+  // Unreachable — the loop above always returns or throws — but keeps TypeScript happy.
+  throw new Error("registerForSession: exhausted retries");
 }
 
-async function nextWaitlistPosition(sessionId: string): Promise<number> {
-  const count = await prisma.sessionRegistration.count({
+async function nextWaitlistPosition(
+  tx: Prisma.TransactionClient,
+  sessionId: string,
+): Promise<number> {
+  const count = await tx.sessionRegistration.count({
     where: { sessionId, status: "WAITLISTED" },
   });
   return count + 1;

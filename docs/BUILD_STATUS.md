@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-11 — Phase 12: Organizations + Cohorts + Future Scale_
+_Last updated: 2026-08-11 — Launch Hardening (Ultra Pre-Publish Audit fixes)_
 
 ## COMPLETE
 
@@ -1157,6 +1157,98 @@ My Blueprint side effect)
   `npm run lint` both pass clean. All test users/businesses/organization
   removed afterward.
 
+**LAUNCH HARDENING — Ultra Pre-Publish Audit fixes**
+
+Not a numbered spec prompt — a self-directed audit (`BLUEPRINT ULTRA
+PRE-PUBLISH AUDIT`, scored 82/100 / Grade B / "NOT READY — FIX
+REQUIRED", zero critical blockers) was run against Phases 1–12, and this
+closes its "Top 10 Launch Risks" list.
+
+- **Session registration capacity race (HIGH, closed).** The read-count
+  → decide → write in `registerForSession()`
+  (`src/lib/sessions/qualification.ts`) used to be three separate
+  queries with no lock between them — two people registering for the
+  last seat at the same instant could both read `activeCount < capacity`
+  as true and both land REGISTERED, overbooking the session. Now runs
+  inside one `Serializable`-isolation interactive transaction with a
+  retry loop on Postgres's own conflict error (`P2034`) — the DB itself
+  now makes overbooking structurally impossible instead of relying on
+  application-level timing. Verified live: a capacity-1 session correctly
+  gave the first registrant REGISTERED and the second WAITLISTED
+  (position 1).
+- **No rate limiting anywhere (HIGH, closed).** New DB-backed
+  `checkRateLimit()` (`src/lib/rate-limit.ts` — a `RateLimitHit` row per
+  attempt, no Redis/new infra needed) wired into signup, login (keyed
+  per-email inside NextAuth's `authorize()`), forgot-password,
+  reset-password, and both Blueprint AI message endpoints (bounds
+  provider spend once a real key exists). Verified live: the 6th signup
+  attempt from one IP inside the window returned `429`.
+- **No transactional email / password reset unusable in production
+  (HIGH, closed).** New `src/lib/email/send.ts` sends real email via
+  Resend's REST API (`RESEND_API_KEY`/`EMAIL_FROM`) with the same
+  graceful-degradation shape as AI/Stripe when unconfigured. Verified
+  live end-to-end with no key set: forgot-password logged the
+  would-have-sent message, returned a dev-only reset link, the link
+  reset the password, and the new password logged in successfully.
+- **No legal pages / no support surface (HIGH, closed).** Added
+  `/terms`, `/privacy`, `/refund-policy` (real, feature-specific drafted
+  content — pricing, the 30-day trial, sponsored access, AI/Blueprint
+  AI's non-professional-advice status, org data-sharing — **not
+  boilerplate placeholder text, but also not a substitute for a licensed
+  attorney's review before a real launch**), linked from the marketing
+  footer and the signup form's consent line. Added a full Support
+  surface: `/support` (member-facing, send a message + see your own
+  request history) → `SupportRequest` row → optional email to
+  `SUPPORT_EMAIL` + a confirmation email to the requester →
+  `/admin/support` (staff inbox, mark Open/Resolved). Verified live:
+  create as one user, invisible to another, visible and resolvable by an
+  admin.
+- **No error monitoring (MEDIUM, closed, self-hosted).** New `ErrorLog`
+  model + `logError()` (`src/lib/observability/log-error.ts`) — no
+  third-party account needed, consistent with this app's "the DB can
+  already do this" pattern. Wired into the Stripe webhook's failure path
+  and both Blueprint AI failure branches; a new `src/app/error.tsx` +
+  `src/app/global-error.tsx` client boundary pair report via
+  `POST /api/observability/log` (a Client Component can't reach Prisma
+  directly). `/admin/errors` lists the most recent 100 — "how would a
+  support person diagnose this without database surgery" now has an
+  answer. Verified live: a reported client error appeared in the DB and
+  rendered on the admin page.
+- **`NEXTAUTH_URL` silently falling back to localhost (MEDIUM, closed).**
+  `forgot-password` now refuses to send a reset email (500, logged)
+  rather than mailing a broken `localhost:3000` link if `NEXTAUTH_URL` is
+  unset in production — fails loudly instead of silently, per the audit
+  finding.
+- **Mobile matrix broadened + one real bug found and fixed.** Re-ran the
+  Playwright mobile check across 320/375/430/768/1024px (previously only
+  390px had been checked) on every public marketing/legal page plus two
+  authenticated pages. Found a real overflow at 320px: the marketing
+  header's "Start My Blueprint" button pushed 16px past the viewport
+  edge. Fixed with a shorter "Start" label below the `sm` breakpoint
+  (`src/app/(marketing)/layout.tsx`) — re-verified zero horizontal
+  overflow across the full matrix afterward.
+- **Automated test suite (MEDIUM, partially closed) — see revised Known
+  Issue #3.**
+- **Not fixable by this pass — needs real credentials, not code:** real
+  `STRIPE_SECRET_KEY`/`ANTHROPIC_API_KEY`/`RESEND_API_KEY` still aren't
+  configured in this sandbox. Every surrounding system (webhook
+  signature verification + idempotency, trial state machine, AI context
+  assembly, the new email/error/rate-limit infrastructure) was built and
+  verified around that gap, the same pattern as every prior phase — but
+  real checkout, real AI answers, and real email delivery remain
+  unverified until those three keys exist somewhere.
+- **Deliberately not attempted this pass:** full-field editing on the 8
+  Phase 10 tools (Known Issue #24) — a real feature addition, not a
+  launch-blocking fix; left for a future phase rather than rushed.
+- **Verification method**: live HTTP + direct Postgres (rate-limit
+  429s, full password-reset round trip, session capacity/waitlist
+  behavior, support request isolation + admin resolution, error-log
+  round trip), `npm run build`/`npm run lint`/`npm test` all clean, a
+  broadened live mobile matrix via Playwright (installed and removed
+  again afterward, per this project's established pattern) that caught
+  and confirmed the fix for one real bug. All test data removed
+  afterward.
+
 ## IN PROGRESS
 
 - Nothing left mid-implementation. Every prompt in the current build sequence (1–12) is complete — Prompt 12 was the last numbered prompt.
@@ -1196,11 +1288,23 @@ My Blueprint side effect)
 
 ## KNOWN ISSUES
 
-1. **No email provider** — unchanged from Phase 1; `forgot-password`
-   logs/returns the reset link instead of emailing it.
+1. ~~No email provider~~ **RESOLVED (Launch Hardening).** `src/lib/email/send.ts`
+   sends real email via Resend's REST API the moment `RESEND_API_KEY` +
+   `EMAIL_FROM` are set; with no key configured it still degrades
+   gracefully to a log line (same pattern as AI/Stripe) rather than
+   silently failing. `forgot-password` and Support confirmations both use
+   it now. Still needs a real `RESEND_API_KEY` in whatever environment
+   this deploys to — the code path is real, the credential isn't.
 2. **`next-auth@4` / `@auth/core` advisories** — unchanged from Phase 1,
    not reachable by the Credentials-only setup in use.
-3. **No automated test suite.** Phase 2 was verified with a real Postgres
+3. ~~No automated test suite~~ **PARTIALLY RESOLVED (Launch Hardening).**
+   `npm test` (Vitest) now covers the highest-risk pure logic hand-traced
+   during the Ultra Pre-Publish Audit — assessment scoring/recommendation
+   (all 4 spec scenarios + exact threshold boundaries), membership status
+   resolution (every `resolveEffectiveStatus` transition), and pricing
+   constants — 31 tests, no DB required. Everything that touches
+   Prisma/Postgres is still verified live only, the same as every phase
+   through 12 was verified with a real Postgres
    migration, `next build`, `eslint`, and live HTTP scripts that signed
    up test users, drove all 36 questions through autosave, completion,
    and both recommendation branches (progressive gate and GROWTH), then
@@ -1413,9 +1517,37 @@ My Blueprint side effect)
     `/admin/sessions`'s create form doesn't yet expose an organization
     picker. A small follow-up to the existing session-create form, not a
     schema change.
+38. **`RateLimitHit` and `ErrorLog` aren't purged on a schedule.** Both
+    grow indefinitely — fine at this scale/for launch, but a real
+    production deployment should add a periodic cleanup (e.g. delete
+    `RateLimitHit` rows older than the longest configured window,
+    `ErrorLog` rows past a retention period) once there's real traffic.
+39. **Support has no logged-out path.** `/support` requires a signed-in
+    user — a prospective member with a pre-signup question has nowhere
+    to ask. Deliberately scoped this way (see Important Decisions);
+    revisit if that becomes a real need.
+40. **The legal pages (`/terms`, `/privacy`, `/refund-policy`) are a
+    real first draft, not attorney-reviewed.** Written to accurately
+    describe this app's actual behavior, not generic boilerplate — but
+    should be reviewed by a licensed attorney before a real public
+    launch, same as any first-draft ToS/Privacy Policy.
+41. **Real `RESEND_API_KEY` (email), `STRIPE_SECRET_KEY` (billing), and
+    `ANTHROPIC_API_KEY` (AI) still aren't configured in this sandbox.**
+    All three integrations degrade gracefully and were verified around
+    the gap — see Known Issues #1, #13, #16 and Next Recommended Phase.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260811010000_launch_hardening` —
+  purely additive, no existing table touched.
+  - New model `RateLimitHit` (key, createdAt, indexed on
+    `(key, createdAt)`) — one row per attempt against a rate-limited
+    action; DB-backed rather than a new Redis dependency.
+  - New model `ErrorLog` (message, stack, context Json, createdAt,
+    indexed on createdAt) — self-hosted error monitoring.
+  - New enum `SupportRequestStatus` (`OPEN`/`RESOLVED`); new model
+    `SupportRequest` (userId, subject, message, status default `OPEN`) —
+    `User` gained the `supportRequests` back-relation.
 - New migration: `prisma/migrations/20260811000000_organizations_cohorts`
   — purely additive, no existing table touched.
   - New enum `OrganizationType` (10 values); `Organization` gained
@@ -2061,24 +2193,63 @@ My Blueprint side effect)
   — a real signal that already exists, instead of a plausible-sounding
   number invented for this report.
 
+## IMPORTANT DECISIONS (Launch Hardening additions)
+
+- **The session capacity fix uses Postgres's own `Serializable`
+  isolation level plus an application-level retry, not a manual
+  advisory lock.** A hand-rolled lock is one more thing to get wrong
+  (forget to release it, wrong key granularity); `Serializable` makes
+  the database itself the source of truth for "did this conflict with a
+  concurrent registration," and Prisma's interactive-transaction retry
+  pattern for `P2034` is the documented, standard way to handle the
+  (expected, transient) conflict this produces.
+- **Rate limiting is DB-backed (`RateLimitHit`), not Redis/Upstash.** At
+  this app's scale, a new row-per-attempt + a count query is simpler to
+  operate than adding a second datastore, and it's correct across
+  multiple app instances without any extra infrastructure — the same
+  "the DB can already do this" reasoning this schema has used since
+  Phase 1 for PDF export (browser print) and now email (a `fetch` call,
+  not an SDK).
+- **Error logging is self-hosted (`ErrorLog`), not a Sentry/Datadog
+  integration.** No third-party account is needed to get real value from
+  it at this scale; a future phase can layer a real APM on top without
+  removing this — `logError()` is a small enough surface to call from
+  both places if that day comes.
+- **Support requests always require a signed-in user.** This app has no
+  logged-out support surface yet (a marketing visitor with a
+  pre-signup question has no path today) — deliberately scoped to "a
+  member is stuck" rather than building a second, unauthenticated
+  contact form in the same pass. Documented as a Known Issue, not
+  silently left out.
+- **The legal pages are a real, feature-specific first draft, not
+  generic boilerplate — and not a substitute for attorney review.**
+  Written to actually describe this app's behavior (the 30-day trial's
+  real trigger, sponsored access, what Blueprint AI is and isn't, who
+  can see what data), which makes them more useful *and* means they
+  should be reviewed by a licensed attorney before a real public launch
+  — the same caveat any first-draft ToS/Privacy Policy needs.
+
 ## NEXT RECOMMENDED PHASE
 
-**Prompt 12 was the last numbered prompt in this build sequence.**
-Phases 1 through 12 are all complete, live-verified, and committed.
-There is no queued Prompt 13 to hold off on — what's left below is
-follow-up work each phase flagged as out of scope, not a next numbered
-phase:
+**Prompt 12 was the last numbered prompt in this build sequence; this
+build has since had a self-directed Launch Hardening pass fixing the
+"Top 10 Launch Risks" from an Ultra Pre-Publish Audit** (session
+capacity race, no rate limiting, no email delivery, no legal/support
+surfaces, no error monitoring, a real mobile bug at 320px, and a start
+on an automated test suite). What's left below is follow-up work each
+phase flagged as out of scope, not a next numbered phase:
 
-- **A real `ANTHROPIC_API_KEY`** and **real Stripe keys** (`STRIPE_SECRET_KEY`,
-  `STRIPE_WEBHOOK_SECRET`, and two Price ids) in whatever environment
-  this deploys to, to turn Phase 7/8's fully-built integrations from
-  graceful-degradation messages into real AI responses and real payments.
-- **An automated test suite** (Known Issue #3, unchanged since Phase 2)
-  — every phase through 11 has been verified live against a real
-  Postgres database instead of a checked-in suite; formalizing the
-  verification scripts this build sequence has already been running into
-  real regression tests would be valuable before further phases build on
-  top of this much surface area.
+- **Real `STRIPE_SECRET_KEY`, `ANTHROPIC_API_KEY`, and `RESEND_API_KEY`**
+  in whatever environment this deploys to — the only remaining item from
+  the audit's Top 10 that genuinely can't be closed by writing more
+  code; every system around all three (webhook verification, AI context
+  assembly, graceful email degradation) is built and tested around the
+  gap.
+- **Expanding the automated test suite past pure functions** (Known
+  Issue #3, now partially resolved) — the 31 Vitest cases cover scoring,
+  recommendation, and membership-status logic; roadmap generation,
+  authorization helpers, and the API routes themselves are still only
+  verified live.
 - **A full assessment-history browser** (Known Issue #23) — only the two
   most recent completed assessments are ever compared; a member who
   reassesses multiple times has no in-app view of every past result.

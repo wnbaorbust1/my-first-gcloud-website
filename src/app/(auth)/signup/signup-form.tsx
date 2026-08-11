@@ -130,7 +130,19 @@ export function SignupForm() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-foreground-muted">
+      <p className="mt-4 text-center text-xs text-foreground-muted">
+        By creating an account you agree to our{" "}
+        <Link href="/terms" className="underline hover:text-navy-700">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="underline hover:text-navy-700">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+
+      <p className="mt-4 text-center text-sm text-foreground-muted">
         Already have an account?{" "}
         <Link href="/login" className="font-semibold text-navy-800 hover:underline">
           Log in

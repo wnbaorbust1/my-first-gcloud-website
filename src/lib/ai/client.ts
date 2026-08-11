@@ -1,5 +1,7 @@
 import "server-only";
 
+import { logError } from "@/lib/observability/log-error";
+
 export interface AiChatTurn {
   role: "user" | "assistant";
   content: string;
@@ -53,6 +55,8 @@ export async function callBlueprintAi(params: {
     });
 
     if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      await logError(new Error(`Anthropic API returned ${res.status}`), { route: "ai/client", status: res.status, detail: detail.slice(0, 500) });
       return REQUEST_FAILED_MESSAGE;
     }
 
@@ -61,7 +65,8 @@ export async function callBlueprintAi(params: {
     };
     const textBlock = data.content?.find((b) => b.type === "text" && b.text);
     return textBlock?.text?.trim() || REQUEST_FAILED_MESSAGE;
-  } catch {
+  } catch (err) {
+    await logError(err, { route: "ai/client" });
     return REQUEST_FAILED_MESSAGE;
   }
 }

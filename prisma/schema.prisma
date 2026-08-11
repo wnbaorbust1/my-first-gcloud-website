@@ -74,6 +74,7 @@ model User {
   membershipsGranted          Membership[]          @relation("MembershipGrantedBy")
   weeklyCheckIns              WeeklyCheckIn[]
   aiPromptTemplatesUpdated    AiPromptTemplate[]
+  supportRequests             SupportRequest[]
 
   @@index([role])
 }
@@ -1660,4 +1661,67 @@ model Program {
   updatedAt DateTime @updatedAt
 
   sessions SessionOffering[]
+}
+
+// ---------------------------------------------------------------------------
+// Launch Hardening (post-Prompt-12 audit fixes)
+// ---------------------------------------------------------------------------
+
+/// RATE LIMITING: one row per attempt against a rate-limited action —
+/// `key` is the scope being throttled (e.g. "signup:203.0.113.4",
+/// "login:name@example.com", "ai-message:<userId>"). Checking a limit is
+/// "count rows for this key newer than the window start"; a request that
+/// passes inserts its own row. Deliberately DB-backed rather than
+/// in-memory or a new Redis dependency — works correctly across multiple
+/// app instances without any new infrastructure, matching this app's
+/// "don't add a dependency the DB can already do" pattern (see: PDF
+/// export via browser print, not a rendering library). Not purged on a
+/// schedule yet — see Known Issues.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+/// ERROR LOGGING: a self-hosted, no-third-party-account alternative to
+/// Sentry/Datadog — real for this app's actual scale, and consistent
+/// with the "no new external dependency unless the DB genuinely can't do
+/// it" pattern already used throughout this schema. `context` carries
+/// whatever structured detail the call site has (route, userId, status
+/// code) as JSON, never raw request bodies (no payment data, no
+/// passwords — see src/lib/observability/log-error.ts).
+model ErrorLog {
+  id        String   @id @default(cuid())
+  message   String   @db.Text
+  stack     String?  @db.Text
+  context   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+enum SupportRequestStatus {
+  OPEN
+  RESOLVED
+}
+
+/// SUPPORT (spec audit finding: "no way to reach a human"). Always tied
+/// to a signed-in user (this app has no logged-out support surface yet —
+/// see Known Issues) so an admin always has an account to look up
+/// without asking the requester to re-identify themselves.
+model SupportRequest {
+  id        String               @id @default(cuid())
+  userId    String
+  subject   String
+  message   String               @db.Text
+  status    SupportRequestStatus @default(OPEN)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId])
 }

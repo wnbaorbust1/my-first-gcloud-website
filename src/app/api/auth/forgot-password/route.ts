@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
+import { isEmailConfigured, sendEmail } from "@/lib/email/send";
 import { prisma } from "@/lib/prisma";
 import { generateResetToken } from "@/lib/password";
+import { clientIp, checkRateLimit, RATE_LIMITS, TOO_MANY_REQUESTS_BODY } from "@/lib/rate-limit";
 import { forgotPasswordSchema } from "@/lib/validations/auth";
 
 const GENERIC_MESSAGE =
@@ -11,6 +13,11 @@ const GENERIC_MESSAGE =
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit(`forgot-password:${clientIp(request)}`, RATE_LIMITS.FORGOT_PASSWORD);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(TOO_MANY_REQUESTS_BODY, { status: 429 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -54,17 +61,29 @@ export async function POST(request: Request) {
     }),
   ]);
 
+  if (!process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production") {
+    // Fail loudly rather than silently mailing a broken localhost link —
+    // launch-hardening audit finding: NEXTAUTH_URL falling back to
+    // localhost in a misconfigured production deploy.
+    console.error("[Blueprint] NEXTAUTH_URL is unset in production — refusing to send a broken reset link.");
+    return NextResponse.json({ error: "This isn't configured correctly. Please contact support." }, { status: 500 });
+  }
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
-  // NOTE: no transactional email provider is wired up yet (see
-  // docs/BUILD_STATUS.md "Known Issues"). Until then we log the link a
-  // real email would contain, and — for local/dev only — return it in the
-  // response body so the reset flow can be exercised end-to-end.
-  console.info(`[Blueprint] Password reset link for ${user.email}: ${resetUrl}`);
+  // Real delivery when RESEND_API_KEY/EMAIL_FROM are set; otherwise the
+  // same graceful-degradation log line this app uses for every
+  // unconfigured integration (AI, Stripe) — see src/lib/email/send.ts.
+  await sendEmail({
+    to: user.email,
+    subject: "Reset your Blueprint password",
+    text: `Hi ${user.firstName},\n\nSomeone requested a password reset for your Blueprint account. If this was you, reset your password here:\n\n${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can safely ignore this email.\n\n— Blueprint`,
+    html: `<p>Hi ${user.firstName},</p><p>Someone requested a password reset for your Blueprint account. If this was you, reset your password here:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p><p>— Blueprint</p>`,
+  });
 
   return NextResponse.json({
     message: GENERIC_MESSAGE,
-    ...(process.env.NODE_ENV !== "production" ? { devResetUrl: resetUrl } : {}),
+    // Local/dev only — lets the reset flow be exercised end-to-end without a real inbox.
+    ...(process.env.NODE_ENV !== "production" && !isEmailConfigured() ? { devResetUrl: resetUrl } : {}),
   });
 }

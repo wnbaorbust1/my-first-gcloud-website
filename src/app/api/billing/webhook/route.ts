@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { handleStripeWebhookEvent } from "@/lib/billing/webhook-handlers";
+import { logError } from "@/lib/observability/log-error";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
   try {
     await handleStripeWebhookEvent(event);
   } catch (err) {
-    console.error("Stripe webhook handler failed", event.type, err);
+    await logError(err, { route: "billing/webhook", stripeEventType: event.type, stripeEventId: event.id });
     // Non-2xx tells Stripe to retry — safe, since our handlers are all
     // idempotent upserts and the event isn't recorded as processed yet.
     return NextResponse.json({ error: "Handler failed" }, { status: 500 });
