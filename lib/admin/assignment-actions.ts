@@ -54,6 +54,7 @@ export async function saveAssignmentAction(
         description: row.description || null,
       })),
       answer_key: parsed.data.answerKey || null,
+      teks_ids: parsed.data.teksIds,
       status: publish ? "published" : "draft",
     })
     .eq("id", assignmentId);

@@ -20,6 +20,8 @@ This is a from-scratch rebuild, being built in phases.
 - **Next.js 14** (App Router) + TypeScript
 - **Supabase** — Postgres + Auth + Storage + Row-Level Security
 - **Tailwind CSS**
+- **Anthropic Claude** (`@anthropic-ai/sdk`) for AI lesson/assignment generation, editing, and TEKS matching
+- **Recharts** for the TEKS mastery dashboard's charts
 - **Stripe** for subscription billing
 - Deployed on **Vercel**
 
@@ -110,11 +112,17 @@ app/
                                                         by course (switcher) and type (dropdown)
       assignments/[courseSlug]/generate/page.tsx       AI assignment generation form
       assignments/[courseSlug]/[assignmentId]/edit/page.tsx   Assignment detail/edit view
+      teks/page.tsx                AI-assisted TEKS standards import (paste → parse → review → commit)
+    teks-mastery/                Teacher-facing (not admin) — RLS-owned by the signed-in teacher
+      page.tsx                    Class list + create-class form
+      [classId]/page.tsx           Roster, grade entry, mastery chart, struggling-TEKS panel, grid
   api/ai/                      Server-only Claude-backed Route Handlers (see "AI lesson generation")
     generate-lesson/route.ts    POST → generates + saves a new draft lesson
     lesson-assistant/route.ts   POST → one field-scoped edit suggestion
     fill-gaps/route.ts          POST → topic suggestions for a unit's empty week/day slots
     generate-assignment/route.ts   POST → generates + saves a new draft assignment
+    suggest-teks/route.ts       POST → semantic TEKS match suggestions for a lesson/assignment
+    import-teks/route.ts        POST → parses raw pasted TEKS text into structured rows
 
 components/
   layout/                    Shell, NavRail — signed-in app chrome
@@ -123,10 +131,14 @@ components/
                               GoogleSignInButton, SignOutButton, form primitives
   curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
                               (course-scoped planner spine), LessonDetailView
-  admin/                     AdminTabs (Curriculum/Assignments sub-nav), CourseSwitcher,
+  admin/                     AdminTabs (Curriculum/Assignments/TEKS Import sub-nav), CourseSwitcher,
                               LessonGenerateForm, LessonEditorForm, LessonAssistantPanel
                               (chat-style AI panel), GapSuggestionsPanel, AssignmentGenerateForm,
-                              AssignmentEditorForm, AssignmentTypeFilter
+                              AssignmentEditorForm, AssignmentTypeFilter, TeksSuggestionPanel
+                              (embedded in both editors), TeksImportForm
+  teks/                      Teacher-facing mastery UI: CreateClassForm, RosterSection,
+                              GradeEntrySection, MasteryGrid, MasteryStatusControl (the
+                              gold-stamp-on-mastered control), MasteryChart, StrugglingTeksPanel
   assignments/ assessments/ portfolio/ billing/   (empty — reserved for a future teacher-facing
                               assignments view; authoring UI above lives in components/admin/)
 
@@ -148,8 +160,10 @@ lib/
     types.ts                      Shared Server Action state shape
   curriculum/
     queries.ts                  getCourseBySlug/getAllCourses/getCourseUnitsWithWeeks/
-                                 getWeekWithLessons/getLessonDetail — all RLS-only access control
-    constants.ts                 Segment order/labels, day labels, the 70-min/5-question constants
+                                 getWeekWithLessons/getLessonDetail/getPublishedAssignmentsForCourse
+                                 — all RLS-only access control
+    constants.ts                 Segment order/labels, day labels, assignment type order/labels,
+                                 mastery status order/labels, struggling-TEKS threshold
   admin/
     curriculum-queries.ts        getCourseOutlineForAdmin/getWeekByNumber/getAllTeks/getLessonForEdit
                                   — admin reads, same RLS as teacher queries (is_admin() sees everything)
@@ -158,30 +172,43 @@ lib/
     assignment-queries.ts         getUnitsWithAssignments/getUnitsForCourse/getAssignmentById
     assignment-validation.ts      assignmentSaveSchema — the assignment editor's Zod schema
     assignment-actions.ts         saveAssignmentAction Server Action (draft save / publish)
+    teks-actions.ts               commitTeksImportAction — upserts admin-approved import rows
+  teacher/                      Teacher-owned operational data — RLS via profile_id = auth.uid(),
+                                 not is_admin(); see "TEKS tracking and mastery dashboard" below
+    roster-queries.ts             getClassesForTeacher/getClassWithStudents
+    roster-actions.ts             createClassAction/addStudentAction/removeStudentAction
+    grade-actions.ts              recordGradeAction — records a grade, returns (never applies)
+                                   mastery-status suggestions for the assignment's TEKS codes
+    mastery-queries.ts            getMasteryDashboardData — the grid + chart + struggling-TEKS data
+    mastery-actions.ts            updateMasteryStatusAction — the one write path for a mastery cell
   ai/
     client.ts                    getAnthropicClient() singleton, AI_MODEL constant, server-only
     prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders,
-                                  plus per-assignment-type generation guidance
+                                  per-assignment-type generation guidance, TEKS-suggestion and
+                                  TEKS-import prompt builders
     schemas.ts                    Zod schemas for every AI structured output (also the shared
                                   LessonSnapshot type used by the editor + assistant panel)
     generate-lesson.ts            generateLesson() — full-lesson generation
     lesson-assistant.ts           requestLessonAssistantEdit() — single-field edit
     fill-gaps.ts                  fillCurriculumGaps() — gap-slot topic suggestions
     generate-assignment.ts        generateAssignment() — full-assignment generation
+    suggest-teks.ts               suggestTeksForContent() — semantic TEKS matching
+    import-teks.ts                parseTeksImport() — raw text → structured {code, description} rows
   utils.ts                    cn() class-merge helper
   assignments/ assessments/ portfolio/ billing/   (empty, next phases)
 
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
-  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment + composed
-                                types (UnitWithWeeks, WeekWithLessons, LessonDetail,
-                                UnitWithAssignments)
+  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment/Class/Student/
+                                AssignmentGrade/TeksMastery + composed types (UnitWithWeeks,
+                                WeekWithLessons, LessonDetail, UnitWithAssignments, ClassWithStudents)
   index.ts                    Barrel export
 
 supabase/
   migrations/                 SQL migrations — profiles, courses, subscriptions,
                                academic_calendars/calendar_days, auth_rate_limit_attempts,
-                               teks, units, weeks, lessons/lesson_segments, assignments
+                               teks, units, weeks, lessons/lesson_segments, assignments,
+                               classes/students/assignment_grades/teks_mastery
   seed.sql                    Local-dev-only demo curriculum content (not run against hosted projects)
   README.md                   Supabase CLI workflow notes
 
@@ -257,6 +284,12 @@ RLS policies, not just "does it parse") before being committed.
 - **academic_calendars** / **calendar_days** — one calendar per teacher
   per school year, with dated day types (regular/holiday/testing/
   early_release/block_day). RLS scopes both to their owning teacher.
+- **classes** / **students** / **assignment_grades** / **teks_mastery** —
+  see "TEKS tracking and mastery dashboard" below. Same teacher-owned RLS
+  shape as academic_calendars (`profile_id = auth.uid()` on `classes`,
+  everything under it walks up via an `EXISTS` join rather than
+  denormalizing the owner), not the admin-only shape curriculum content
+  uses.
 - **auth_rate_limit_attempts** — backs the app-level rate limiting above.
   RLS is enabled with *no policies*, so it's reachable only via the
   service-role client, never through the anon/authenticated API.
@@ -445,11 +478,89 @@ full manual editor.
 - **Editor** (`/admin/assignments/[courseSlug]/[assignmentId]/edit`,
   `components/admin/assignment-editor-form.tsx`) — every field is
   editable: type, title, student-facing instructions, teacher directions,
-  a dynamic rubric (add/remove criteria, live point total), and the
-  answer key. "Save draft" and "Publish" go through `saveAssignmentAction`
-  (`lib/admin/assignment-actions.ts`) — a single update, since the rubric
-  lives on the same row (no upsert-then-update sequencing like lessons'
-  segments).
+  a dynamic rubric (add/remove criteria, live point total), the answer
+  key, and (added in the TEKS mastery migration) a TEKS multi-select with
+  the same AI-suggestion panel the lesson editor has. "Save draft" and
+  "Publish" go through `saveAssignmentAction` (`lib/admin/assignment-actions.ts`)
+  — a single update, since the rubric lives on the same row (no
+  upsert-then-update sequencing like lessons' segments).
+
+## TEKS tracking and mastery dashboard
+
+Three distinct pieces, split by who owns the data: TEKS import and
+semantic matching are **admin** content-authoring (the `teks` reference
+table and lesson/assignment `teks_ids` are admin-owned, same as
+everywhere else); classes, students, grades, and mastery status are
+**teacher-owned operational data**, RLS-scoped to `profile_id =
+auth.uid()` like `academic_calendars`, not `is_admin()`.
+
+**Schema note**: nothing before this migration modeled students, classes,
+or grades at all. `supabase/migrations/20260811090006_teks_mastery.sql`
+adds the smallest slice that supports mastery tracking — `classes` →
+`students`, plus a bare-bones `assignment_grades` (just enough to compute
+a mastery suggestion from a score) — explicitly **not** the future
+gradebook/assessments feature, which may reshape grading entirely. It
+also adds `teks_ids` to `assignments` (lessons already had it), since the
+semantic-matching feature applies to both.
+
+- **TEKS import** (`/admin/teks`, `components/admin/teks-import-form.tsx`)
+  — paste raw TEKS standards text for a subject; `POST /api/ai/import-teks`
+  calls Claude (`lib/ai/import-teks.ts`) to extract `{code, description}`
+  rows from whatever formatting was pasted in. Every row is editable and
+  individually removable before `commitTeksImportAction`
+  (`lib/admin/teks-actions.ts`) upserts them into `teks` by `code` — the
+  AI never writes to the reference table directly.
+- **Semantic TEKS matching** (`components/admin/teks-suggestion-panel.tsx`,
+  embedded in both the lesson and assignment editors, `POST
+  /api/ai/suggest-teks`) — given a piece of content's title/body and the
+  course's candidate TEKS codes, Claude suggests which ones it likely
+  covers with a confidence level and a one-sentence rationale
+  (`lib/ai/suggest-teks.ts`). Every suggestion needs an explicit "Add"
+  click — it only ever toggles the editor's local `teksIds` state, the
+  same state the checklist below it edits, so nothing is written until
+  the admin hits Save.
+- **Mastery status flow** — manual and auto-suggested share one write
+  path, `updateMasteryStatusAction` (`lib/teacher/mastery-actions.ts`),
+  which upserts one `teks_mastery` row by `(student_id, teks_code)`:
+  - *Manual*: the mastery grid (`components/teks/mastery-grid.tsx`) is a
+    TEKS-codes × roster table; each cell is a
+    `MasteryStatusControl` (`components/teks/mastery-status-control.tsx`)
+    — a select plus a small swatch. The four pre-mastery stages are
+    rendered as increasing opacity of the *same* gold-leaf the "mastered"
+    stamp uses (a literal color progression toward "earning the gold"),
+    and `needs_reteaching` breaks the ramp entirely as solid rose-gold —
+    the app's existing "needs attention" color. Every swatch is paired
+    with its text label; color never carries meaning alone.
+  - *Auto-suggested from grades*: `GradeEntrySection`
+    (`components/teks/grade-entry-section.tsx`) records a score via
+    `recordGradeAction` (`lib/teacher/grade-actions.ts`), which computes —
+    but never applies — a suggested status per TEKS code tagged on that
+    assignment, from a simple, single named threshold function
+    (`suggestStatusFromScore`). The teacher applies each suggestion
+    individually, which calls the exact same `updateMasteryStatusAction`
+    the manual grid uses.
+  - **The stamp moment**: `MasteryStatusControl` conditionally renders
+    `<StatusStamp>` only while `status === 'mastered'`, so promoting a
+    student to mastered mounts it fresh and its existing
+    `animate-stamp-land` keyframe (already used for "Published" lessons)
+    plays right at the moment of promotion — no new animation needed, just
+    reusing the same landing motion for a genuinely new occasion.
+- **Dashboard** (`/teks-mastery/[classId]`) — `getMasteryDashboardData()`
+  (`lib/teacher/mastery-queries.ts`) resolves the course's relevant TEKS
+  codes (the union of `teks_ids` tagged across its lessons and
+  assignments), the roster's current status per code, and per-code status
+  counts.
+  - `MasteryChart` (`components/teks/mastery-chart.tsx`, Recharts) is a
+    single-hue horizontal bar per TEKS code — bar length = % of the class
+    at "mastered," gold-leaf fill, direct % labels, a full per-status
+    breakdown in the hover tooltip. Deliberately not a 6-color stacked
+    bar: validated against the `dataviz` skill's palette checks, six
+    simultaneously-distinguishable brand-consistent hues don't clear the
+    chroma/CVD floors together, so the full breakdown lives in the
+    tooltip instead of fighting the color space for a chart mark.
+  - `StrugglingTeksPanel` (`components/teks/struggling-teks-panel.tsx`)
+    lists TEKS codes with `STRUGGLING_TEKS_THRESHOLD` (2) or more students
+    below mastery, sorted worst-first.
 
 ## Environment variables
 
@@ -468,7 +579,7 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Curriculum data model + read-only browser (units/weeks/lessons/TEKS)
 ✅ AI-powered lesson generation, editor, AI assistant panel, gap-filling (admin-only)
 ✅ Assignment management: 20 types, AI generation, list + editor (admin-only)
-⬜ Assessments / gradebook / portfolio features
-⬜ TEKS import + AI matching + mastery dashboard
+✅ TEKS import, AI semantic matching, mastery tracking + dashboard (minimal roster/grades slice)
+⬜ Assessments / full gradebook / portfolio features
 ⬜ Stripe billing
 ⬜ Deployment config

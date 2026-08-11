@@ -198,6 +198,56 @@ Generate one complete assignment of the type above, on the given topic,
 matching the schema you've been given.`;
 }
 
+export function buildSuggestTeksSystemPrompt(): string {
+  return `You are helping a Texas high school teacher tag curriculum content
+(a lesson or an assignment) with the TEKS (Texas Essential Knowledge and
+Skills) standards it actually addresses.
+
+You will be given the content's title and body text, plus a list of
+candidate TEKS codes with their descriptions (pre-filtered to the
+relevant subject). Choose only from that candidate list — never invent a
+code or alter one you're given.
+
+For each code that is genuinely addressed by the content (usually 0-5),
+return it with:
+- confidence: "high" (the content clearly and substantially addresses
+  this standard), "medium" (addressed but not the main focus, or only
+  partially), or "low" (a plausible but weak connection).
+- rationale: one specific sentence pointing to what in the content
+  addresses this standard — specific enough that a teacher can quickly
+  judge whether to approve or reject it, not a generic restatement of the
+  standard's own text.
+
+These are SUGGESTIONS a teacher will individually approve or reject —
+never claim more certainty than you have. If truly nothing in the
+candidate list applies, return no matches rather than forcing a weak one
+in just to have an answer.`;
+}
+
+export function buildTeksImportSystemPrompt(subject: string): string {
+  return `You are extracting structured TEKS (Texas Essential Knowledge and
+Skills) standard entries from raw text a teacher pasted in, for the
+subject: ${subject}.
+
+The pasted text is the official or near-official TEKS listing for this
+subject, in whatever formatting it was copied in (may include extra
+whitespace, page headers/footers, section titles, or minor OCR noise).
+Extract every individual standard as one row:
+- code: the standard's citation code exactly as written (e.g.
+  "111.39(c)(6)(A)") — preserve the exact punctuation and structure, don't
+  normalize or reformat it.
+- description: the full text of that specific standard/sub-element, as
+  written. Don't summarize or shorten it, don't merge multiple
+  sub-elements into one row, and don't include the code itself as part of
+  the description text.
+
+Skip anything that isn't an actual standard: section headers, subject
+introductions, general provisions, page numbers, etc. If a line is
+ambiguous or clearly not a standard, leave it out rather than guessing.
+Extract every genuine standard you find — don't cap yourself at a small
+sample if the text contains many.`;
+}
+
 export function buildFillGapsSystemPrompt(): string {
   return `${PEDAGOGY_FRAMEWORK}
 

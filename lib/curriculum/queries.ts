@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { SEGMENT_ORDER } from "@/lib/curriculum/constants";
 import type {
+  Assignment,
   Course,
   LessonDetail,
   LessonSegment,
@@ -151,4 +152,22 @@ export async function getLessonDetail(
   }
 
   return { ...lessonFields, segments, teks };
+}
+
+/** Published assignments for a course — for the grade-entry picker. RLS
+ * already restricts non-admins to published rows with course access. */
+export async function getPublishedAssignmentsForCourse(courseId: string): Promise<Assignment[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("assignments")
+    .select("*")
+    .eq("course_id", courseId)
+    .eq("status", "published")
+    .order("title");
+
+  if (error) {
+    console.error("getPublishedAssignmentsForCourse failed", error);
+    return [];
+  }
+  return data;
 }

@@ -1,4 +1,4 @@
-import type { AssignmentType, LessonSegmentKey } from "@/types/supabase";
+import type { AssignmentType, LessonSegmentKey, TeksMasteryStatus } from "@/types/supabase";
 
 /**
  * Fixed bell-to-bell order for the 6 class-period segments. The enum
@@ -85,3 +85,48 @@ export const ASSIGNMENT_TYPE_LABELS: Record<AssignmentType, string> = {
   reflection_journal: "Reflection / Journal",
   peer_review: "Peer Review",
 };
+
+/**
+ * TEKS mastery progression. `not_started` and `needs_reteaching` are both
+ * "off the happy path" (never begun / regressed) and sort first/last
+ * respectively; the other four are the real progression in order. This
+ * order is the single source of truth for the mastery grid's column order
+ * and the dashboard chart's stage order.
+ */
+export const MASTERY_STATUSES = [
+  "not_started",
+  "introduced",
+  "practiced",
+  "assessed",
+  "mastered",
+  "needs_reteaching",
+] as const satisfies readonly TeksMasteryStatus[];
+
+export const MASTERY_STATUS_LABELS: Record<TeksMasteryStatus, string> = {
+  not_started: "Not Started",
+  introduced: "Introduced",
+  practiced: "Practiced",
+  assessed: "Assessed",
+  mastered: "Mastered",
+  needs_reteaching: "Needs Reteaching",
+};
+
+/**
+ * A student counts as "below mastery" for the struggling-TEKS view if
+ * their status is anywhere in this set — everything except `mastered`
+ * itself. `needs_reteaching` counts too (it's a regression, not progress).
+ */
+export const BELOW_MASTERY_STATUSES: readonly TeksMasteryStatus[] = [
+  "not_started",
+  "introduced",
+  "practiced",
+  "assessed",
+  "needs_reteaching",
+];
+
+/**
+ * How many students below mastery on one TEKS code before it's flagged as
+ * "struggling" on the dashboard. A single struggling student is normal;
+ * multiple is a pattern worth a teacher's attention.
+ */
+export const STRUGGLING_TEKS_THRESHOLD = 2;

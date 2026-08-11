@@ -143,3 +143,28 @@ export const generatedAssignmentSchema = z.object({
   answer_key: z.string().min(1).max(8000),
 });
 export type GeneratedAssignment = z.infer<typeof generatedAssignmentSchema>;
+
+// ── TEKS semantic-matching suggestions ─────────────────────────────────
+
+const teksMatchSchema = z.object({
+  code: z.string().min(1).max(50),
+  confidence: z.enum(["low", "medium", "high"]),
+  rationale: z.string().min(1).max(300),
+});
+
+export const teksSuggestionsSchema = z.object({
+  matches: z.array(teksMatchSchema).max(10),
+});
+export type TeksMatch = z.infer<typeof teksMatchSchema>;
+
+// ── TEKS import (raw pasted standards text → structured rows) ──────────
+
+const teksImportRowSchema = z.object({
+  code: z.string().min(1).max(50),
+  description: z.string().min(1).max(2000),
+});
+
+export const teksImportResultSchema = z.object({
+  rows: z.array(teksImportRowSchema).max(300),
+});
+export type TeksImportRow = z.infer<typeof teksImportRowSchema>;

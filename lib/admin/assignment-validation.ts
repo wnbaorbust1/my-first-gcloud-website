@@ -17,6 +17,7 @@ export const assignmentSaveSchema = z.object({
   // error) but allows an empty rubric while drafting.
   rubric: z.array(rubricCriterionInputSchema).max(15),
   answerKey: z.string().trim().max(8000),
+  teksIds: z.array(z.string().uuid()).max(20),
 });
 
 export type AssignmentSaveInput = z.infer<typeof assignmentSaveSchema>;

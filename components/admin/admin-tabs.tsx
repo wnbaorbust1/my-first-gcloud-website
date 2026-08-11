@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { label: "Curriculum", href: "/admin/curriculum" },
   { label: "Assignments", href: "/admin/assignments" },
+  { label: "TEKS Import", href: "/admin/teks" },
 ];
 
 /** Top-of-page tab nav for the /admin area — switches between the two

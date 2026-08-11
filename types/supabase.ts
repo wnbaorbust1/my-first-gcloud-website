@@ -36,6 +36,13 @@ export type CalendarDayType =
   | "early_release"
   | "block_day";
 export type RateLimitAction = "signup" | "login" | "password_reset";
+export type TeksMasteryStatus =
+  | "not_started"
+  | "introduced"
+  | "practiced"
+  | "assessed"
+  | "mastered"
+  | "needs_reteaching";
 export type LessonStatus = "draft" | "published";
 export type AssignmentType =
   | "classwork"
@@ -449,6 +456,11 @@ export type Database = {
           rubric: RubricCriterion[];
           answer_key: string | null;
           status: AssignmentStatus;
+          // References teks.id — validated by trigger, same pattern as
+          // lessons.teks_ids. Added in the teks_mastery migration so the
+          // semantic-matching suggestion feature has somewhere to write
+          // approved codes for assignments, not just lessons.
+          teks_ids: string[];
           created_at: string;
           updated_at: string;
         };
@@ -464,6 +476,7 @@ export type Database = {
           rubric?: RubricCriterion[];
           answer_key?: string | null;
           status?: AssignmentStatus;
+          teks_ids?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -485,6 +498,141 @@ export type Database = {
           },
         ];
       };
+      classes: {
+        Row: {
+          id: string;
+          profile_id: string;
+          course_id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          course_id: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["classes"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "classes_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "classes_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      students: {
+        Row: {
+          id: string;
+          class_id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          class_id: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["students"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "students_class_id_fkey";
+            columns: ["class_id"];
+            isOneToOne: false;
+            referencedRelation: "classes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      assignment_grades: {
+        Row: {
+          id: string;
+          assignment_id: string;
+          student_id: string;
+          score_earned: number;
+          score_possible: number;
+          graded_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          assignment_id: string;
+          student_id: string;
+          score_earned: number;
+          score_possible: number;
+          graded_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["assignment_grades"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "assignment_grades_assignment_id_fkey";
+            columns: ["assignment_id"];
+            isOneToOne: false;
+            referencedRelation: "assignments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "assignment_grades_student_id_fkey";
+            columns: ["student_id"];
+            isOneToOne: false;
+            referencedRelation: "students";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      teks_mastery: {
+        Row: {
+          id: string;
+          student_id: string;
+          teks_code: string;
+          status: TeksMasteryStatus;
+          last_updated: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          student_id: string;
+          teks_code: string;
+          status?: TeksMasteryStatus;
+          last_updated?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["teks_mastery"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "teks_mastery_student_id_fkey";
+            columns: ["student_id"];
+            isOneToOne: false;
+            referencedRelation: "students";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teks_mastery_teks_code_fkey";
+            columns: ["teks_code"];
+            isOneToOne: false;
+            referencedRelation: "teks";
+            referencedColumns: ["code"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -501,6 +649,7 @@ export type Database = {
       calendar_day_type: CalendarDayType;
       lesson_segment_key: LessonSegmentKey;
       assignment_type: AssignmentType;
+      teks_mastery_status: TeksMasteryStatus;
     };
     CompositeTypes: Record<string, never>;
   };

@@ -4,8 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveAssignmentAction } from "@/lib/admin/assignment-actions";
 import type { AdminAssignmentDetail } from "@/lib/admin/assignment-queries";
+import { TeksSuggestionPanel } from "@/components/admin/teks-suggestion-panel";
 import { ASSIGNMENT_TYPES, ASSIGNMENT_TYPE_LABELS } from "@/lib/curriculum/constants";
 import type { AssignmentType } from "@/types/supabase";
+import type { Teks } from "@/types/curriculum";
 import { cn } from "@/lib/utils";
 
 type RubricRow = { criterion: string; points: number; description: string };
@@ -28,9 +30,11 @@ const textareaClass =
 export function AssignmentEditorForm({
   assignment,
   courseSlug,
+  allTeks,
 }: {
   assignment: AdminAssignmentDetail;
   courseSlug: string;
+  allTeks: Teks[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -49,6 +53,7 @@ export function AssignmentEditorForm({
       : [{ criterion: "", points: 10, description: "" }],
   );
   const [answerKey, setAnswerKey] = useState(assignment.answer_key ?? "");
+  const [teksIds, setTeksIds] = useState<string[]>(assignment.teks_ids);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -65,6 +70,10 @@ export function AssignmentEditorForm({
 
   function removeRubricRow(index: number) {
     setRubric((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleTeks(id: string) {
+    setTeksIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   }
 
   function handleSave(publish: boolean) {
@@ -84,6 +93,7 @@ export function AssignmentEditorForm({
             description: r.description,
           })),
           answerKey,
+          teksIds,
         },
         publish,
         [
@@ -219,6 +229,35 @@ export function AssignmentEditorForm({
           placeholder="Correct answers or strong sample responses a teacher can grade against."
           className={textareaClass}
         />
+      </Section>
+
+      <Section title="TEKS Covered" meta={`${teksIds.length} selected`}>
+        <TeksSuggestionPanel
+          contentType="assignment"
+          contentId={assignment.id}
+          currentTeksIds={teksIds}
+          allTeks={allTeks}
+          onApprove={(id) => setTeksIds((prev) => (prev.includes(id) ? prev : [...prev, id]))}
+        />
+        {allTeks.length === 0 ? (
+          <p className="py-4 text-sm text-slate">No TEKS codes in the reference table yet.</p>
+        ) : (
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {allTeks.map((teks) => (
+              <label key={teks.id} className="ledger-row flex cursor-pointer items-start gap-3 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={teksIds.includes(teks.id)}
+                  onChange={() => toggleTeks(teks.id)}
+                  className="mt-1 shrink-0"
+                />
+                <span className="text-sm text-ink">
+                  <span className="font-mono text-xs text-slate">{teks.code}</span> {teks.description}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
       </Section>
 
       <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-rose-gold/40 pt-6">

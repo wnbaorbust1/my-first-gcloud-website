@@ -6,6 +6,7 @@ import { saveLessonAction } from "@/lib/admin/actions";
 import type { AdminLessonDetail } from "@/lib/admin/curriculum-queries";
 import type { AssistantEdit, LessonSnapshot } from "@/lib/ai/schemas";
 import { LessonAssistantPanel } from "@/components/admin/lesson-assistant-panel";
+import { TeksSuggestionPanel } from "@/components/admin/teks-suggestion-panel";
 import { SEGMENT_LABELS, SEGMENT_ORDER, LESSON_CLASS_PERIOD_MINUTES } from "@/lib/curriculum/constants";
 import { DAY_LABELS } from "@/lib/curriculum/constants";
 import type { Teks } from "@/types/curriculum";
@@ -351,6 +352,13 @@ export function LessonEditorForm({
 
         {/* TEKS */}
         <Section title="TEKS Covered" meta={`${teksIds.length} selected`}>
+          <TeksSuggestionPanel
+            contentType="lesson"
+            contentId={lesson.id}
+            currentTeksIds={teksIds}
+            allTeks={allTeks}
+            onApprove={(id) => setTeksIds((prev) => (prev.includes(id) ? prev : [...prev, id]))}
+          />
           {allTeks.length === 0 ? (
             <p className="py-4 text-sm text-slate">No TEKS codes in the reference table yet.</p>
           ) : (
