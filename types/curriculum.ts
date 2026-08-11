@@ -7,9 +7,10 @@ export type Lesson = Database["public"]["Tables"]["lessons"]["Row"];
 export type LessonSegment = Database["public"]["Tables"]["lesson_segments"]["Row"];
 export type Teks = Database["public"]["Tables"]["teks"]["Row"];
 export type Assignment = Database["public"]["Tables"]["assignments"]["Row"];
+export type Assessment = Database["public"]["Tables"]["assessments"]["Row"];
 export type Class = Database["public"]["Tables"]["classes"]["Row"];
 export type Student = Database["public"]["Tables"]["students"]["Row"];
-export type AssignmentGrade = Database["public"]["Tables"]["assignment_grades"]["Row"];
+export type Grade = Database["public"]["Tables"]["grades"]["Row"];
 export type TeksMastery = Database["public"]["Tables"]["teks_mastery"]["Row"];
 
 export type UnitWithWeeks = Unit & { weeks: Week[] };
@@ -22,5 +23,7 @@ export type LessonDetail = Lesson & {
 };
 
 export type UnitWithAssignments = Unit & { assignments: Assignment[] };
+
+export type UnitWithAssessments = Unit & { assessments: Assessment[] };
 
 export type ClassWithStudents = Class & { students: Student[] };

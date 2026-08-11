@@ -25,7 +25,7 @@ export function TeksSuggestionPanel({
   allTeks,
   onApprove,
 }: {
-  contentType: "lesson" | "assignment";
+  contentType: "lesson" | "assignment" | "assessment";
   contentId: string;
   currentTeksIds: string[];
   allTeks: Teks[];

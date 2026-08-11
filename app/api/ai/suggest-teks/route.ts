@@ -5,11 +5,12 @@ import { getAdminProfile } from "@/lib/auth/session";
 import { suggestTeksForContent } from "@/lib/ai/suggest-teks";
 import { SEGMENT_ORDER, SEGMENT_LABELS } from "@/lib/curriculum/constants";
 import type { LessonSegment } from "@/types/curriculum";
+import type { Question } from "@/types/supabase";
 
 export const maxDuration = 60;
 
 const requestSchema = z.object({
-  contentType: z.enum(["lesson", "assignment"]),
+  contentType: z.enum(["lesson", "assignment", "assessment"]),
   contentId: z.string().uuid(),
 });
 
@@ -43,6 +44,12 @@ function formatAssignmentBody(assignment: {
   return `Instructions: ${assignment.instructions ?? ""}
 
 Teacher directions: ${assignment.teacher_directions ?? ""}`;
+}
+
+function formatAssessmentBody(questions: Question[]): string {
+  return questions
+    .map((q, i) => `${i + 1}. [${q.type}] ${q.prompt}`)
+    .join("\n");
 }
 
 export async function POST(request: Request) {
@@ -82,7 +89,7 @@ export async function POST(request: Request) {
     title = lessonFields.title;
     contentBody = formatLessonBody(lessonFields, lesson_segments);
     courseId = lessonFields.course_id;
-  } else {
+  } else if (contentType === "assignment") {
     const { data: assignment, error } = await supabase
       .from("assignments")
       .select("*")
@@ -94,6 +101,18 @@ export async function POST(request: Request) {
     title = assignment.title;
     contentBody = formatAssignmentBody(assignment);
     courseId = assignment.course_id;
+  } else {
+    const { data: assessment, error } = await supabase
+      .from("assessments")
+      .select("*")
+      .eq("id", contentId)
+      .maybeSingle();
+    if (error || !assessment) {
+      return NextResponse.json({ error: "Assessment not found." }, { status: 404 });
+    }
+    title = assessment.title;
+    contentBody = formatAssessmentBody(assessment.questions);
+    courseId = assessment.course_id;
   }
 
   const { data: course } = await supabase

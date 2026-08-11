@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QUESTION_TYPES } from "@/lib/curriculum/constants";
 
 /**
  * Zod schemas for every AI structured output in this app. Passed to
@@ -168,3 +169,34 @@ export const teksImportResultSchema = z.object({
   rows: z.array(teksImportRowSchema).max(300),
 });
 export type TeksImportRow = z.infer<typeof teksImportRowSchema>;
+
+// ── Assessment generation ────────────────────────────────────────────────
+
+// No `id` here — the model never assigns question ids, the app does
+// (crypto.randomUUID() at generation time) so every question has a
+// stable key regardless of how it was created.
+export const generatedQuestionSchema = z.object({
+  type: z.enum(QUESTION_TYPES),
+  prompt: z.string().min(1).max(2000),
+  points: z.number().int().min(1).max(100),
+  // multiple_choice only — 2-8 answer choices.
+  options: z.array(z.string().min(1).max(300)).min(2).max(8).nullable(),
+  // multiple_choice/true_false/calculation/short_response: the correct
+  // answer as text. Null for essay/scenario_analysis/performance_task,
+  // where "correct" isn't a single fixed string.
+  correct_answer: z.string().max(1000).nullable(),
+  // matching only — 2-15 left/right pairs.
+  pairs: z
+    .array(z.object({ left: z.string().min(1).max(300), right: z.string().min(1).max(300) }))
+    .min(2)
+    .max(15)
+    .nullable(),
+});
+export type GeneratedQuestion = z.infer<typeof generatedQuestionSchema>;
+
+export const generatedAssessmentSchema = z.object({
+  title: z.string().min(1).max(300),
+  questions: z.array(generatedQuestionSchema).min(1).max(50),
+  answer_key: z.string().min(1).max(8000),
+});
+export type GeneratedAssessment = z.infer<typeof generatedAssessmentSchema>;

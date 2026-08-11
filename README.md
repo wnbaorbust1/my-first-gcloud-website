@@ -112,16 +112,28 @@ app/
                                                         by course (switcher) and type (dropdown)
       assignments/[courseSlug]/generate/page.tsx       AI assignment generation form
       assignments/[courseSlug]/[assignmentId]/edit/page.tsx   Assignment detail/edit view
+      assessments/page.tsx        Course picker for assessment authoring
+      assessments/[courseSlug]/page.tsx                Assessments grouped by unit, originals with
+                                                        their retake/modified variants grouped together
+      assessments/[courseSlug]/generate/page.tsx       AI assessment generation form
+      assessments/[courseSlug]/[assessmentId]/edit/page.tsx   Assessment editor + one-click
+                                                        retake/modified variant generation
       teks/page.tsx                AI-assisted TEKS standards import (paste → parse → review → commit)
     teks-mastery/                Teacher-facing (not admin) — RLS-owned by the signed-in teacher
       page.tsx                    Class list + create-class form
-      [classId]/page.tsx           Roster, grade entry, mastery chart, struggling-TEKS panel, grid
+      [classId]/page.tsx           Roster, mastery chart, struggling-TEKS panel, mastery grid
+    gradebook/                   Teacher-facing — roster, grade entry, mastery trend chart
+      page.tsx                    Class list + create-class form (same classes as TEKS Mastery)
+      [classId]/page.tsx           Roster, grade entry (Ledger Line rows, gold stamp when graded),
+                                    trend chart (student or class average, by unit + TEKS code)
   api/ai/                      Server-only Claude-backed Route Handlers (see "AI lesson generation")
     generate-lesson/route.ts    POST → generates + saves a new draft lesson
     lesson-assistant/route.ts   POST → one field-scoped edit suggestion
     fill-gaps/route.ts          POST → topic suggestions for a unit's empty week/day slots
     generate-assignment/route.ts   POST → generates + saves a new draft assignment
-    suggest-teks/route.ts       POST → semantic TEKS match suggestions for a lesson/assignment
+    generate-assessment/route.ts   POST → generates + saves a new draft assessment
+    regenerate-assessment/route.ts   POST → retake or modified variant from an existing assessment
+    suggest-teks/route.ts       POST → semantic TEKS match suggestions for a lesson/assignment/assessment
     import-teks/route.ts        POST → parses raw pasted TEKS text into structured rows
 
 components/
@@ -131,16 +143,20 @@ components/
                               GoogleSignInButton, SignOutButton, form primitives
   curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
                               (course-scoped planner spine), LessonDetailView
-  admin/                     AdminTabs (Curriculum/Assignments/TEKS Import sub-nav), CourseSwitcher,
-                              LessonGenerateForm, LessonEditorForm, LessonAssistantPanel
-                              (chat-style AI panel), GapSuggestionsPanel, AssignmentGenerateForm,
-                              AssignmentEditorForm, AssignmentTypeFilter, TeksSuggestionPanel
-                              (embedded in both editors), TeksImportForm
+  admin/                     AdminTabs (Curriculum/Assignments/Assessments/TEKS Import sub-nav),
+                              CourseSwitcher, LessonGenerateForm, LessonEditorForm,
+                              LessonAssistantPanel (chat-style AI panel), GapSuggestionsPanel,
+                              AssignmentGenerateForm, AssignmentEditorForm, AssignmentTypeFilter,
+                              AssessmentGenerateForm, AssessmentEditorForm (per-question-type
+                              editing), AssessmentVariantActions (one-click retake/modified),
+                              TeksSuggestionPanel (embedded in all three editors), TeksImportForm
   teks/                      Teacher-facing mastery UI: CreateClassForm, RosterSection,
-                              GradeEntrySection, MasteryGrid, MasteryStatusControl (the
-                              gold-stamp-on-mastered control), MasteryChart, StrugglingTeksPanel
+                              MasteryGrid, MasteryStatusControl (the gold-stamp-on-mastered
+                              control), MasteryChart, StrugglingTeksPanel
+  gradebook/                 Teacher-facing gradebook UI: GradeEntrySection (item picker + Ledger
+                              Line rows, gold stamp on graded rows), TrendChart, TrendSection
   assignments/ assessments/ portfolio/ billing/   (empty — reserved for a future teacher-facing
-                              assignments view; authoring UI above lives in components/admin/)
+                              browse view; authoring UI above lives in components/admin/)
 
 lib/
   supabase/
@@ -162,8 +178,8 @@ lib/
     queries.ts                  getCourseBySlug/getAllCourses/getCourseUnitsWithWeeks/
                                  getWeekWithLessons/getLessonDetail/getPublishedAssignmentsForCourse
                                  — all RLS-only access control
-    constants.ts                 Segment order/labels, day labels, assignment type order/labels,
-                                 mastery status order/labels, struggling-TEKS threshold
+    constants.ts                 Segment/assignment-type/question-type/mastery-status order+labels,
+                                 struggling-TEKS threshold
   admin/
     curriculum-queries.ts        getCourseOutlineForAdmin/getWeekByNumber/getAllTeks/getLessonForEdit
                                   — admin reads, same RLS as teacher queries (is_admin() sees everything)
@@ -172,26 +188,34 @@ lib/
     assignment-queries.ts         getUnitsWithAssignments/getUnitsForCourse/getAssignmentById
     assignment-validation.ts      assignmentSaveSchema — the assignment editor's Zod schema
     assignment-actions.ts         saveAssignmentAction Server Action (draft save / publish)
+    assessment-queries.ts         getUnitsWithAssessments/getAssessmentById (with source_assessment)
+    assessment-validation.ts      assessmentSaveSchema — the assessment editor's Zod schema
+    assessment-actions.ts         saveAssessmentAction Server Action (draft save / publish)
     teks-actions.ts               commitTeksImportAction — upserts admin-approved import rows
-  teacher/                      Teacher-owned operational data — RLS via profile_id = auth.uid(),
-                                 not is_admin(); see "TEKS tracking and mastery dashboard" below
+  teacher/                      Teacher-owned operational data — RLS via profile_id/teacher_id =
+                                 auth.uid(), not is_admin(); see the gradebook/mastery sections below
     roster-queries.ts             getClassesForTeacher/getClassWithStudents
     roster-actions.ts             createClassAction/addStudentAction/removeStudentAction
-    grade-actions.ts              recordGradeAction — records a grade, returns (never applies)
-                                   mastery-status suggestions for the assignment's TEKS codes
+    grade-actions.ts              recordGradeAction — records a grade against an assessment OR an
+                                   assignment, returns (never applies) mastery-status suggestions
+    gradebook-queries.ts          getGradableItemsForCourse/getGradebookData/getTrendData
+    gradebook-actions.ts          fetchTrendDataAction — Server Action wrapper so the trend
+                                   chart's client-side controls can re-query without a Route Handler
     mastery-queries.ts            getMasteryDashboardData — the grid + chart + struggling-TEKS data
     mastery-actions.ts            updateMasteryStatusAction — the one write path for a mastery cell
   ai/
     client.ts                    getAnthropicClient() singleton, AI_MODEL constant, server-only
     prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders,
-                                  per-assignment-type generation guidance, TEKS-suggestion and
-                                  TEKS-import prompt builders
+                                  per-assignment-type and per-question-type generation guidance,
+                                  TEKS-suggestion, TEKS-import, and assessment-variant prompt builders
     schemas.ts                    Zod schemas for every AI structured output (also the shared
                                   LessonSnapshot type used by the editor + assistant panel)
     generate-lesson.ts            generateLesson() — full-lesson generation
     lesson-assistant.ts           requestLessonAssistantEdit() — single-field edit
     fill-gaps.ts                  fillCurriculumGaps() — gap-slot topic suggestions
     generate-assignment.ts        generateAssignment() — full-assignment generation
+    generate-assessment.ts        generateAssessment() / regenerateAssessmentVariant() — full
+                                  generation and retake/modified variant generation
     suggest-teks.ts               suggestTeksForContent() — semantic TEKS matching
     import-teks.ts                parseTeksImport() — raw text → structured {code, description} rows
   utils.ts                    cn() class-merge helper
@@ -199,16 +223,18 @@ lib/
 
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
-  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment/Class/Student/
-                                AssignmentGrade/TeksMastery + composed types (UnitWithWeeks,
-                                WeekWithLessons, LessonDetail, UnitWithAssignments, ClassWithStudents)
+  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment/Assessment/
+                                Class/Student/Grade/TeksMastery + composed types (UnitWithWeeks,
+                                WeekWithLessons, LessonDetail, UnitWithAssignments,
+                                UnitWithAssessments, ClassWithStudents)
   index.ts                    Barrel export
 
 supabase/
   migrations/                 SQL migrations — profiles, courses, subscriptions,
                                academic_calendars/calendar_days, auth_rate_limit_attempts,
                                teks, units, weeks, lessons/lesson_segments, assignments,
-                               classes/students/assignment_grades/teks_mastery
+                               classes/students/assignment_grades/teks_mastery,
+                               assessments/grades (assignment_grades retired into grades)
   seed.sql                    Local-dev-only demo curriculum content (not run against hosted projects)
   README.md                   Supabase CLI workflow notes
 
@@ -284,12 +310,16 @@ RLS policies, not just "does it parse") before being committed.
 - **academic_calendars** / **calendar_days** — one calendar per teacher
   per school year, with dated day types (regular/holiday/testing/
   early_release/block_day). RLS scopes both to their owning teacher.
-- **classes** / **students** / **assignment_grades** / **teks_mastery** —
-  see "TEKS tracking and mastery dashboard" below. Same teacher-owned RLS
-  shape as academic_calendars (`profile_id = auth.uid()` on `classes`,
-  everything under it walks up via an `EXISTS` join rather than
-  denormalizing the owner), not the admin-only shape curriculum content
-  uses.
+- **classes** / **students** / **grades** / **teks_mastery** — teacher-
+  owned operational data, see "Gradebook and TEKS mastery" below. Same
+  RLS shape as academic_calendars (an owner column checked against
+  `auth.uid()`), not the admin-only shape curriculum content uses.
+  `students` carries both `class_id` (what actually scopes a roster to a
+  course) and a denormalized `teacher_id` + free-text `class_period`;
+  `grades` is a single table covering both assessment and assignment
+  grades (exactly one of `assessment_id`/`assignment_id` set, enforced by
+  a `CHECK` — it replaced an earlier assignment-only `assignment_grades`
+  table, whose data was migrated across before that table was dropped).
 - **auth_rate_limit_attempts** — backs the app-level rate limiting above.
   RLS is enabled with *no policies*, so it's reachable only via the
   service-role client, never through the anon/authenticated API.
@@ -360,6 +390,20 @@ jsonb array element shape any other way), and `answer_key`. Same
 directions, a non-empty rubric, and an answer key. RLS mirrors lessons
 exactly: admins see everything, teachers see only published assignments
 in courses they have access to, all writes admin-only.
+
+**assessments** — also belongs to a `unit`, holds `title`, a structured
+`questions` jsonb array (one of 8 `question_type` values per question —
+multiple_choice, true_false, matching, calculation, short_response,
+scenario_analysis, essay, performance_task — shape-validated by trigger
+the same way as assignments' rubric), `answer_key`, and `teks_ids`. The
+publish gate requires a title, at least one question, and an answer key.
+Every row also carries `variant_type` (`original`/`retake`/`modified`)
+and a nullable `source_assessment_id`, with a `CHECK` constraint pairing
+them (`original` ⟺ no source; `retake`/`modified` ⟺ has a source) — a
+retake or modified version is its own full `assessments` row, generated
+from and linked back to the one it came from, editable/publishable
+independently. Same `course_id` denormalization and RLS shape as
+assignments.
 
 ## Curriculum browser UI
 
@@ -444,7 +488,7 @@ signed-in profile's `role` is `admin` (`app/(app)/layout.tsx` →
 `app/(app)/admin/layout.tsx` calls `requireAdmin()` as a second guard —
 the real boundary is still RLS (every curriculum write policy already
 requires `is_admin()`). Inside `/admin`, `<AdminTabs>` switches between
-the Curriculum and Assignments authoring areas.
+the Curriculum, Assignments, Assessments, and TEKS Import authoring areas.
 
 ## Assignment management
 
@@ -485,23 +529,68 @@ full manual editor.
   — a single update, since the rubric lives on the same row (no
   upsert-then-update sequencing like lessons' segments).
 
+## Assessment management
+
+Admin-only tooling (`/admin/assessments/...`) for authoring assessments
+across 8 question types, reusing the same generation/editor/RLS patterns
+as lessons and assignments — plus one-click retake and modified-version
+generation from any existing assessment.
+
+- **Generate** (`POST /api/ai/generate-assessment`) — given
+  unit/topic/notes, calls Claude with structured output
+  (`generatedAssessmentSchema`) and saves a single `draft` assessment row
+  (`variant_type: 'original'`). The form is a unit + topic picker at
+  `/admin/assessments/[courseSlug]/generate`.
+- **Per-question-type generation guidance**: `lib/ai/prompts.ts` has a
+  `QUESTION_TYPE_GUIDANCE` map telling the model which of a question's
+  `options`/`correct_answer`/`pairs` fields apply to its type (e.g.
+  multiple_choice sets `options` + `correct_answer` and leaves `pairs`
+  null; essay leaves all three null since it's rubric-graded) — the same
+  "structural guidance per variant" idea as assignments'
+  `ASSIGNMENT_TYPE_GUIDANCE`. The AI never assigns a question `id`; the
+  app stamps a fresh `crypto.randomUUID()` on every generated question so
+  each has a stable key regardless of how it was created.
+- **One-click retake / modified generation**
+  (`components/admin/assessment-variant-actions.tsx`, shown only on
+  `original` assessments, `POST /api/ai/regenerate-assessment`) — sends
+  the source assessment's questions to
+  `regenerateAssessmentVariant()` (`lib/ai/generate-assessment.ts`) with
+  a variant-specific system prompt: **retake** asks for new questions
+  testing the same skills at the same difficulty (so a student can't
+  recall answers from the first attempt); **modified** asks for the
+  *same* questions with simplified language and/or reduced multiple-choice
+  options, for accommodations. Either way the result saves as its own
+  full `assessments` row — `variant_type` set, `source_assessment_id`
+  pointing back — and the admin is dropped straight into editing it.
+- **Editor** (`/admin/assessments/[courseSlug]/[assessmentId]/edit`,
+  `components/admin/assessment-editor-form.tsx`) — per-question-type
+  editing (multiple_choice's option list + a radio to mark the correct
+  one, matching's left/right pairs, true_false's dropdown, a plain
+  correct-answer field for calculation/short_response, no extra fields
+  for scenario_analysis/essay/performance_task since those grade via the
+  answer key), a live points total, the answer key, and a TEKS
+  multi-select with the same `TeksSuggestionPanel` the other editors use.
+  A retake/modified assessment shows a link back to the original it came
+  from. "Save draft"/"Publish" go through `saveAssessmentAction`.
+
 ## TEKS tracking and mastery dashboard
 
-Three distinct pieces, split by who owns the data: TEKS import and
+Two distinct pieces, split by who owns the data: TEKS import and
 semantic matching are **admin** content-authoring (the `teks` reference
-table and lesson/assignment `teks_ids` are admin-owned, same as
-everywhere else); classes, students, grades, and mastery status are
-**teacher-owned operational data**, RLS-scoped to `profile_id =
-auth.uid()` like `academic_calendars`, not `is_admin()`.
+table and `teks_ids` on lessons/assignments/assessments are admin-owned,
+same as everywhere else); classes, students, and mastery status are
+**teacher-owned operational data**, RLS-scoped to an owner column checked
+against `auth.uid()` like `academic_calendars`, not `is_admin()`. Grade
+entry itself now lives in the Gradebook (below) — this page consumes
+grades, it doesn't collect them.
 
-**Schema note**: nothing before this migration modeled students, classes,
-or grades at all. `supabase/migrations/20260811090006_teks_mastery.sql`
-adds the smallest slice that supports mastery tracking — `classes` →
-`students`, plus a bare-bones `assignment_grades` (just enough to compute
-a mastery suggestion from a score) — explicitly **not** the future
-gradebook/assessments feature, which may reshape grading entirely. It
-also adds `teks_ids` to `assignments` (lessons already had it), since the
-semantic-matching feature applies to both.
+**Schema note**: nothing before `20260811090006_teks_mastery.sql` modeled
+students, classes, or grades at all, so it added the smallest slice that
+supports mastery tracking — `classes` → `students`, plus a bare-bones
+`assignment_grades` table just to power a mastery suggestion from a
+score. The next phase's migration (`20260811090007`) replaced that table
+with a real, unified `grades` table covering both assessments and
+assignments — see "Gradebook" below.
 
 - **TEKS import** (`/admin/teks`, `components/admin/teks-import-form.tsx`)
   — paste raw TEKS standards text for a subject; `POST /api/ai/import-teks`
@@ -511,7 +600,7 @@ semantic-matching feature applies to both.
   (`lib/admin/teks-actions.ts`) upserts them into `teks` by `code` — the
   AI never writes to the reference table directly.
 - **Semantic TEKS matching** (`components/admin/teks-suggestion-panel.tsx`,
-  embedded in both the lesson and assignment editors, `POST
+  embedded in the lesson, assignment, and assessment editors, `POST
   /api/ai/suggest-teks`) — given a piece of content's title/body and the
   course's candidate TEKS codes, Claude suggests which ones it likely
   covers with a confidence level and a one-sentence rationale
@@ -531,14 +620,13 @@ semantic-matching feature applies to both.
     and `needs_reteaching` breaks the ramp entirely as solid rose-gold —
     the app's existing "needs attention" color. Every swatch is paired
     with its text label; color never carries meaning alone.
-  - *Auto-suggested from grades*: `GradeEntrySection`
-    (`components/teks/grade-entry-section.tsx`) records a score via
-    `recordGradeAction` (`lib/teacher/grade-actions.ts`), which computes —
-    but never applies — a suggested status per TEKS code tagged on that
-    assignment, from a simple, single named threshold function
+  - *Auto-suggested from grades*: recording a grade in the Gradebook
+    (`recordGradeAction`, `lib/teacher/grade-actions.ts`) computes — but
+    never applies — a suggested status per TEKS code tagged on the graded
+    item, from a simple, single named threshold function
     (`suggestStatusFromScore`). The teacher applies each suggestion
-    individually, which calls the exact same `updateMasteryStatusAction`
-    the manual grid uses.
+    individually, right there in the gradebook row, which calls the
+    exact same `updateMasteryStatusAction` the manual grid uses.
   - **The stamp moment**: `MasteryStatusControl` conditionally renders
     `<StatusStamp>` only while `status === 'mastered'`, so promoting a
     student to mastered mounts it fresh and its existing
@@ -548,8 +636,9 @@ semantic-matching feature applies to both.
 - **Dashboard** (`/teks-mastery/[classId]`) — `getMasteryDashboardData()`
   (`lib/teacher/mastery-queries.ts`) resolves the course's relevant TEKS
   codes (the union of `teks_ids` tagged across its lessons and
-  assignments), the roster's current status per code, and per-code status
-  counts.
+  assignments — assessments' `teks_ids` feed the gradebook's trend view
+  instead, see below), the roster's current status per code, and
+  per-code status counts.
   - `MasteryChart` (`components/teks/mastery-chart.tsx`, Recharts) is a
     single-hue horizontal bar per TEKS code — bar length = % of the class
     at "mastered," gold-leaf fill, direct % labels, a full per-status
@@ -561,6 +650,36 @@ semantic-matching feature applies to both.
   - `StrugglingTeksPanel` (`components/teks/struggling-teks-panel.tsx`)
     lists TEKS codes with `STRUGGLING_TEKS_THRESHOLD` (2) or more students
     below mastery, sorted worst-first.
+
+## Gradebook
+
+Teacher-facing (`/gradebook/...`, same `classes`/`students` as TEKS
+Mastery — the two features share a roster, viewed through different
+lenses) — student roster, grade entry, and a mastery trend chart.
+
+- **Grade entry** (`components/gradebook/grade-entry-section.tsx`) — pick
+  one gradable item (a published assessment or assignment, pulled from
+  `getGradableItemsForCourse()` with a computed total-points figure —
+  sum of question points or rubric points), then one Ledger Line row per
+  student. An ungraded row shows inline score/out-of inputs defaulted to
+  the item's total; a graded row shows the score in **DM Mono** (`27/30`)
+  with a gold-leaf `<StatusStamp>` in the margin instead of a generic
+  status badge — the same stamp `MasteryStatusControl` uses, so "graded"
+  reads as the identical visual language as "mastered" elsewhere in the
+  app. Saving a grade surfaces any mastery suggestions inline under that
+  row (see "Auto-suggested from grades" above), each with its own Apply
+  button.
+- **Mastery trend view** (`components/gradebook/trend-section.tsx` +
+  `trend-chart.tsx`) — score-over-time for one student or the class
+  average, scoped to a unit and optionally filtered to one TEKS code.
+  `getTrendData()` (`lib/teacher/gradebook-queries.ts`) resolves the
+  unit's gradable items (filtered by `teks_ids` when a code is chosen),
+  pulls every matching grade, and reduces to one point per item — that
+  student's score, or the class average across everyone who has a grade
+  for it, plotted at the item's grade date. The chart itself is a single
+  gold-leaf line (Recharts) with a hover tooltip naming the item and its
+  score — client-side controls re-fetch via `fetchTrendDataAction`, a
+  thin Server Action wrapper, rather than a dedicated Route Handler.
 
 ## Environment variables
 
@@ -579,7 +698,8 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Curriculum data model + read-only browser (units/weeks/lessons/TEKS)
 ✅ AI-powered lesson generation, editor, AI assistant panel, gap-filling (admin-only)
 ✅ Assignment management: 20 types, AI generation, list + editor (admin-only)
-✅ TEKS import, AI semantic matching, mastery tracking + dashboard (minimal roster/grades slice)
-⬜ Assessments / full gradebook / portfolio features
-⬜ Stripe billing
+✅ TEKS import, AI semantic matching, mastery tracking + dashboard
+✅ Assessment management: 8 question types, AI generation, retake/modified variants (admin-only)
+✅ Gradebook: roster, grade entry (assessments + assignments), mastery trend chart
+⬜ Portfolios / Stripe billing
 ⬜ Deployment config

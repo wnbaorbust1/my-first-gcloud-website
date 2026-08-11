@@ -72,6 +72,30 @@ export type RubricCriterion = {
   points: number;
   description?: string | null;
 };
+export type QuestionType =
+  | "multiple_choice"
+  | "true_false"
+  | "matching"
+  | "calculation"
+  | "short_response"
+  | "scenario_analysis"
+  | "essay"
+  | "performance_task";
+export type AssessmentStatus = "draft" | "published";
+export type AssessmentVariant = "original" | "retake" | "modified";
+/** One question, as stored in assessments.questions (jsonb array). Shape
+ * varies by `type` — `options`/`correct_answer` for multiple_choice,
+ * `pairs` for matching, etc. — validated loosely at the DB layer (see the
+ * assessments migration) and precisely by generatedQuestionSchema. */
+export type Question = {
+  id: string;
+  type: QuestionType;
+  prompt: string;
+  points: number;
+  options: string[] | null;
+  correct_answer: string | null;
+  pairs: { left: string; right: string }[] | null;
+};
 export type LessonSegmentKey =
   | "bell_ringer"
   | "mini_lesson"
@@ -498,6 +522,61 @@ export type Database = {
           },
         ];
       };
+      assessments: {
+        Row: {
+          id: string;
+          unit_id: string;
+          course_id: string;
+          title: string;
+          questions: Question[];
+          answer_key: string | null;
+          teks_ids: string[];
+          status: AssessmentStatus;
+          variant_type: AssessmentVariant;
+          source_assessment_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          unit_id: string;
+          // Denormalized server-side by a trigger from unit_id.
+          course_id?: string;
+          title: string;
+          questions?: Question[];
+          answer_key?: string | null;
+          teks_ids?: string[];
+          status?: AssessmentStatus;
+          variant_type?: AssessmentVariant;
+          source_assessment_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["assessments"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "assessments_unit_id_fkey";
+            columns: ["unit_id"];
+            isOneToOne: false;
+            referencedRelation: "units";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "assessments_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "assessments_source_assessment_id_fkey";
+            columns: ["source_assessment_id"];
+            isOneToOne: false;
+            referencedRelation: "assessments";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       classes: {
         Row: {
           id: string;
@@ -538,6 +617,11 @@ export type Database = {
           id: string;
           class_id: string;
           name: string;
+          // Denormalized from classes.profile_id by a trigger — every
+          // gradebook/RLS read here goes through teacher_id directly
+          // rather than joining through classes.
+          teacher_id: string;
+          class_period: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -545,6 +629,8 @@ export type Database = {
           id?: string;
           class_id: string;
           name: string;
+          teacher_id?: string;
+          class_period?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -557,43 +643,59 @@ export type Database = {
             referencedRelation: "classes";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "students_teacher_id_fkey";
+            columns: ["teacher_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
         ];
       };
-      assignment_grades: {
+      grades: {
         Row: {
           id: string;
-          assignment_id: string;
           student_id: string;
-          score_earned: number;
-          score_possible: number;
-          graded_at: string;
+          assessment_id: string | null;
+          assignment_id: string | null;
+          score: number;
+          max_score: number;
+          date: string;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          assignment_id: string;
           student_id: string;
-          score_earned: number;
-          score_possible: number;
-          graded_at?: string;
+          assessment_id?: string | null;
+          assignment_id?: string | null;
+          score: number;
+          max_score: number;
+          date?: string;
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<Database["public"]["Tables"]["assignment_grades"]["Insert"]>;
+        Update: Partial<Database["public"]["Tables"]["grades"]["Insert"]>;
         Relationships: [
           {
-            foreignKeyName: "assignment_grades_assignment_id_fkey";
-            columns: ["assignment_id"];
-            isOneToOne: false;
-            referencedRelation: "assignments";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "assignment_grades_student_id_fkey";
+            foreignKeyName: "grades_student_id_fkey";
             columns: ["student_id"];
             isOneToOne: false;
             referencedRelation: "students";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "grades_assessment_id_fkey";
+            columns: ["assessment_id"];
+            isOneToOne: false;
+            referencedRelation: "assessments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "grades_assignment_id_fkey";
+            columns: ["assignment_id"];
+            isOneToOne: false;
+            referencedRelation: "assignments";
             referencedColumns: ["id"];
           },
         ];
@@ -650,6 +752,8 @@ export type Database = {
       lesson_segment_key: LessonSegmentKey;
       assignment_type: AssignmentType;
       teks_mastery_status: TeksMasteryStatus;
+      question_type: QuestionType;
+      assessment_variant: AssessmentVariant;
     };
     CompositeTypes: Record<string, never>;
   };

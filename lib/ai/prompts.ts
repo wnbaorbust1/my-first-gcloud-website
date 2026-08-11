@@ -1,6 +1,6 @@
 import "server-only";
-import type { AssignmentType } from "@/types/supabase";
-import { ASSIGNMENT_TYPE_LABELS } from "@/lib/curriculum/constants";
+import type { AssignmentType, QuestionType } from "@/types/supabase";
+import { ASSIGNMENT_TYPE_LABELS, QUESTION_TYPE_LABELS } from "@/lib/curriculum/constants";
 
 /**
  * The pedagogical framework every generated or AI-edited lesson must
@@ -262,4 +262,107 @@ progresses logically given the unit's focus and what's already taught in
 the surrounding slots. Vary the topics across the week rather than
 repeating the same idea five times. Keep suggestions concrete enough that
 a teacher could hand the topic straight to the lesson generator.`;
+}
+
+/**
+ * Structural guidance per question type — what each type's `options` /
+ * `correct_answer` / `pairs` fields should actually hold, since the
+ * schema alone doesn't tell the model which fields apply to which type.
+ */
+const QUESTION_TYPE_GUIDANCE: Record<QuestionType, string> = {
+  multiple_choice: "Set `options` to 2-8 answer choices and `correct_answer` to the exact text of the correct one (verbatim, matching an entry in `options`). Leave `pairs` null.",
+  true_false: "Set `correct_answer` to exactly \"True\" or \"False\". Leave `options` and `pairs` null.",
+  matching: "Set `pairs` to 2-15 {left, right} entries to be matched (e.g. term/definition, event/date). Leave `options` and `correct_answer` null.",
+  calculation: "A problem requiring a numeric or algebraic answer, shown step-solvable. Set `correct_answer` to the final answer (include units if relevant). Leave `options` and `pairs` null.",
+  short_response: "A question answerable in 1-3 sentences with a specific expected answer. Set `correct_answer` to a strong sample answer. Leave `options` and `pairs` null.",
+  scenario_analysis: "Present a realistic scenario and ask the student to analyze or make a recommendation. Leave `correct_answer` null (grading is rubric-based, covered by the assessment's answer_key) — leave `options` and `pairs` null too.",
+  essay: "An extended-response prompt. Leave `correct_answer`, `options`, and `pairs` null — grading is rubric-based, covered by the assessment's answer_key.",
+  performance_task: "A prompt describing a hands-on task or product the student produces (not a written answer). Leave `correct_answer`, `options`, and `pairs` null — grading is rubric-based, covered by the assessment's answer_key.",
+};
+
+function questionTypeGuidanceBlock(): string {
+  return Object.entries(QUESTION_TYPE_GUIDANCE)
+    .map(([type, guidance]) => `- ${QUESTION_TYPE_LABELS[type as QuestionType]}: ${guidance}`)
+    .join("\n");
+}
+
+export function buildGenerateAssessmentSystemPrompt(): string {
+  return `You are a curriculum designer writing assessments for Texas high
+school teachers, aligned to TEKS, as part of the same course/unit as the
+lesson and assignment content you also write for this platform — direct,
+practical, no academic jargon.
+
+## Question types and what their fields mean
+
+${questionTypeGuidanceBlock()}
+
+## What you're producing
+
+- title: concise and specific — something a teacher would recognize in a
+  list of a unit's assessments (e.g. "Unit 3 Test: Linear Systems"), not
+  the topic restated verbatim.
+- questions: a well-sequenced set (easier items first is typical, but use
+  judgment) mixing question types where the topic calls for it rather
+  than defaulting to all multiple_choice. Point values should reflect
+  genuine difficulty/depth, not be uniform for their own sake.
+- answer_key: a complete answer key covering every question — correct
+  answers for fixed-answer items (even though those also carry a
+  correct_answer field, restate them here for a single scannable
+  reference) and grading guidance/sample responses for rubric-graded
+  items (scenario_analysis, essay, performance_task).
+
+## Your task
+
+Generate one complete assessment matching the schema you've been given.`;
+}
+
+export function buildRegenerateAssessmentSystemPrompt(
+  variant: "retake" | "modified",
+): string {
+  if (variant === "retake") {
+    return `You are a curriculum designer producing a RETAKE version of an
+existing assessment for a Texas high school teacher.
+
+You will be given the original assessment's title and questions. Produce
+a full new set of questions testing the SAME skills/content at the SAME
+difficulty and in the SAME proportions (same mix of question types, same
+approximate point distribution) — but with different specific questions
+(different numbers, different scenarios, different answer choices) so a
+student retaking it can't just recall answers from the first attempt.
+Also produce a matching answer key. Keep the title the same as the
+original (the caller appends "(Retake)" itself).
+
+## Question types and what their fields mean
+
+${questionTypeGuidanceBlock()}
+
+Generate the complete retake now, matching the schema you've been given.`;
+  }
+
+  return `You are adapting an existing assessment for a Texas high school
+teacher, producing a MODIFIED version for accommodations (simplified
+language and/or reduced choices) — not a different test.
+
+You will be given the original assessment's title and questions. Keep
+each question testing the exact same skill/content as its original
+counterpart, in the same order, but:
+- Simplify sentence structure and vocabulary in every prompt without
+  changing what's being asked.
+- For multiple_choice questions, reduce the option count (e.g. 4 → 3,
+  keeping the correct answer and the strongest distractor(s)) where that
+  genuinely eases the item without trivializing it.
+- Leave calculation/short_response/essay/scenario_analysis/
+  performance_task/matching/true_false structurally as-is unless
+  simplifying the language calls for a structural tweak (e.g. shortening
+  a matching set).
+Keep the same number of questions as the original, in the same order.
+Also produce a matching answer key. Keep the title the same as the
+original (the caller appends "(Modified)" itself).
+
+## Question types and what their fields mean
+
+${questionTypeGuidanceBlock()}
+
+Generate the complete modified version now, matching the schema you've
+been given.`;
 }

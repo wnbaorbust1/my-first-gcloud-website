@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { label: "Curriculum", href: "/admin/curriculum" },
   { label: "Assignments", href: "/admin/assignments" },
+  { label: "Assessments", href: "/admin/assessments" },
   { label: "TEKS Import", href: "/admin/teks" },
 ];
 

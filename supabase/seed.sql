@@ -4,8 +4,11 @@
 -- real reference data that belongs in every environment.
 --
 -- Gives the curriculum browser something real to show locally: one
--- Algebra I unit with 3 weeks, a fully worked published lesson, and a
--- draft lesson to demonstrate the publish gate / RLS visibility split.
+-- Algebra I unit with 3 weeks, a fully worked published lesson, a draft
+-- lesson, a published assignment + draft assignment, and a published
+-- assessment + its linked retake variant — enough to demonstrate the
+-- publish gate / RLS visibility split and the assessment variant
+-- relationship without a real Supabase project.
 --
 -- Note the insert order below is not arbitrary: a lesson must exist
 -- before its segments can reference it, and it can only move to
@@ -21,6 +24,7 @@ declare
   week2_id uuid;
   week3_id uuid;
   lesson1_id uuid;
+  unit1_test_id uuid;
   teks_linear_id uuid;
   teks_quadratic_id uuid;
 begin
@@ -114,4 +118,41 @@ begin
     'Slope-Intercept Quick Check (draft)',
     'Answer each question using the graph or equation provided.'
   );
+
+  -- Published assessment: a full unit test mixing question types, plus a
+  -- retake variant linked back to it — demonstrates the assessment list/
+  -- edit views and the original/variant relationship.
+  insert into public.assessments (unit_id, title, questions, answer_key, teks_ids)
+  values (
+    unit1_id,
+    'Unit 1 Test: Linear Functions',
+    '[
+      {"id": "q1", "type": "multiple_choice", "prompt": "Which equation represents a line with slope 3 and y-intercept -2?", "points": 5, "options": ["y = 3x - 2", "y = -2x + 3", "y = 3x + 2", "y = 2x - 3"], "correct_answer": "y = 3x - 2", "pairs": null},
+      {"id": "q2", "type": "true_false", "prompt": "A vertical line has an undefined slope.", "points": 2, "options": null, "correct_answer": "True", "pairs": null},
+      {"id": "q3", "type": "calculation", "prompt": "Find the slope between (2, 3) and (6, 11).", "points": 5, "options": null, "correct_answer": "2", "pairs": null},
+      {"id": "q4", "type": "essay", "prompt": "Explain how slope and y-intercept relate to a real-world scenario of your choosing.", "points": 10, "options": null, "correct_answer": null, "pairs": null}
+    ]'::jsonb,
+    'Q1: A (y = 3x - 2). Q2: True. Q3: slope = (11-3)/(6-2) = 2. Q4: graded via rubric — look for a correct real-world mapping of slope (rate) and y-intercept (starting value).',
+    array[teks_linear_id]
+  )
+  returning id into unit1_test_id;
+  update public.assessments set status = 'published' where id = unit1_test_id;
+
+  insert into public.assessments (
+    unit_id, title, questions, answer_key, teks_ids, variant_type, source_assessment_id, status
+  )
+  select
+    unit1_id,
+    'Unit 1 Test: Linear Functions (Retake)',
+    '[
+      {"id": "q1r", "type": "multiple_choice", "prompt": "Which equation represents a line with slope -2 and y-intercept 5?", "points": 5, "options": ["y = -2x + 5", "y = 5x - 2", "y = -2x - 5", "y = 2x + 5"], "correct_answer": "y = -2x + 5", "pairs": null},
+      {"id": "q2r", "type": "true_false", "prompt": "A horizontal line has a slope of zero.", "points": 2, "options": null, "correct_answer": "True", "pairs": null},
+      {"id": "q3r", "type": "calculation", "prompt": "Find the slope between (1, 4) and (5, 12).", "points": 5, "options": null, "correct_answer": "2", "pairs": null},
+      {"id": "q4r", "type": "essay", "prompt": "Explain how slope and y-intercept relate to a different real-world scenario than you used before.", "points": 10, "options": null, "correct_answer": null, "pairs": null}
+    ]'::jsonb,
+    'Q1: A (y = -2x + 5). Q2: True. Q3: slope = (12-4)/(5-1) = 2. Q4: graded via rubric.',
+    array[teks_linear_id],
+    'retake',
+    unit1_test_id,
+    'published';
 end $$;

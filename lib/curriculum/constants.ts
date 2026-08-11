@@ -1,4 +1,10 @@
-import type { AssignmentType, LessonSegmentKey, TeksMasteryStatus } from "@/types/supabase";
+import type {
+  AssessmentVariant,
+  AssignmentType,
+  LessonSegmentKey,
+  QuestionType,
+  TeksMasteryStatus,
+} from "@/types/supabase";
 
 /**
  * Fixed bell-to-bell order for the 6 class-period segments. The enum
@@ -130,3 +136,35 @@ export const BELOW_MASTERY_STATUSES: readonly TeksMasteryStatus[] = [
  * multiple is a pattern worth a teacher's attention.
  */
 export const STRUGGLING_TEKS_THRESHOLD = 2;
+
+/**
+ * The 8 assessment question types. Order is the single source of truth
+ * for display order (the question-type picker in the editor).
+ */
+export const QUESTION_TYPES = [
+  "multiple_choice",
+  "true_false",
+  "matching",
+  "calculation",
+  "short_response",
+  "scenario_analysis",
+  "essay",
+  "performance_task",
+] as const satisfies readonly QuestionType[];
+
+export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
+  multiple_choice: "Multiple Choice",
+  true_false: "True / False",
+  matching: "Matching",
+  calculation: "Calculation",
+  short_response: "Short Response",
+  scenario_analysis: "Scenario Analysis",
+  essay: "Essay",
+  performance_task: "Performance Task",
+};
+
+export const ASSESSMENT_VARIANT_LABELS: Record<AssessmentVariant, string> = {
+  original: "Original",
+  retake: "Retake",
+  modified: "Modified",
+};
