@@ -37,6 +37,34 @@ export type CalendarDayType =
   | "block_day";
 export type RateLimitAction = "signup" | "login" | "password_reset";
 export type LessonStatus = "draft" | "published";
+export type AssignmentType =
+  | "classwork"
+  | "homework"
+  | "project"
+  | "guided_notes"
+  | "worksheet"
+  | "spreadsheet"
+  | "card_sort"
+  | "simulation"
+  | "game"
+  | "case_study"
+  | "research"
+  | "presentation"
+  | "exit_ticket"
+  | "quiz"
+  | "test"
+  | "lab_investigation"
+  | "debate"
+  | "socratic_seminar"
+  | "reflection_journal"
+  | "peer_review";
+export type AssignmentStatus = "draft" | "published";
+/** One rubric criterion, as stored in assignments.rubric (jsonb array). */
+export type RubricCriterion = {
+  criterion: string;
+  points: number;
+  description?: string | null;
+};
 export type LessonSegmentKey =
   | "bell_ringer"
   | "mini_lesson"
@@ -409,6 +437,54 @@ export type Database = {
           },
         ];
       };
+      assignments: {
+        Row: {
+          id: string;
+          unit_id: string;
+          course_id: string;
+          assignment_type: AssignmentType;
+          title: string;
+          instructions: string | null;
+          teacher_directions: string | null;
+          rubric: RubricCriterion[];
+          answer_key: string | null;
+          status: AssignmentStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          unit_id: string;
+          // Denormalized server-side by a trigger from unit_id.
+          course_id?: string;
+          assignment_type: AssignmentType;
+          title: string;
+          instructions?: string | null;
+          teacher_directions?: string | null;
+          rubric?: RubricCriterion[];
+          answer_key?: string | null;
+          status?: AssignmentStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["assignments"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "assignments_unit_id_fkey";
+            columns: ["unit_id"];
+            isOneToOne: false;
+            referencedRelation: "units";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "assignments_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -424,6 +500,7 @@ export type Database = {
     Enums: {
       calendar_day_type: CalendarDayType;
       lesson_segment_key: LessonSegmentKey;
+      assignment_type: AssignmentType;
     };
     CompositeTypes: Record<string, never>;
   };

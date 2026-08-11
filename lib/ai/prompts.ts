@@ -1,4 +1,6 @@
 import "server-only";
+import type { AssignmentType } from "@/types/supabase";
+import { ASSIGNMENT_TYPE_LABELS } from "@/lib/curriculum/constants";
 
 /**
  * The pedagogical framework every generated or AI-edited lesson must
@@ -125,6 +127,75 @@ when the lesson was first generated (e.g. if you're revising a
 class-period segment, keep its duration_minutes as given — you are not
 being asked to rebalance the 70-minute total; if you're revising
 homework, still return exactly 5 questions).`;
+}
+
+/**
+ * Structural guidance per assignment type — what a genuinely good example
+ * of that type looks like, so a "quiz" and a "project" come out
+ * structurally different rather than the same generic template with a
+ * different label stamped on it. Kept short and concrete on purpose: this
+ * is a nudge for the model, not a rubric of its own.
+ */
+const ASSIGNMENT_TYPE_GUIDANCE: Record<AssignmentType, string> = {
+  classwork: "In-class practice completed during one period, checked for completion or accuracy — not a major grade. Instructions should be scoped to what fits in a single period.",
+  homework: "Independent practice completed outside class, reinforcing that day's or week's skill. Keep it short enough to finish in 15-20 minutes.",
+  project: "Multi-day, multi-step work producing a tangible deliverable (poster, model, written report, built artifact). Instructions should break the work into clear phases/milestones.",
+  guided_notes: "A scaffolded note-taking document with blanks/prompts students fill in during direct instruction — instructions describe what's blank and why, answer_key is the fully filled-in version.",
+  worksheet: "A structured practice sheet of discrete problems/prompts, self-contained and completable independently.",
+  spreadsheet: "A structured data/calculation task built in a spreadsheet — instructions describe the columns/formulas/data students must produce; answer_key describes the expected values or formulas.",
+  card_sort: "A set of cards (terms, examples, images, statements) students physically or digitally group/order into categories — instructions list the cards and the sorting task; answer_key gives the correct grouping.",
+  simulation: "A role-play or model of a real process/system (a market, an ecosystem, a historical event) students act out or run — instructions set up roles/rules; answer_key describes expected outcomes/debrief points.",
+  game: "A structured, rules-based activity that reinforces content through play/competition — instructions are the rules and win condition; answer_key covers scoring or correct answers used during play.",
+  case_study: "A realistic scenario with a problem to analyze and a decision/recommendation to make — instructions present the scenario and questions; answer_key gives strong sample reasoning, not a single 'correct' answer.",
+  research: "An independent investigation of a topic culminating in a written or presented product — instructions specify the research question, required sources, and format; answer_key describes what a strong response addresses.",
+  presentation: "Students prepare and deliver findings/work to an audience — instructions specify content requirements, format, and time limit; answer_key/rubric emphasizes content accuracy and delivery.",
+  exit_ticket: "A very short, single-question or few-question check completed in the last minutes of class — instructions and answer_key should both be brief.",
+  quiz: "A short, low-stakes assessment (5-10 items) covering recent, narrow content — instructions are the item list; answer_key gives the correct answer for each item.",
+  test: "A longer, higher-stakes assessment covering a full unit's content, mixing item types (multiple choice, short answer, problem-solving) — answer_key covers every item.",
+  lab_investigation: "A hands-on procedure (science lab, engineering build, data collection) with a hypothesis/procedure/results structure — instructions are the procedure and required data collection; answer_key covers expected results/conclusions.",
+  debate: "Students argue assigned or chosen positions on a structured prompt — instructions specify the resolution, format (speech order/timing), and roles; answer_key/rubric covers what a strong argument on either side includes.",
+  socratic_seminar: "A structured, student-led discussion around open-ended questions — instructions are the discussion questions and participation norms; answer_key describes strong discussion contributions, not fixed answers.",
+  reflection_journal: "A low-stakes, personal written reflection on learning or process — instructions are reflective prompts; answer_key describes what a thoughtful, complete response looks like rather than a fixed answer.",
+  peer_review: "Students give structured feedback on a classmate's work using specific criteria — instructions are the peer-review protocol/questions; answer_key describes what useful, specific feedback looks like.",
+};
+
+export function buildGenerateAssignmentSystemPrompt(assignmentType: AssignmentType): string {
+  return `You are a curriculum designer writing assignments for Texas high school
+teachers, as part of the same course/unit as the lesson content you also
+write for this platform — direct, practical, no academic jargon, written
+so a teacher could hand it to students with no further editing (though
+they're always free to edit it).
+
+## Assignment type: ${ASSIGNMENT_TYPE_LABELS[assignmentType]}
+
+${ASSIGNMENT_TYPE_GUIDANCE[assignmentType]}
+
+## What you're producing
+
+- title: concise and specific — something a teacher would recognize in a
+  list of a unit's assignments, not the topic restated verbatim.
+- instructions: STUDENT-FACING. Written directly to the student, complete
+  enough that they could start immediately with no further explanation
+  from the teacher.
+- teacher_directions: TEACHER-FACING, never shown to students. Setup,
+  materials, timing, common pitfalls, differentiation notes — whatever a
+  teacher running this for the first time would want to know.
+- rubric: 1-15 criteria, each a short criterion name, a positive integer
+  point value, and an optional one-sentence description of what earns
+  full points on that criterion. Point values should be sensible for the
+  assignment type (an exit ticket might be a single 5-point criterion; a
+  project might have 4-6 criteria worth 10-25 points each). Don't pad the
+  rubric with filler criteria just to hit a count.
+- answer_key: what a teacher grading this needs — correct answers for
+  items with a fixed correct answer, or strong sample responses/expected
+  outcomes for open-ended work (case studies, debates, reflections). This
+  should let a teacher grade quickly and consistently, not just restate
+  the rubric.
+
+## Your task
+
+Generate one complete assignment of the type above, on the given topic,
+matching the schema you've been given.`;
 }
 
 export function buildFillGapsSystemPrompt(): string {

@@ -83,4 +83,35 @@ begin
   -- the draft/published split (admins see it; teachers don't).
   insert into public.lessons (week_id, day_number, title)
   values (week3_id, 2, 'Point-Slope Form (draft)');
+
+  -- Published assignment: a project, fully worked, to demonstrate the
+  -- assignment list/detail views alongside the lesson content above.
+  insert into public.assignments (
+    unit_id, assignment_type, title, instructions, teacher_directions, rubric, answer_key
+  ) values (
+    unit1_id,
+    'project',
+    'Linear Functions Real-World Poster',
+    'Choose a real-world scenario that can be modeled with a linear function (a phone plan, a savings account, a rental car cost). Create a poster that includes: the equation in slope-intercept form, a labeled graph, and a two-sentence explanation of what the slope and y-intercept mean in context.',
+    'Allow 2 class periods: day 1 for scenario selection and equation-writing, day 2 for the poster itself. Provide poster board, markers, and rulers.',
+    '[
+      {"criterion": "Correct linear equation", "points": 15, "description": "Equation is in slope-intercept form and matches the scenario."},
+      {"criterion": "Accurate, labeled graph", "points": 15, "description": "Axes labeled, scale consistent, line matches the equation."},
+      {"criterion": "Slope/intercept explanation", "points": 10, "description": "Explanation correctly ties slope and y-intercept back to the real-world context."},
+      {"criterion": "Neatness and clarity", "points": 5}
+    ]'::jsonb,
+    'Grade against the student''s own chosen scenario — there is no single correct equation. Verify the slope matches a real per-unit rate and the y-intercept matches a real starting value.'
+  );
+  update public.assignments set status = 'published'
+  where unit_id = unit1_id and title = 'Linear Functions Real-World Poster';
+
+  -- Draft assignment: a quiz, intentionally incomplete (no rubric/answer
+  -- key yet) — same draft/published visibility split as the lesson above.
+  insert into public.assignments (unit_id, assignment_type, title, instructions)
+  values (
+    unit1_id,
+    'quiz',
+    'Slope-Intercept Quick Check (draft)',
+    'Answer each question using the graph or equation provided.'
+  );
 end $$;

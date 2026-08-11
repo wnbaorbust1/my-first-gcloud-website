@@ -122,3 +122,24 @@ export const lessonSnapshotSchema = z.object({
   homework: z.array(z.string()),
 });
 export type LessonSnapshot = z.infer<typeof lessonSnapshotSchema>;
+
+// ── Assignment generation ───────────────────────────────────────────────
+
+const generatedRubricCriterionSchema = z.object({
+  criterion: z.string().min(1).max(300),
+  points: z.number().int().min(1).max(100),
+  description: z.string().max(1000).nullable(),
+});
+
+export const generatedAssignmentSchema = z.object({
+  title: z.string().min(1).max(300),
+  // Student-facing prompt/directions.
+  instructions: z.string().min(1).max(4000),
+  // Teacher-facing setup notes — never shown to students.
+  teacher_directions: z.string().min(1).max(4000),
+  // 1-15 criteria; matches the DB's validate_assignment_rubric() shape
+  // (non-empty criterion, positive integer points, optional description).
+  rubric: z.array(generatedRubricCriterionSchema).min(1).max(15),
+  answer_key: z.string().min(1).max(8000),
+});
+export type GeneratedAssignment = z.infer<typeof generatedAssignmentSchema>;

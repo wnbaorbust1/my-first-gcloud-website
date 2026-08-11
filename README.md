@@ -99,16 +99,22 @@ app/
       [courseSlug]/page.tsx      Course overview ("select a week")
       [courseSlug]/[weekNumber]/page.tsx             Week's lessons (Mon-Fri, ledger rows)
       [courseSlug]/[weekNumber]/[dayNumber]/page.tsx  Lesson detail
-    admin/                      Admin-only curriculum authoring (requireAdmin() layout guard)
+    admin/                      Admin-only content authoring (requireAdmin() layout guard, <AdminTabs>)
       curriculum/page.tsx        Course picker for admins
       curriculum/[courseSlug]/page.tsx                 Full outline incl. drafts + empty gaps,
                                                         per-unit "fill gaps" trigger
       curriculum/[courseSlug]/generate/page.tsx        AI lesson generation form
       curriculum/[courseSlug]/[weekNumber]/[dayNumber]/edit/page.tsx   Lesson editor + AI assistant
+      assignments/page.tsx        Course picker for assignment authoring
+      assignments/[courseSlug]/page.tsx                Assignments grouped by unit, filterable
+                                                        by course (switcher) and type (dropdown)
+      assignments/[courseSlug]/generate/page.tsx       AI assignment generation form
+      assignments/[courseSlug]/[assignmentId]/edit/page.tsx   Assignment detail/edit view
   api/ai/                      Server-only Claude-backed Route Handlers (see "AI lesson generation")
     generate-lesson/route.ts    POST → generates + saves a new draft lesson
     lesson-assistant/route.ts   POST → one field-scoped edit suggestion
     fill-gaps/route.ts          POST → topic suggestions for a unit's empty week/day slots
+    generate-assignment/route.ts   POST → generates + saves a new draft assignment
 
 components/
   layout/                    Shell, NavRail — signed-in app chrome
@@ -117,9 +123,12 @@ components/
                               GoogleSignInButton, SignOutButton, form primitives
   curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
                               (course-scoped planner spine), LessonDetailView
-  admin/                     LessonGenerateForm, LessonEditorForm, LessonAssistantPanel
-                              (chat-style AI panel), GapSuggestionsPanel
-  assignments/ assessments/ portfolio/ billing/   (empty, next phases)
+  admin/                     AdminTabs (Curriculum/Assignments sub-nav), CourseSwitcher,
+                              LessonGenerateForm, LessonEditorForm, LessonAssistantPanel
+                              (chat-style AI panel), GapSuggestionsPanel, AssignmentGenerateForm,
+                              AssignmentEditorForm, AssignmentTypeFilter
+  assignments/ assessments/ portfolio/ billing/   (empty — reserved for a future teacher-facing
+                              assignments view; authoring UI above lives in components/admin/)
 
 lib/
   supabase/
@@ -146,27 +155,33 @@ lib/
                                   — admin reads, same RLS as teacher queries (is_admin() sees everything)
     validation.ts                 lessonSaveSchema — the editor save form's Zod schema
     actions.ts                    saveLessonAction Server Action (draft save / publish)
+    assignment-queries.ts         getUnitsWithAssignments/getUnitsForCourse/getAssignmentById
+    assignment-validation.ts      assignmentSaveSchema — the assignment editor's Zod schema
+    assignment-actions.ts         saveAssignmentAction Server Action (draft save / publish)
   ai/
     client.ts                    getAnthropicClient() singleton, AI_MODEL constant, server-only
-    prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders
+    prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders,
+                                  plus per-assignment-type generation guidance
     schemas.ts                    Zod schemas for every AI structured output (also the shared
                                   LessonSnapshot type used by the editor + assistant panel)
     generate-lesson.ts            generateLesson() — full-lesson generation
     lesson-assistant.ts           requestLessonAssistantEdit() — single-field edit
     fill-gaps.ts                  fillCurriculumGaps() — gap-slot topic suggestions
+    generate-assignment.ts        generateAssignment() — full-assignment generation
   utils.ts                    cn() class-merge helper
   assignments/ assessments/ portfolio/ billing/   (empty, next phases)
 
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
-  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks + composed types
-                                (UnitWithWeeks, WeekWithLessons, LessonDetail)
+  curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment + composed
+                                types (UnitWithWeeks, WeekWithLessons, LessonDetail,
+                                UnitWithAssignments)
   index.ts                    Barrel export
 
 supabase/
   migrations/                 SQL migrations — profiles, courses, subscriptions,
                                academic_calendars/calendar_days, auth_rate_limit_attempts,
-                               teks, units, weeks, lessons/lesson_segments
+                               teks, units, weeks, lessons/lesson_segments, assignments
   seed.sql                    Local-dev-only demo curriculum content (not run against hosted projects)
   README.md                   Supabase CLI workflow notes
 
@@ -297,6 +312,22 @@ public.has_course_access(course_id)`. All writes are admin-only (this
 schema doesn't yet have a separate "content-owner" role distinct from
 admin — `role` is still just `teacher | admin`).
 
+**assignments** — coursework belonging to a `unit` (not a specific week/
+day; a teacher assigns it whenever it fits their pacing). One of 20
+`assignment_type` values (classwork, homework, project, guided_notes,
+worksheet, spreadsheet, card_sort, simulation, game, case_study, research,
+presentation, exit_ticket, quiz, test, lab_investigation, debate,
+socratic_seminar, reflection_journal, peer_review). Holds `instructions`
+(student-facing), `teacher_directions` (never shown to students), a
+structured `rubric` (jsonb array of `{criterion, points, description?}`,
+shape-validated by trigger on every write — Postgres can't constrain
+jsonb array element shape any other way), and `answer_key`. Same
+`course_id` denormalization and `draft`/`published` `status` pattern as
+`lessons`; the publish gate requires a title, instructions, teacher
+directions, a non-empty rubric, and an answer key. RLS mirrors lessons
+exactly: admins see everything, teachers see only published assignments
+in courses they have access to, all writes admin-only.
+
 ## Curriculum browser UI
 
 Course picker → course outline → week → lesson, all Server Components
@@ -379,13 +410,52 @@ signed-in profile's `role` is `admin` (`app/(app)/layout.tsx` →
 `components/layout/shell.tsx` → `components/layout/nav-rail.tsx`).
 `app/(app)/admin/layout.tsx` calls `requireAdmin()` as a second guard —
 the real boundary is still RLS (every curriculum write policy already
-requires `is_admin()`).
+requires `is_admin()`). Inside `/admin`, `<AdminTabs>` switches between
+the Curriculum and Assignments authoring areas.
+
+## Assignment management
+
+Admin-only tooling (`/admin/assignments/...`) for authoring the 20
+assignment types, generated with Claude and reusing the Phase 3 AI
+patterns — same streaming + structured-output call shape, same
+draft-first save flow, same admin-gated Route Handler posture. No chat
+assistant here (that's lesson-specific); this phase is generation + a
+full manual editor.
+
+- **Generate** (`POST /api/ai/generate-assignment`) — given
+  unit/type/topic/notes, resolves the unit → course, calls Claude with
+  structured output (`generatedAssignmentSchema`), and saves the result as
+  a single `draft` assignment row (the rubric is inline `jsonb`, so unlike
+  lesson generation there's no separate child-table insert). The form is
+  a unit + type picker at `/admin/assignments/[courseSlug]/generate`.
+- **Per-type generation guidance**: `lib/ai/prompts.ts` has an
+  `ASSIGNMENT_TYPE_GUIDANCE` map — one to two sentences per type on what a
+  genuinely good example looks like (a quiz's short fixed-answer items vs.
+  a case study's scenario-and-recommendation shape vs. a lab's
+  procedure-and-results structure) — so a generated "quiz" and a generated
+  "project" come out structurally different, not the same template with a
+  different label.
+- **List view** (`/admin/assignments/[courseSlug]`,
+  `components/admin/assignment-type-filter.tsx` +
+  `components/admin/course-switcher.tsx`) — assignments grouped by unit
+  (drafts included, so gaps are visible), filterable by course (a switcher
+  that jumps to the same view for a different course) and by type (a
+  dropdown driving the `?type=` query param, filtered server-side via
+  `getUnitsWithAssignments()`).
+- **Editor** (`/admin/assignments/[courseSlug]/[assignmentId]/edit`,
+  `components/admin/assignment-editor-form.tsx`) — every field is
+  editable: type, title, student-facing instructions, teacher directions,
+  a dynamic rubric (add/remove criteria, live point total), and the
+  answer key. "Save draft" and "Publish" go through `saveAssignmentAction`
+  (`lib/admin/assignment-actions.ts`) — a single update, since the rubric
+  lives on the same row (no upsert-then-update sequencing like lessons'
+  segments).
 
 ## Environment variables
 
 See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 - Supabase project URL + anon key (public), service role key (server-only)
-- `ANTHROPIC_API_KEY` (server-only) — powers all three `/api/ai/*` routes;
+- `ANTHROPIC_API_KEY` (server-only) — powers every `/api/ai/*` route;
   get one at https://console.anthropic.com/
 - Stripe publishable key (public), secret key + webhook secret (server-only)
 - `NEXT_PUBLIC_SITE_URL` — used to build auth email/OAuth redirect URLs
@@ -397,6 +467,8 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Core database schema + RLS (profiles, courses, subscriptions, academic calendars)
 ✅ Curriculum data model + read-only browser (units/weeks/lessons/TEKS)
 ✅ AI-powered lesson generation, editor, AI assistant panel, gap-filling (admin-only)
-⬜ Assignments / assessments / gradebook / portfolio features
+✅ Assignment management: 20 types, AI generation, list + editor (admin-only)
+⬜ Assessments / gradebook / portfolio features
+⬜ TEKS import + AI matching + mastery dashboard
 ⬜ Stripe billing
 ⬜ Deployment config
