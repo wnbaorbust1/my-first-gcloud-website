@@ -58,6 +58,8 @@ export const can = {
   accessFacilitatorArea: (role?: Role) => hasAnyRole(role, STAFF_ROLES),
   /** spec Prompt 8 EXISTING MEMBER RULE: "Admin may manually grant promotional credit later." */
   grantMembership: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
+  /** spec Prompt 12: platform-level Organization creation and org-membership assignment. */
+  manageOrganizations: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
 };
 
 /** Route-group -> roles allowed, used by middleware.ts. */

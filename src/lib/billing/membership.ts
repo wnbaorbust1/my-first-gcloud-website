@@ -62,6 +62,14 @@ export function resolveEffectiveStatus(membership: Membership, now: Date = new D
   if (membership.status === "CANCELLED" && membership.currentPeriodEndsAt && membership.currentPeriodEndsAt <= now) {
     return "EXPIRED";
   }
+  // SPONSORED ACCESS (spec Prompt 12): "Track sponsor and expiration."
+  // Only ever checked when `sponsoredUntil` is actually set — an
+  // admin-granted SPONSORED membership (Phase 8, no organization behind
+  // it) leaves this null and keeps working exactly as before, with no
+  // automatic expiration.
+  if (membership.status === "SPONSORED" && membership.sponsoredUntil && membership.sponsoredUntil <= now) {
+    return "EXPIRED";
+  }
   return membership.status;
 }
 

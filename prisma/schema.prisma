@@ -136,20 +136,69 @@ model PasswordResetToken {
 // Organizations (facilitator / program-provider level grouping)
 // ---------------------------------------------------------------------------
 
+/// ORGANIZATION ACCOUNTS (spec Prompt 12): the closed set of program
+/// types the spec names explicitly, plus OTHER as a catch-all so a real
+/// org never has to be miscategorized while this list is still fixed.
+enum OrganizationType {
+  NONPROFIT
+  SCHOOL
+  COLLEGE
+  GOVERNMENT_PROGRAM
+  CHAMBER
+  INCUBATOR
+  VETERAN_PROGRAM
+  WOMENS_ENTREPRENEURSHIP_PROGRAM
+  CORPORATE_PROGRAM
+  OTHER
+}
+
 model Organization {
-  id     String @id @default(cuid())
+  id     String            @id @default(cuid())
   name   String
-  status String @default("ACTIVE")
+  status String            @default("ACTIVE")
+  type   OrganizationType?
+
+  /// WHITE-LABEL READINESS (spec Prompt 12): "Architect for future:
+  /// Custom Logo, Colors, Custom Domain, Branded Emails. Do not fully
+  /// implement domain infrastructure unless practical." These fields are
+  /// stored and displayed (an org's logo/colors show on its own
+  /// dashboard) but `customDomain` is not wired to any routing/DNS —
+  /// there is no infrastructure here to serve a second hostname — and
+  /// `brandedFromName`/`brandedFromEmail` are not wired into the (still
+  /// unconfigured, Phase 1) email sender. See Important Decisions.
+  logoUrl          String?
+  primaryColor     String?
+  secondaryColor   String?
+  customDomain     String?
+  brandedFromName  String?
+  brandedFromEmail String?
+
+  /// PRIVACY (spec Prompt 12): "Organizations should see aggregate
+  /// information by default. Only expose individual participant
+  /// information when permissions/program agreements allow it." Default
+  /// false — an org dashboard shows only aggregate numbers until a
+  /// platform admin flips this on for that specific org.
+  allowIndividualParticipantData Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members  OrganizationMembership[]
-  sessions SessionOffering[]
+  members              OrganizationMembership[]
+  sessions             SessionOffering[]
+  cohorts              Cohort[]
+  sponsoredMemberships Membership[]             @relation("MembershipSponsor")
 
   @@index([status])
 }
 
+/// spec: "Organization can have: ... Users, Facilitators." One row per
+/// (user, org) pair; `role` is this app's usual open-string categorical
+/// field (see Business.accountabilityCadence for the same convention) —
+/// "ADMIN" (manages cohorts/sponsorship/reports for this org),
+/// "FACILITATOR" (org-affiliated facilitator), or "MEMBER" (read-only
+/// aggregate view) — validated in src/lib/organizations/access.ts, not
+/// a Postgres enum, since an org's own staff titles are exactly the kind
+/// of thing product may want to extend without a migration.
 model OrganizationMembership {
   id             String @id @default(cuid())
   organizationId String
@@ -164,6 +213,57 @@ model OrganizationMembership {
 
   @@unique([organizationId, userId])
   @@index([userId])
+}
+
+enum CohortStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+/// COHORTS (spec Prompt 12): "Create cohorts... Fall 2026 Blueprint
+/// Cohort, Veteran Entrepreneur Cohort, Queens in Business, Ghana
+/// Entrepreneur Cohort." Tracked stats (Participants, Sessions,
+/// Completion, Scores, Engagement, Outcomes) are never stored here —
+/// see src/lib/organizations/cohort-analytics.ts — they're computed
+/// fresh from each member Business's real Assessment/Roadmap/
+/// SessionRegistration/BusinessMilestone data every time, the same "no
+/// fake analytics" rule this schema has followed since Phase 4.
+model Cohort {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?      @db.Text
+  status         CohortStatus @default(PLANNED)
+  startDate      DateTime?
+  endDate        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  CohortMembership[]
+
+  @@index([organizationId])
+}
+
+/// A Business's ("Participant's") membership in one Cohort. Deliberately
+/// business-scoped, not user-scoped — every other program-progress model
+/// in this schema (Assessment, Roadmap, Membership) hangs off Business,
+/// and a cohort's whole purpose is tracking *businesses* through a
+/// program.
+model CohortMembership {
+  id         String   @id @default(cuid())
+  cohortId   String
+  businessId String
+  joinedAt   DateTime @default(now())
+
+  cohort   Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortId, businessId])
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +320,14 @@ model Business {
   accountabilityCustomDays Int?
   lastActiveAt             DateTime?
 
+  /// IMPACT REPORT (spec Prompt 12): "Jobs Created." Nothing else in this
+  /// schema tracks headcount (the closest signals — First Contractor,
+  /// First Employee milestones — are booleans, not a count), so this is
+  /// a small, honestly-optional self-reported number, the same framing
+  /// the spec itself uses for "Revenue Growth if voluntarily reported."
+  /// Editable from Business Profile; null means "not reported," not zero.
+  jobsCreatedSelfReported Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -249,6 +357,8 @@ model Business {
   marketingPlans   MarketingPlan[]
   salesScripts     SalesScript[]
   contentPlanItems ContentPlanItem[]
+
+  cohortMemberships CohortMembership[]
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
@@ -1217,15 +1327,27 @@ model Membership {
   grantedByUserId String?
   grantedReason   String? @db.Text
 
+  /// SPONSORED ACCESS (spec Prompt 12): "Allow organization to sponsor
+  /// Blueprint access... Track sponsor and expiration." Additive to the
+  /// Phase 8 SPONSORED status, not a replacement for it — an
+  /// admin-granted SPONSORED membership (no organization behind it)
+  /// leaves both fields null and never expires automatically, exactly as
+  /// before this phase; `resolveEffectiveStatus` only checks
+  /// `sponsoredUntil` when it's actually set. See Important Decisions.
+  sponsorOrganizationId String?
+  sponsoredUntil        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  grantedBy User?               @relation("MembershipGrantedBy", fields: [grantedByUserId], references: [id])
-  invoices  MembershipInvoice[]
+  business            Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  grantedBy           User?               @relation("MembershipGrantedBy", fields: [grantedByUserId], references: [id])
+  sponsorOrganization Organization?       @relation("MembershipSponsor", fields: [sponsorOrganizationId], references: [id], onDelete: SetNull)
+  invoices            MembershipInvoice[]
 
   @@index([status])
   @@index([stripeCustomerId])
+  @@index([sponsorOrganizationId])
 }
 
 enum InvoiceStatus {

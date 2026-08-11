@@ -26,6 +26,7 @@ export const config = {
     "/business-profile/:path*",
     "/facilitator/:path*",
     "/admin/:path*",
+    "/organization/:path*",
   ],
 };
 

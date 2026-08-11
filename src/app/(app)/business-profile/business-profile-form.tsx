@@ -46,6 +46,7 @@ type FormState = {
   crmUsed: string;
   websiteStatus: string;
   registrationStatus: string;
+  jobsCreatedSelfReported: string;
 };
 
 function toFormState(business: BusinessModel | null): FormState {
@@ -68,6 +69,7 @@ function toFormState(business: BusinessModel | null): FormState {
     crmUsed: business?.crmUsed ?? "",
     websiteStatus: business?.websiteStatus ?? "",
     registrationStatus: business?.registrationStatus ?? "",
+    jobsCreatedSelfReported: business?.jobsCreatedSelfReported?.toString() ?? "",
   };
 }
 
@@ -300,6 +302,20 @@ export function BusinessProfileForm({
             value={form.primaryGoal}
             onChange={(e) => set("primaryGoal", e.target.value)}
           />
+        </div>
+        <div>
+          <Label htmlFor="jobsCreatedSelfReported">Jobs created (self-reported)</Label>
+          <Input
+            id="jobsCreatedSelfReported"
+            type="number"
+            min={0}
+            value={form.jobsCreatedSelfReported}
+            onChange={(e) => set("jobsCreatedSelfReported", e.target.value)}
+            placeholder="e.g. 2"
+          />
+          <p className="mt-1 text-xs text-foreground-muted">
+            Counted toward any organization&apos;s Impact Report you&apos;re part of. Leave blank if unsure.
+          </p>
         </div>
       </section>
 

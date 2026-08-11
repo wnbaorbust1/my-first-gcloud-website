@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-10 — Phase 11: Facilitator + Admin Command Center_
+_Last updated: 2026-08-11 — Phase 12: Organizations + Cohorts + Future Scale_
 
 ## COMPLETE
 
@@ -1055,9 +1055,111 @@ My Blueprint side effect)
   Super Admin) got 403 attempting to grant Admin; a Super Admin's own
   grant of a lower role succeeded.
 
+**PHASE 12 — Organizations + Cohorts + Future Scale**
+
+- **Organization Accounts** (`/admin/organizations`, platform admin
+  only) — create an organization with a `type` (9 spec values: Nonprofit,
+  School, College, Government Program, Chamber, Incubator, Veteran
+  Program, Women's Entrepreneurship Program, Corporate Program, Other).
+  The creator is automatically granted an `OrganizationMembership` with
+  `role: "ADMIN"` for that org, so a platform admin who spins one up can
+  immediately manage it from the org side too, not just the admin list.
+- **Organization Dashboard** (`/organization/[id]`, `/organization`
+  landing list) — any org member (any role) or platform admin can view;
+  only an org ADMIN or platform admin sees the management forms (Add
+  Staff, Create Cohort, Sponsor Access, Branding & Privacy). Shows
+  Cohorts, Sponsored Seats, Staff, and Training Sessions
+  (`SessionOffering.organizationId`, already modeled since Phase 3, now
+  has a real reader).
+- **Cohorts** (`/organization/[id]/cohorts/[cohortId]`) — create, edit
+  (name/status/description), and assign/remove participants by email
+  (resolved server-side to a `Business` via a small lookup endpoint —
+  see Important Decisions). Every tracked stat (Participants, Sessions
+  Attended, Roadmap Completion, Business Health, Active-in-14-days,
+  Milestones Achieved) is a live query against the cohort's member
+  businesses (`src/lib/organizations/cohort-analytics.ts`) — nothing is
+  stored on the `Cohort` row itself, matching this schema's "no fake
+  analytics" rule since Phase 4.
+- **Sponsored Access** — an org ADMIN sponsors a participant's Blueprint
+  access by email; `sponsorBusiness()` upserts the same `Membership` row
+  Phase 8's admin-grant flow uses (`status: "SPONSORED"`), recording
+  `sponsorOrganizationId` and an optional `sponsoredUntil`.
+  `resolveEffectiveStatus()` (Phase 8) was extended with one new branch:
+  a `SPONSORED` membership whose `sponsoredUntil` has passed lazily
+  transitions to `EXPIRED` the next time it's read — gated strictly on
+  `sponsoredUntil` being non-null, so Phase 8's existing (never-expiring)
+  admin-granted `SPONSORED` flow is completely unaffected. Verified live
+  by backdating a test sponsorship's `sponsoredUntil` and confirming the
+  lazy transition fired on the next page load, then re-checking the
+  status in Postgres.
+- **Organization Analytics** (`/organization/[id]/analytics`) — aggregate
+  numbers (Participants, Assessment Completion, Session Attendance,
+  Roadmap Completion, Business Health + stage averages, Health
+  Improvement, Businesses Launched, Milestones) always render; a
+  participant-by-participant table (reusing Phase 11's
+  `getParticipantSummaries()`) only renders when
+  `Organization.allowIndividualParticipantData` is true — off by
+  default. Verified live: the table was absent with the flag off,
+  appeared with real names/emails the moment it was flipped on via the
+  Branding & Privacy form, matching the spec's "aggregate by default,
+  individual only with permission" requirement exactly.
+- **Impact Report** (`/(print)/organization/[id]/impact-report`) —
+  reuses the Phase 6 `(print)` route group and `PrintButton` pattern
+  (browser print → Save as PDF). Reports Participants Served, Training
+  Sessions, Assessment Improvement, Business Milestones, Businesses
+  Launched, Systems Built (real signal: Phase 10's SOP + Automation Step
+  count), Jobs Created (sum of a new self-reported Business field), and
+  optional Revenue Growth (sum of `WeeklyCheckIn.revenueCents`).
+  Participant Confidence has no tracked signal anywhere in this schema
+  and is shown honestly as "Not tracked" — the same convention Phase
+  11's funnel used for "Session Viewed."
+- **`Business.jobsCreatedSelfReported`** — a new optional whole-number
+  field on the Business Profile form ("Leave blank if unsure"), summed
+  into any organization's Impact Report the business is a cohort member
+  or sponsored participant of.
+- **White-Label Readiness** — `Organization` gained `logoUrl`,
+  `primaryColor`, `secondaryColor`, `customDomain`, `brandedFromName`,
+  `brandedFromEmail`. Stored and displayed (the org dashboard renders
+  the logo) but `customDomain` has no routing/DNS behind it and
+  `brandedFromName`/`brandedFromEmail` aren't wired into an email sender
+  (there still isn't one — Known Issue #1) — architected per the spec's
+  explicit "do not fully implement domain infrastructure" instruction.
+- **Organization isolation** — `assertOrganizationAccess()` mirrors the
+  existing `assertBusinessAccess()` pattern: a platform admin can manage
+  any org; anyone else needs a real `OrganizationMembership` row for
+  *that specific* organization, and every resource route 404s (never
+  403s) on a mismatch, matching this app's "never leak existence"
+  convention since Phase 10. Verified live in both directions: an
+  outsider user with no membership in the test organization got 404 on
+  the org dashboard, the cohort detail page, and every mutating API
+  route (create cohort, sponsor), while the org's own delegated ADMIN
+  (a non-platform-admin user, added by email through the Staff form)
+  successfully created a cohort, added a participant, and sponsored a
+  business through the exact same endpoints.
+- **Existing individual (non-org) members are unaffected** — verified
+  live: a `Membership` created the ordinary Phase 8 way (no
+  `sponsorOrganizationId`, no `sponsoredUntil`) is untouched by the new
+  `resolveEffectiveStatus()` branch, and a business with no
+  `CohortMembership`/sponsorship never appears in any organization's
+  participant count or analytics.
+- **Verification method**: live HTTP + direct Postgres, not code review.
+  Created a real organization as a platform admin, added a second user
+  as that org's own ADMIN by email, and drove cohort creation,
+  email-based participant assignment, and sponsorship entirely through
+  that delegated org-admin account (not the platform admin) to prove the
+  non-platform-admin path actually works end to end. Every Analytics/
+  Impact Report number was hand-verified: 2 participants (1 cohort
+  member + 1 sponsored, correctly deduplicated by the union in
+  `getOrganizationBusinessIds()`), Jobs Created = 3 + 1 = 4 matching the
+  two test businesses' self-reported values. Confirmed via screenshot
+  that the org dashboard, cohort detail, analytics, and impact report
+  all render correctly at a 390px mobile viewport. `npm run build` and
+  `npm run lint` both pass clean. All test users/businesses/organization
+  removed afterward.
+
 ## IN PROGRESS
 
-- Nothing left mid-implementation from Phase 1 through 11. Every prompt in the current build sequence (1–11) is complete.
+- Nothing left mid-implementation. Every prompt in the current build sequence (1–12) is complete — Prompt 12 was the last numbered prompt.
 
 ## NOT STARTED
 
@@ -1079,15 +1181,18 @@ My Blueprint side effect)
   Marketing Plan, etc. in place. Matches the spec's literal acceptance
   language ("saves"/"works"), not an editing requirement; see Important
   Decisions.
-- **PROMPT 12 (Organizations + Cohorts + Future Scale)** — received
-  alongside Prompts 10–11; not started per the explicit instruction not
-  to begin the next phase automatically after this one.
 - Full editing of `stageWeights`/`statusBands` on the admin Scoring
   Thresholds form — only `stageThresholds`/`excellenceThreshold` are
   editable this phase (see Phase 11 summary above).
 - Session-level page-view analytics ("Session Viewed" in the funnel) —
   no tracking infrastructure exists for this yet; honestly shown as "Not
   tracked" rather than guessed at.
+- Real custom-domain routing and branded-email delivery behind Phase
+  12's White-Label fields — stored/displayed only, see Phase 12 summary.
+- A dedicated admin UI to create/edit `FacilitatorAssignment`s directly
+  (Known Issue #28) — Phase 12 gave organizations a real admin UI, but
+  facilitator-to-business assignment outside an organization context is
+  still a direct DB write.
 
 ## KNOWN ISSUES
 
@@ -1269,9 +1374,66 @@ My Blueprint side effect)
     platform-wide funnel are both small); would want a denormalized
     "lastRealActivityAt" column recomputed on write if this ever needs to
     run over thousands of businesses on every request.
+32. **`OrganizationMembership.role` is an open string (ADMIN/FACILITATOR/
+    MEMBER), not a Postgres enum**, matching this schema's existing
+    convention for categorical fields product may want to extend without
+    a migration (e.g. `Business.accountabilityCadence`). Validated to
+    exactly those 3 values in `src/lib/validations/organization.ts` and
+    `src/lib/organizations/access.ts`'s `ORG_ROLES` const — not enforced
+    at the database layer.
+33. **A cohort's or organization's "participant list" has no cap or
+    pagination.** Fine at this phase's scale (tens of participants per
+    cohort); a cohort or org analytics query iterating thousands of
+    businesses would want pagination on the underlying list views before
+    that becomes real.
+34. **Sponsorship and cohort assignment resolve a participant by email
+    through a small lookup endpoint** (`/api/organizations/[id]/
+    participants/lookup`) rather than a search-as-you-type business
+    picker. Takes the first `UserBusinessMembership` found for that
+    email (a member has at most one business today — same MVP
+    assumption `/api/business` already makes) — fine until multi-
+    business support lands, at which point this lookup would need a
+    disambiguation step.
+35. **An organization's "participants" (for analytics/Impact Report
+    purposes) are the union of its cohort members and its sponsored
+    businesses** (`getOrganizationBusinessIds()`), deduplicated. A
+    business sponsored by an org but never assigned to any cohort still
+    counts — matches the spec's "sponsored access" being independent of
+    cohort membership.
+36. **No UI yet to remove an organization staff member or change their
+    org role after adding them** — `POST /api/organizations/[id]/members`
+    upserts by email (re-adding with a new role updates it), but there's
+    no dedicated "change role" or "remove" control on the Staff card yet.
+    A natural follow-up alongside a real `FacilitatorAssignment` admin UI
+    (Known Issue #28).
+37. **`SessionOffering.organizationId` (modeled since Phase 3) has no
+    admin UI yet to actually attach a session to an organization** — the
+    org dashboard's "Training Sessions" count reads it honestly (real
+    query, currently 0 for every org until sessions are linked), but
+    `/admin/sessions`'s create form doesn't yet expose an organization
+    picker. A small follow-up to the existing session-create form, not a
+    schema change.
 
 ## DATABASE CHANGES
 
+- New migration: `prisma/migrations/20260811000000_organizations_cohorts`
+  — purely additive, no existing table touched.
+  - New enum `OrganizationType` (10 values); `Organization` gained
+    `type`, white-label fields (`logoUrl`, `primaryColor`,
+    `secondaryColor`, `customDomain`, `brandedFromName`,
+    `brandedFromEmail`), and `allowIndividualParticipantData` (default
+    `false`).
+  - New enum `CohortStatus` (4 values); new model `Cohort`
+    (organizationId, name, description, status default `PLANNED`,
+    startDate, endDate).
+  - New model `CohortMembership` (cohortId, businessId, joinedAt, unique
+    on `(cohortId, businessId)`) — a Business's membership in a Cohort.
+  - `Membership`: added `sponsorOrganizationId` (nullable FK to
+    `Organization`, relation name `MembershipSponsor`) and
+    `sponsoredUntil` (nullable `DateTime`) — both only ever set by the
+    Phase 12 sponsorship flow; every pre-existing `Membership` row has
+    both as `NULL`.
+  - `Business`: added `jobsCreatedSelfReported` (`Int?`).
 - New migration:
   `prisma/migrations/20260810230000_facilitator_admin_command_center` —
   purely additive, no existing table touched.
@@ -1845,27 +2007,67 @@ My Blueprint side effect)
   Admin manage the Member/Facilitator/Implementation Specialist roles
   day-to-day.
 
+## IMPORTANT DECISIONS (Phase 12 additions)
+
+- **An organization's own staff role (`OrganizationMembership.role`) is
+  a free-text field with 3 validated values, not a new Postgres enum.**
+  See Known Issue #32 — matches this schema's existing convention
+  (`Business.accountabilityCadence`, `Business.businessStage`, etc.) for
+  categorical fields product may reasonably want to extend without a
+  migration.
+- **`resolveEffectiveStatus()`'s new SPONSORED-expiration branch is
+  gated strictly on `sponsoredUntil` being non-null**, so it can never
+  fire for a `Membership` created through Phase 8's original admin-grant
+  path (which leaves `sponsoredUntil` null and never expires). One
+  function, two callers, zero behavior change for existing data — the
+  same "extend, never fork" pattern this file has followed for every
+  status-resolution change since Phase 8.
+- **Cohort and organization stats are computed live from real Assessment/
+  Roadmap/SessionRegistration/BusinessMilestone/Sop/AutomationStep/
+  WeeklyCheckIn data on every request, never stored on the `Cohort` or
+  `Organization` row.** Consistent with this app's "no fake analytics"
+  rule (every dashboard/admin/facilitator metric since Phase 4 has been
+  computed the same way) and explicitly what the spec asks for: "Track
+  Participants, Sessions, Completion, Scores, Engagement, Outcomes."
+- **Participant assignment (to a cohort, or for sponsorship) takes an
+  email, not a raw `businessId`.** An org admin knows a participant's
+  email, not their internal business ID — the UI resolves email →
+  business server-side via a small lookup endpoint
+  (`/api/organizations/[id]/participants/lookup`) before calling the
+  existing businessId-based cohort/sponsor endpoints, so the endpoints
+  themselves stay simple and the friendlier UX doesn't require
+  duplicating validation logic in two places.
+- **An organization's "participants" for analytics purposes are the
+  union of its cohort members and its sponsored businesses, not just one
+  or the other.** A business can be sponsored without ever being placed
+  in a cohort (the spec lists Sponsored Access and Cohorts as separate
+  capabilities), and a cohort member doesn't have to be sponsored (some
+  orgs may just want to track a group without paying for their access).
+  `getOrganizationBusinessIds()` dedupes so a business that's both only
+  counts once.
+- **`/organization/*` is intentionally not in `ROUTE_GROUP_ROLES`**
+  (unlike `/admin` and `/facilitator`, which gate on a platform-wide
+  `Role`). An organization's own staff hold no special platform `Role` —
+  they're ordinary `MEMBER`s with an `OrganizationMembership` row for
+  one specific org. Gating at the proxy layer would require either
+  granting them a platform role they don't need (over-broad) or teaching
+  the proxy to query the database per-request (a layering violation this
+  app's middleware has avoided everywhere else). Every page and API
+  route under `/organization` instead calls `assertOrganizationAccess()`
+  itself, the same "backend/data access enforces it, not route-hiding"
+  rule Task 4 established for everything else.
+- **The Impact Report's "Systems Built" figure reuses Phase 10's SOP +
+  Automation Step counts** rather than introducing a new tracked metric
+  — a real signal that already exists, instead of a plausible-sounding
+  number invented for this report.
+
 ## NEXT RECOMMENDED PHASE
 
-Per the explicit instruction received with Prompts 10–12 ("Do not begin
-the next phase automatically"), work stops here pending confirmation.
-**PROMPT 12 — Organizations + Cohorts + Future Scale** is the only
-numbered prompt left: organization accounts (nonprofits, schools,
-incubators, corporate programs, etc.), cohorts with participant/session/
-completion/score/engagement tracking, sponsored membership access
-(`Membership.status = SPONSORED` already exists from Phase 8 — this
-phase would add the organization/expiration tracking around it),
-aggregate-by-default organization analytics with individual-level access
-gated by explicit permission, a printable/exportable Impact Report, and
-white-label architecture (custom logo/colors/domain-readiness, not full
-domain infrastructure). Everything before it — real Membership states,
-real facilitator assignments, real session offerings, and now a real
-admin Users/Content layer to manage the org-facing content this phase
-will need — is exactly the foundation Prompt 12's organization layer
-builds on top of.
-
-What's left, flagged by earlier phases as out of scope rather than part
-of any numbered prompt so far:
+**Prompt 12 was the last numbered prompt in this build sequence.**
+Phases 1 through 12 are all complete, live-verified, and committed.
+There is no queued Prompt 13 to hold off on — what's left below is
+follow-up work each phase flagged as out of scope, not a next numbered
+phase:
 
 - **A real `ANTHROPIC_API_KEY`** and **real Stripe keys** (`STRIPE_SECRET_KEY`,
   `STRIPE_WEBHOOK_SECRET`, and two Price ids) in whatever environment
@@ -1884,10 +2086,10 @@ of any numbered prompt so far:
   Create/Read/Delete plus one quick status control today; editing every
   field of an existing SOP, Offer, Marketing Plan, Automation step, or
   Script in place is a natural follow-up if member usage asks for it.
-- **A real `FacilitatorAssignment`/`Organization` admin UI** (Known
-  Issue #28) — assigning a facilitator to a business is still a direct
-  DB write in test scripts; Prompt 12's organization/cohort work is the
-  natural place this finally gets a real screen.
+- **A dedicated `FacilitatorAssignment` admin UI outside an organization
+  context** (Known Issue #28, narrowed) — Phase 12 gave organizations a
+  real admin UI; a facilitator-to-business pairing that isn't part of
+  any organization is still a direct DB write.
 - **Full editing of `stageWeights`/`statusBands`** on the admin Scoring
   Thresholds form (Known Issue #29) — only the two primary threshold
   fields are editable this phase.
@@ -1895,3 +2097,11 @@ of any numbered prompt so far:
   members — Phase 11 gave Resources real admin-managed content for the
   first time, but the member-facing `/resources` page itself is still a
   `ComingSoon` placeholder that doesn't yet read from it.
+- **A way to attach a `SessionOffering` to an `Organization` from the
+  admin session-create form** (Known Issue #37) — the field and the org
+  dashboard's reader both exist; the picker on the create form doesn't
+  yet.
+- **Real custom-domain routing and branded-email delivery** behind Phase
+  12's White-Label fields (Known Issue — see Phase 12 summary) — stored
+  and displayed only, by explicit spec instruction not to build domain
+  infrastructure this phase.

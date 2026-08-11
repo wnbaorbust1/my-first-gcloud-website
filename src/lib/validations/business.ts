@@ -12,6 +12,19 @@ const optionalText = (max: number) =>
     .optional()
     .transform((v) => (v ? v : undefined));
 
+// JOBS CREATED (spec Prompt 12 Impact Report): a self-reported whole
+// number, same "skip if you don't know it" optionality as every other
+// business profile field — an empty string stores as NULL, not 0.
+const optionalWholeNumber = () =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? Number(v) : undefined))
+    .refine((v) => v === undefined || (Number.isInteger(v) && v >= 0), {
+      message: "Enter a whole number, 0 or more",
+    });
+
 export const businessProfileSchema = z.object({
   name: z.string().trim().min(1, "Business name is required").max(200),
   industry: optionalText(120),
@@ -31,6 +44,7 @@ export const businessProfileSchema = z.object({
   crmUsed: optionalText(120),
   websiteStatus: optionalText(60),
   registrationStatus: optionalText(60),
+  jobsCreatedSelfReported: optionalWholeNumber(),
 });
 
 export type BusinessProfileInput = z.infer<typeof businessProfileSchema>;
