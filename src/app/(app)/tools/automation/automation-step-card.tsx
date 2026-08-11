@@ -3,11 +3,21 @@
 import { Zap } from "lucide-react";
 
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { ReorderButtons } from "@/components/tools/reorder-buttons";
+
+const AUTOMATION_STEP_EDIT_FIELDS: EditField[] = [
+  { key: "trigger", label: "When (Trigger)", type: "textarea", rows: 2, maxLength: 1000, required: true },
+  { key: "action", label: "Then (Action)", type: "textarea", rows: 2, maxLength: 1000, required: true },
+  { key: "tool", label: "Tool", type: "text", maxLength: 200 },
+  { key: "timing", label: "Timing", type: "text", maxLength: 200 },
+  { key: "owner", label: "Owner", type: "text", maxLength: 200 },
+  { key: "message", label: "Message", type: "textarea", rows: 3, maxLength: 4000 },
+  { key: "nextStep", label: "Next Step", type: "text", maxLength: 1000 },
+];
 
 interface AutomationStepCardProps {
   id: string;
-  order: number;
   trigger: string;
   action: string;
   tool: string | null;
@@ -17,15 +27,12 @@ interface AutomationStepCardProps {
   nextStep: string | null;
   index: number;
   prevId: string | null;
-  prevOrder: number | null;
   nextId: string | null;
-  nextOrder: number | null;
 }
 
 /** One step in the AUTOMATION MAPPER's visual sequence (spec: "Allow visual sequence"). */
 export function AutomationStepCard({
   id,
-  order,
   trigger,
   action,
   tool,
@@ -35,9 +42,7 @@ export function AutomationStepCard({
   nextStep,
   index,
   prevId,
-  prevOrder,
   nextId,
-  nextOrder,
 }: AutomationStepCardProps) {
   return (
     <div className="relative pl-10">
@@ -67,16 +72,22 @@ export function AutomationStepCard({
               <p className="mt-1 text-xs text-power-700">Next: {nextStep}</p>
             )}
           </div>
-          <div className="flex shrink-0 items-start gap-1">
-            <ReorderButtons
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex items-start gap-1">
+              <ReorderButtons
+                reorderEndpoint="/api/tools/automation/reorder"
+                id={id}
+                prevId={prevId}
+                nextId={nextId}
+              />
+              <DeleteButton endpoint={`/api/tools/automation/${id}`} label="" />
+            </div>
+            <EditToolModal
               endpoint={`/api/tools/automation/${id}`}
-              order={order}
-              prevEndpoint={prevId ? `/api/tools/automation/${prevId}` : null}
-              prevOrder={prevOrder}
-              nextEndpoint={nextId ? `/api/tools/automation/${nextId}` : null}
-              nextOrder={nextOrder}
+              title="Edit Automation Step"
+              fields={AUTOMATION_STEP_EDIT_FIELDS}
+              initialValues={{ trigger, action, tool, timing, owner, message, nextStep }}
             />
-            <DeleteButton endpoint={`/api/tools/automation/${id}`} label="" />
           </div>
         </div>
       </div>

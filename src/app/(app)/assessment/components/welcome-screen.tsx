@@ -57,7 +57,7 @@ export function WelcomeScreen({ businessName, totalQuestions, onStart }: Welcome
           <Save className="h-4 w-4 shrink-0 text-navy-400" aria-hidden="true" />
           Your answers save automatically — come back any time and pick up where you left off.
         </p>
-        <p className="text-xs text-navy-400">
+        <p className="text-xs text-foreground-muted">
           Your results determine your Blueprint stage and your recommended Blueprint Session.
         </p>
       </div>

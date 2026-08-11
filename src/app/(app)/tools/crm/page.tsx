@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,6 +16,17 @@ import { LEAD_STAGE_CLASSES, LEAD_STAGE_LABELS, LEAD_STAGE_ORDER } from "@/lib/t
 
 import { CreateLeadForm } from "./create-lead-form";
 import { LeadStageControl } from "./lead-stage-control";
+
+const LEAD_EDIT_FIELDS: EditField[] = [
+  { key: "name", label: "Name", type: "text", required: true, maxLength: 200 },
+  { key: "company", label: "Business", type: "text", maxLength: 200 },
+  { key: "email", label: "Email", type: "text", maxLength: 200 },
+  { key: "phone", label: "Phone", type: "text", maxLength: 50 },
+  { key: "offer", label: "Offer", type: "text", maxLength: 200 },
+  { key: "valueCents", label: "Value ($)", type: "money" },
+  { key: "nextAction", label: "Next Action", type: "text", maxLength: 500 },
+  { key: "notes", label: "Notes", type: "textarea", rows: 3, maxLength: 5000 },
+];
 
 export const metadata: Metadata = { title: "CRM — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -129,6 +141,21 @@ export default async function CrmPage() {
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-2">
                           <LeadStageControl leadId={lead.id} stage={lead.stage} />
+                          <EditToolModal
+                            endpoint={`/api/tools/leads/${lead.id}`}
+                            title="Edit Lead"
+                            fields={LEAD_EDIT_FIELDS}
+                            initialValues={{
+                              name: lead.name,
+                              company: lead.company,
+                              email: lead.email,
+                              phone: lead.phone,
+                              offer: lead.offer,
+                              valueCents: lead.valueCents,
+                              nextAction: lead.nextAction,
+                              notes: lead.notes,
+                            }}
+                          />
                           <DeleteButton endpoint={`/api/tools/leads/${lead.id}`} label="Remove" />
                         </div>
                       </div>

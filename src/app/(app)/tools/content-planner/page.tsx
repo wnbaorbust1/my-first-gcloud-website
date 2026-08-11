@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -20,6 +21,19 @@ export const metadata: Metadata = { title: "Content Planner — Blueprint" };
 export const dynamic = "force-dynamic";
 
 const CADENCE_ORDER: ContentCadence[] = ["DAILY", "WEEKLY", "MONTHLY"];
+
+const CONTENT_EDIT_FIELDS: EditField[] = [
+  { key: "idea", label: "Idea", type: "textarea", rows: 2, maxLength: 2000, required: true },
+  {
+    key: "cadence",
+    label: "Cadence",
+    type: "select",
+    options: CADENCE_ORDER.map((c) => ({ value: c, label: CONTENT_CADENCE_LABELS[c] })),
+  },
+  { key: "platform", label: "Platform", type: "text", maxLength: 100 },
+  { key: "cta", label: "Call to Action", type: "text", maxLength: 200 },
+  { key: "plannedDate", label: "Planned Date", type: "text", placeholder: "YYYY-MM-DD" },
+];
 
 export default async function ContentPlannerPage() {
   const user = await requireUser();
@@ -87,6 +101,20 @@ export default async function ContentPlannerPage() {
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-2">
                           <ContentStatusControl itemId={item.id} status={item.status} />
+                          <EditToolModal
+                            endpoint={`/api/tools/content/${item.id}`}
+                            title="Edit Content Idea"
+                            fields={CONTENT_EDIT_FIELDS}
+                            initialValues={{
+                              idea: item.idea,
+                              cadence: item.cadence,
+                              platform: item.platform,
+                              cta: item.cta,
+                              plannedDate: item.plannedDate
+                                ? item.plannedDate.toISOString().slice(0, 10)
+                                : "",
+                            }}
+                          />
                           <DeleteButton endpoint={`/api/tools/content/${item.id}`} label="Remove" />
                         </div>
                       </div>

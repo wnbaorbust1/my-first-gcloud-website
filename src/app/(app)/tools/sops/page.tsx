@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -12,6 +13,18 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
 import { CreateSopForm } from "./create-sop-form";
+
+const SOP_EDIT_FIELDS: EditField[] = [
+  { key: "name", label: "Name", type: "text", required: true, maxLength: 200 },
+  { key: "purpose", label: "Purpose", type: "textarea", maxLength: 2000 },
+  { key: "trigger", label: "Trigger", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "owner", label: "Owner", type: "text", maxLength: 200 },
+  { key: "tools", label: "Tools", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "steps", label: "Steps", type: "textarea", rows: 6, maxLength: 8000 },
+  { key: "completionCriteria", label: "Completion Criteria", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "exceptions", label: "Exceptions", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "reviewDate", label: "Review Date", type: "text", placeholder: "YYYY-MM-DD" },
+];
 
 export const metadata: Metadata = { title: "SOPs — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -86,7 +99,25 @@ export default async function SopsPage() {
                     )}
                   </div>
                 </div>
-                <DeleteButton endpoint={`/api/tools/sops/${sop.id}`} />
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <EditToolModal
+                    endpoint={`/api/tools/sops/${sop.id}`}
+                    title="Edit SOP"
+                    fields={SOP_EDIT_FIELDS}
+                    initialValues={{
+                      name: sop.name,
+                      purpose: sop.purpose,
+                      trigger: sop.trigger,
+                      owner: sop.owner,
+                      tools: sop.tools,
+                      steps: sop.steps,
+                      completionCriteria: sop.completionCriteria,
+                      exceptions: sop.exceptions,
+                      reviewDate: sop.reviewDate ? sop.reviewDate.toISOString().slice(0, 10) : "",
+                    }}
+                  />
+                  <DeleteButton endpoint={`/api/tools/sops/${sop.id}`} />
+                </div>
               </div>
             </Card>
           ))

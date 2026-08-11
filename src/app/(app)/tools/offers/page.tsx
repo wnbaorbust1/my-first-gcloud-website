@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,6 +14,18 @@ import { requireUser } from "@/lib/session";
 
 import { CreateOfferForm } from "./create-offer-form";
 import { OfferControls } from "./offer-controls";
+
+const OFFER_EDIT_FIELDS: EditField[] = [
+  { key: "name", label: "Name", type: "text", required: true, maxLength: 200 },
+  { key: "audience", label: "Audience", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "problem", label: "Problem", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "outcome", label: "Outcome", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "features", label: "Features", type: "textarea", rows: 3, maxLength: 4000 },
+  { key: "benefits", label: "Benefits", type: "textarea", rows: 3, maxLength: 4000 },
+  { key: "deliverables", label: "Deliverables", type: "textarea", rows: 3, maxLength: 4000 },
+  { key: "priceCents", label: "Price ($)", type: "money" },
+  { key: "cta", label: "Call to Action", type: "text", maxLength: 200 },
+];
 
 export const metadata: Metadata = { title: "Offer Builder — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -77,7 +90,25 @@ export default async function OffersPage() {
                     </p>
                   )}
                 </div>
-                <OfferControls offerId={offer.id} />
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <EditToolModal
+                    endpoint={`/api/tools/offers/${offer.id}`}
+                    title="Edit Offer"
+                    fields={OFFER_EDIT_FIELDS}
+                    initialValues={{
+                      name: offer.name,
+                      audience: offer.audience,
+                      problem: offer.problem,
+                      outcome: offer.outcome,
+                      features: offer.features,
+                      benefits: offer.benefits,
+                      deliverables: offer.deliverables,
+                      priceCents: offer.priceCents,
+                      cta: offer.cta,
+                    }}
+                  />
+                  <OfferControls offerId={offer.id} />
+                </div>
               </div>
             </Card>
           ))

@@ -414,7 +414,12 @@ export default async function DashboardPage() {
                     <span aria-hidden="true">{STAGE_META[stage].icon}</span> {STAGE_META[stage].label}
                   </p>
                   <p className="mt-2 text-2xl font-semibold text-navy-900">{p.percent}%</p>
-                  <ProgressBar value={p.percent} stage={stage} className="mt-2" />
+                  <ProgressBar
+                    value={p.percent}
+                    stage={stage}
+                    className="mt-2"
+                    ariaLabel={`${STAGE_META[stage].label} stage progress: ${p.percent}%, ${p.completed} of ${p.total} tasks complete`}
+                  />
                   <p className="mt-1 text-xs text-foreground-muted">
                     {p.completed} of {p.total} tasks complete
                   </p>
@@ -465,7 +470,12 @@ export default async function DashboardPage() {
                   Target: {data.goal.targetDate.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                 </p>
               )}
-              <ProgressBar value={data.goal.progressPercent} className="mt-3" showValue />
+              <ProgressBar
+                value={data.goal.progressPercent}
+                className="mt-3"
+                showValue
+                ariaLabel={`${data.goal.title} progress: ${data.goal.progressPercent}%`}
+              />
               {nextBestAction && (
                 <p className="mt-3 text-xs text-foreground-muted">
                   <span className="font-medium text-navy-600">Next milestone: </span>

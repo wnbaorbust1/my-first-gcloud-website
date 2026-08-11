@@ -246,14 +246,19 @@ export default async function ProgressPage() {
 
             {monthlyReview.goals.length > 0 && (
               <div className="mt-5">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-600">
                   Active Goals
                 </p>
                 <div className="flex flex-col gap-2">
                   {monthlyReview.goals.map((g) => (
                     <div key={g.id} className="text-sm">
                       <p className="text-navy-800">{g.title}</p>
-                      <ProgressBar value={g.progressPercent} className="mt-1" showValue />
+                      <ProgressBar
+                        value={g.progressPercent}
+                        className="mt-1"
+                        showValue
+                        ariaLabel={`${g.title} progress: ${g.progressPercent}%`}
+                      />
                     </div>
                   ))}
                 </div>

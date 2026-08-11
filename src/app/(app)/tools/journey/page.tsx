@@ -63,12 +63,9 @@ export default async function JourneyPage() {
               id={stage.id}
               name={stage.name}
               description={stage.description}
-              order={stage.order}
               index={index}
               prevId={stages[index - 1]?.id ?? null}
-              prevOrder={stages[index - 1]?.order ?? null}
               nextId={stages[index + 1]?.id ?? null}
-              nextOrder={stages[index + 1]?.order ?? null}
             />
           ))
         )}

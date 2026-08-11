@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -12,6 +13,17 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
 import { CreateMarketingPlanForm } from "./create-marketing-plan-form";
+
+const MARKETING_PLAN_EDIT_FIELDS: EditField[] = [
+  { key: "goal", label: "Goal", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "audience", label: "Audience", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "channels", label: "Channels", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "contentPillars", label: "Content Pillars", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "leadMagnet", label: "Lead Magnet", type: "textarea", rows: 2, maxLength: 1000 },
+  { key: "campaign", label: "Campaign", type: "textarea", rows: 2, maxLength: 2000 },
+  { key: "cta", label: "Call to Action", type: "text", maxLength: 200 },
+  { key: "metrics", label: "Metrics", type: "textarea", rows: 2, maxLength: 1000 },
+];
 
 export const metadata: Metadata = { title: "Marketing Plan — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -70,7 +82,24 @@ export default async function MarketingPlanPage() {
                     <p className="mt-1 text-xs text-foreground-muted">Metrics: {plan.metrics}</p>
                   )}
                 </div>
-                <DeleteButton endpoint={`/api/tools/marketing-plan/${plan.id}`} />
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <EditToolModal
+                    endpoint={`/api/tools/marketing-plan/${plan.id}`}
+                    title="Edit Marketing Plan"
+                    fields={MARKETING_PLAN_EDIT_FIELDS}
+                    initialValues={{
+                      goal: plan.goal,
+                      audience: plan.audience,
+                      channels: plan.channels,
+                      contentPillars: plan.contentPillars,
+                      leadMagnet: plan.leadMagnet,
+                      campaign: plan.campaign,
+                      cta: plan.cta,
+                      metrics: plan.metrics,
+                    }}
+                  />
+                  <DeleteButton endpoint={`/api/tools/marketing-plan/${plan.id}`} />
+                </div>
               </div>
             </Card>
           ))

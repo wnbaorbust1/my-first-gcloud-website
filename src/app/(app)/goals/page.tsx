@@ -99,7 +99,12 @@ export default async function GoalsPage() {
                 <GoalProgressControl goalId={goal.id} progressPercent={goal.progressPercent} />
               )}
             </div>
-            <ProgressBar value={goal.progressPercent} className="mt-3" showValue />
+            <ProgressBar
+              value={goal.progressPercent}
+              className="mt-3"
+              showValue
+              ariaLabel={`${goal.title} progress: ${goal.progressPercent}%`}
+            />
           </Card>
         ))}
 

@@ -8,6 +8,12 @@ const optionalText = (max: number) =>
     .optional()
     .transform((v) => (v ? v : undefined));
 
+/** Shared by the atomic reorder endpoints (Journey stages, Automation steps). */
+export const reorderSchema = z.object({
+  aId: z.string().min(1),
+  bId: z.string().min(1),
+});
+
 // ---------------------------------------------------------------------------
 // LIGHTWEIGHT CRM (spec Prompt 10)
 // ---------------------------------------------------------------------------
@@ -165,6 +171,7 @@ export const createSalesScriptSchema = z.object({
 });
 
 export const updateSalesScriptSchema = z.object({
+  type: z.enum(SALES_SCRIPT_TYPES).optional(),
   title: z.string().trim().min(1).max(200).optional(),
   content: z.string().trim().min(1).max(10000).optional(),
 });

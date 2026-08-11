@@ -62,7 +62,6 @@ export default async function AutomationPage() {
             <AutomationStepCard
               key={step.id}
               id={step.id}
-              order={step.order}
               trigger={step.trigger}
               action={step.action}
               tool={step.tool}
@@ -72,9 +71,7 @@ export default async function AutomationPage() {
               nextStep={step.nextStep}
               index={index}
               prevId={steps[index - 1]?.id ?? null}
-              prevOrder={steps[index - 1]?.order ?? null}
               nextId={steps[index + 1]?.id ?? null}
-              nextOrder={steps[index + 1]?.order ?? null}
             />
           ))
         )}

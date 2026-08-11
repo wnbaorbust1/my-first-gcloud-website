@@ -13,13 +13,17 @@ export function ProgressHeader({ stage, questionNumber, totalQuestions }: Progre
 
   return (
     <div className="mb-8">
-      <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-navy-400">
+      <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-navy-600">
         <span>Blueprint Assessment</span>
         <span>
           Question {questionNumber} of {totalQuestions}
         </span>
       </div>
-      <ProgressBar value={percent} stage={stage} />
+      <ProgressBar
+        value={percent}
+        stage={stage}
+        ariaLabel={`Assessment progress: question ${questionNumber} of ${totalQuestions}`}
+      />
       <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-navy-500">
         <span aria-hidden="true">{meta.icon}</span> {meta.label} section
       </p>

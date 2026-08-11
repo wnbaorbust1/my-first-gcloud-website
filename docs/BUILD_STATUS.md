@@ -1241,9 +1241,9 @@ closes its "Top 10 Launch Risks" list.
   verified around that gap, the same pattern as every prior phase — and
   real checkout, real AI answers, and real email delivery are now
   themselves live-verified too, not just the surrounding system.
-- **Deliberately not attempted this pass:** full-field editing on the 8
-  Phase 10 tools (Known Issue #24) — a real feature addition, not a
-  launch-blocking fix; left for a future phase rather than rushed.
+- ~~Deliberately not attempted this pass: full-field editing on the 8
+  Phase 10 tools~~ **Since built (Known Issue #24 — RESOLVED).** See the
+  "Second Follow-Up Pass" section below.
 - **Verification method**: live HTTP + direct Postgres (rate-limit
   429s, full password-reset round trip, session capacity/waitlist
   behavior, support request isolation + admin resolution, error-log
@@ -1252,6 +1252,110 @@ closes its "Top 10 Launch Risks" list.
   again afterward, per this project's established pattern) that caught
   and confirmed the fix for one real bug. All test data removed
   afterward.
+
+**SECOND FOLLOW-UP PASS — remaining items from the audit's "Should Fix" /
+"Optional Polish" checklist**
+
+Not a numbered spec prompt — user-directed closure of five specific,
+named items still open after the credential-verification pass: full-field
+editing on the 8 Phase 10 tools (Known Issue #24), a keyboard/screen-reader
+accessibility pass, the reorder endpoint's atomicity (Known Issue #26),
+`robots.txt`/`sitemap.xml`, and expanding the test suite past pure
+functions.
+
+- **Full-field editing on all 8 Phase 10 tools (Known Issue #24,
+  closed).** One shared, generic `EditToolModal`
+  (`src/components/tools/edit-tool-modal.tsx`) — a Radix `Dialog`-based
+  form driven by a small per-tool field-spec array (text/textarea/money/
+  select) — instead of eight bespoke edit forms, the same "one shared
+  component" pattern `DeleteButton` already established. 4 of the 8
+  tools (SOP, Offer, Marketing Plan, Sales Script) had a fully-built
+  `update*Schema` in `src/lib/validations/tools.ts` that no route ever
+  actually used — their `PATCH` handlers didn't exist at all, only
+  `DELETE`; those four routes were added. The other 4 (Leads, Automation,
+  Content Planner, Journey) already had `PATCH`, just no full-field UI —
+  only a quick stage/status/rename control. `SalesScript`'s `type` field
+  was also added to `updateSalesScriptSchema` (it was create-only before).
+  Verified live: created and then PATCHed every field of one record per
+  tool (all 8) directly against the running app, including SOP's
+  `reviewDate` string→Date conversion and cross-tenant 404s on a second
+  test business — all correct.
+- **Atomic reorder endpoint (Known Issue #26, closed).** New
+  `POST /api/tools/journey/reorder` and `POST /api/tools/automation/reorder`
+  swap two rows' `order` values inside one `prisma.$transaction([...])`
+  instead of the old `ReorderButtons`' two independent, non-atomic PATCH
+  calls. `ReorderButtons` now takes just `{ reorderEndpoint, id, prevId,
+  nextId }` and POSTs the pair to swap — simpler than the old order-value
+  props, not just safer. Verified live: a real swap on both tools, plus
+  the negative cases — a cross-business pair and a stranger's reorder
+  attempt both return `404`, not `403` (no existence leak).
+- **Keyboard + screen-reader accessibility pass (closed).** Ran axe-core
+  (via a temporary Playwright install, removed afterward) against
+  `/signup`, `/login`, `/dashboard`, and both assessment states (welcome
+  screen and mid-question) with a real authenticated session, plus a
+  keyboard-only Tab-order trace on each. Found and fixed 3 real
+  violations: a `text-navy-400` `text-xs` label on the assessment welcome
+  screen that fell just under the 4.5:1 contrast ratio (`text-navy-400`
+  vs. white computes to ~4.55:1 — right at the edge, and fails against
+  this app's actual off-white surface color), the same pattern on
+  `ProgressHeader`'s "Question X of Y" label, and the assessment's
+  `role="progressbar"` element having no accessible name. Fixed all
+  three, then proactively swept every other `<ProgressBar>` call site
+  missing an accessible name (dashboard's stage-progress and goal-
+  snapshot bars, `/progress`'s goal list, `/goals`' goal list) since
+  they're the same component and the same bug class — added an
+  `ariaLabel` prop to `ProgressBar` for this. Re-ran the full scan after:
+  zero violations across all 5 pages/states. Keyboard trace found no real
+  focus-trap or invisible-focus issue on any actual page element (the one
+  "no visible focus indicator" stop on every page was Next.js's dev-mode
+  overlay portal, not present in a production build). Not chased further:
+  `text-navy-400` is used ~80 more times app-wide, mostly on larger/bold
+  text or decorative icons where it isn't a violation — a full sitewide
+  sweep was out of scope for "signup, assessment, and dashboard."
+- **`robots.txt` / `sitemap.xml` (closed).** `src/app/robots.ts` and
+  `src/app/sitemap.ts` (Next.js's file-convention metadata routes).
+  `robots.txt` disallows every authenticated surface (`/api/`,
+  `/dashboard`, `/tools`, `/admin`, etc.) plus `/forgot-password` and
+  `/reset-password` specifically (the latter carries a one-time token in
+  its query string and must never be indexed); `/login` and `/signup`
+  stay crawlable. `sitemap.xml` lists only the truly public pages: `/`,
+  `/pricing`, `/login`, `/signup`, `/terms`, `/privacy`,
+  `/refund-policy`. Both use the same `NEXTAUTH_URL` base-URL convention
+  as email links and Stripe redirects. Verified live at
+  `http://localhost:3100/robots.txt` and `/sitemap.xml`.
+- **Automated test suite expanded to route/integration coverage (Known
+  Issue #3, further resolved).** New `vitest.integration.config.mts` /
+  `npm run test:integration` — same aliasing trick as the unit config for
+  `server-only`, but deliberately does NOT mock `@/lib/prisma`, so these
+  15 tests run against the real local Postgres database (`DATABASE_URL`),
+  not stubs. Covers: `assertBusinessAccess` (6 cases — owner access,
+  cross-tenant denial, facilitator assignment, admin override, all
+  against real `User`/`Business`/`UserBusinessMembership` rows);
+  `checkRateLimit` (3 cases — limit enforcement, key isolation, window
+  expiry via a backdated row, no real sleep needed); the session-capacity
+  race itself (2 cases, the marquee one — two REAL concurrent
+  `registerForSession()` transactions racing for a capacity-1 seat,
+  re-queried from the DB afterward to confirm exactly one `REGISTERED`
+  row and one `WAITLISTED` at position 1, automating what was previously
+  a manual live-HTTP script); and the actual
+  `POST /api/tools/automation/reorder` route handler end-to-end (4 cases
+  — 401 unauthenticated, a real atomic swap, and two 404 authorization
+  cases), imported and called directly rather than reimplemented, with
+  only `getCurrentUser` stubbed via `vi.mock` (identity resolution) while
+  `assertBusinessAccess` runs for real. Deliberately kept separate from
+  `npm test` (excluded via each config's `include`/`exclude`) since it
+  needs a live database and mutates real rows — `npm test` stays fast and
+  hermetic. All fixture rows use a per-run timestamp suffix and are
+  cleaned up in `afterAll`; verified zero leftover rows after a clean
+  run.
+- **Verification method**: same as every prior pass — `npm run
+  build`/`npm run lint`/`npm test`/`npm run test:integration` all clean,
+  live HTTP + direct Postgres round trips for every new/changed route
+  (created and PATCHed a real record for all 8 tools, swapped real
+  reorder pairs, hit the new static routes), a real axe-core +
+  keyboard-trace scan (Playwright installed and removed again
+  afterward), and a second test business used to confirm cross-tenant
+  isolation on the new endpoints. All test data removed afterward.
 
 ## IN PROGRESS
 
@@ -1271,12 +1375,12 @@ closes its "Top 10 Launch Risks" list.
 - A real DOCX export — only the printable/PDF path is implemented; see
   Important Decisions for why `documents.ts` is already shaped to add one
   without a rewrite.
-- Full-field editing for the 8 Phase 10 tools — each supports Create,
-  Read, Delete, and (for CRM/Content Planner) a quick stage/status
-  change, but not yet editing every field of an existing SOP, Offer,
-  Marketing Plan, etc. in place. Matches the spec's literal acceptance
-  language ("saves"/"works"), not an editing requirement; see Important
-  Decisions.
+- ~~Full-field editing for the 8 Phase 10 tools~~ **RESOLVED — see the
+  "Second Follow-Up Pass" section.** At the time this phase shipped, each
+  tool supported Create, Read, Delete, and (for CRM/Content Planner) a
+  quick stage/status change, matching the spec's literal acceptance
+  language ("saves"/"works") rather than a stated editing requirement —
+  see Important Decisions for that original reasoning.
 - Full editing of `stageWeights`/`statusBands` on the admin Scoring
   Thresholds form — only `stageThresholds`/`excellenceThreshold` are
   editable this phase (see Phase 11 summary above).
@@ -1455,14 +1559,13 @@ closes its "Top 10 Launch Risks" list.
     rows by `order` with a connected visual (see Important Decisions),
     but nothing parses "Next Step" text back into an actual relation to
     another row — it's a human-readable note, same as the spec shows it.
-26. **The Customer Journey Builder and Automation Mapper's up/down
+26. ~~The Customer Journey Builder and Automation Mapper's up/down
     reorder swaps two rows' `order` values with two sequential PATCH
-    calls, not a single atomic operation.** No unique constraint exists
-    on `(businessId, order)`, so a request that fails between the two
-    calls could briefly leave a duplicate order value — self-corrects on
-    the next successful reorder or page load, and was not observed in
-    live testing, but is worth a single-transaction endpoint if this
-    becomes a heavily-used feature.
+    calls, not a single atomic operation~~ **RESOLVED — see the "Second
+    Follow-Up Pass" section.** `POST /api/tools/journey/reorder` and
+    `POST /api/tools/automation/reorder` now swap both rows inside one
+    `prisma.$transaction([...])`, and `ReorderButtons` calls the new
+    endpoint instead of issuing two independent PATCHes.
 27. **Offer Builder's My Blueprint sync always targets a single
     "Products & Services" section — saving a second offer overwrites
     what the first one wrote.** This matches the existing My Blueprint
@@ -2040,14 +2143,19 @@ closes its "Top 10 Launch Risks" list.
   to delete and re-create if a member wants to change more than its
   stage/status. Building a generic multi-field edit form for 8 different
   shapes would have doubled this phase's surface area for a requirement
-  the spec never actually states; documented as Known Issue #24 so it's
-  easy to prioritize if real usage asks for it.
+  the spec never actually states; documented as Known Issue #24 at the
+  time — **since built in the "Second Follow-Up Pass" below**, once real
+  usage did ask for it: one shared, generic `EditToolModal`
+  (`src/components/tools/edit-tool-modal.tsx`) instead of eight
+  near-duplicate edit forms, following the exact same "one shared
+  component" pattern this bullet already used for delete.
 - **One shared `DeleteButton` and one shared `ReorderButtons` component**
   (`src/components/tools/`) instead of eight near-duplicate ones. Every
   Phase 10 tool's delete affordance and (for Journey/Automation) reorder
-  affordance behaves identically — same confirm-then-DELETE flow, same
-  swap-two-`order`-values-via-two-PATCHes flow — which also means a
-  future bug fix or design change to either only has one place to happen.
+  affordance behaves identically — same confirm-then-DELETE flow, and
+  (since the Second Follow-Up Pass) the same single-atomic-transaction
+  reorder flow — which also means a future bug fix or design change to
+  either only has one place to happen.
 - **Customer Journey's default 9 stages are seeded lazily on first page
   load** (`ensureJourneyStagesSeeded`), the same idempotent "ensure*"
   pattern this app uses for Blueprint document creation, membership
@@ -2251,6 +2359,52 @@ closes its "Top 10 Launch Risks" list.
   should be reviewed by a licensed attorney before a real public launch
   — the same caveat any first-draft ToS/Privacy Policy needs.
 
+## IMPORTANT DECISIONS (Second Follow-Up Pass additions)
+
+- **One generic `EditToolModal`, not eight per-tool edit forms.** Every
+  Phase 10 tool already shared `DeleteButton`; full-field editing follows
+  the identical instinct — a small field-spec array
+  (`{key, label, type}[]`, types: text/textarea/money/select) drives one
+  Radix-`Dialog`-based form component that PATCHes whatever `endpoint` +
+  `fields` it's given. The alternative (eight bespoke forms mirroring
+  each `Create*Form`) would have been ~8x the code for the same
+  behavior, and a future field added to any tool would mean updating a
+  form component instead of one array entry.
+- **The reorder swap became simpler, not just safer, once it went
+  atomic.** `ReorderButtons` used to need both items' `order` values as
+  props so it could PATCH each one directly; the new
+  `POST .../reorder {aId, bId}` endpoint looks both rows up itself
+  inside the transaction, so the component only ever needs IDs. Fixing
+  the race condition also deleted code.
+- **Integration tests are a genuinely separate Vitest project, not a
+  flag on the existing one.** `npm test`'s whole value is being fast and
+  hermetic (mocked Prisma, no DB required) — reusing that config for DB-
+  backed tests would mean either slowing down every `npm test` run or
+  making the mock/real split implicit and easy to get wrong per-file.
+  Two configs with two `include`/`exclude` globs keep the boundary
+  explicit: `*.test.ts` stays mock-only, `*.integration.test.ts` is
+  real-DB-only, and each config actively excludes the other's files
+  rather than relying on developers to run the right command.
+- **The route-level integration test mocks only `getCurrentUser`, not
+  `assertBusinessAccess`.** The whole point of testing a route handler
+  against a real database is to exercise its real authorization logic;
+  mocking `assertBusinessAccess` would just be re-testing that the route
+  calls a function, which the unit-level compiler already guarantees.
+  Only "who is signed in" is faked — the same substitution this
+  project's live-HTTP scripts already make by logging in with a real
+  session cookie instead of re-testing NextAuth's own internals.
+- **The accessibility pass fixed the 3 violations axe actually found on
+  the 3 named pages, plus the same bug class everywhere else the
+  identical component was used — not every occurrence of the underlying
+  color pattern app-wide.** `text-navy-400` sits right at the WCAG AA
+  edge for small text (~4.55:1 against pure white, computed) and is used
+  roughly 80 more times across the app, mostly on decorative icons or
+  larger/bold text where it's not a violation. Chasing all ~80 without
+  live-testing each one risked "fixing" things that weren't broken while
+  claiming more rigor than was actually applied; the honest scope was
+  what was asked for (signup, assessment, dashboard) plus the shared
+  component (`ProgressBar`) whose bug class was already proven real.
+
 ## NEXT RECOMMENDED PHASE
 
 **Prompt 12 was the last numbered prompt in this build sequence; this
@@ -2258,8 +2412,12 @@ build has since had a self-directed Launch Hardening pass fixing the
 "Top 10 Launch Risks" from an Ultra Pre-Publish Audit** (session
 capacity race, no rate limiting, no email delivery, no legal/support
 surfaces, no error monitoring, a real mobile bug at 320px, and a start
-on an automated test suite). What's left below is follow-up work each
-phase flagged as out of scope, not a next numbered phase:
+on an automated test suite), **followed by a Second Follow-Up Pass**
+closing full-field editing on all 8 Phase 10 tools, the reorder
+endpoint's atomicity, a real accessibility pass (3 fixed violations),
+`robots.txt`/`sitemap.xml`, and route/integration test coverage. What's
+left below is follow-up work each phase flagged as out of scope, not a
+next numbered phase:
 
 - ~~Real `STRIPE_SECRET_KEY`, `ANTHROPIC_API_KEY`, and `RESEND_API_KEY`~~
   **RESOLVED — all three provisioned in `.env` and live-verified** (real
@@ -2269,18 +2427,23 @@ phase flagged as out of scope, not a next numbered phase:
   a production-grade `STRIPE_WEBHOOK_SECRET` for whatever environment
   this actually deploys to — the local one is a Stripe CLI forwarding
   secret, only valid while `stripe listen` runs.
-- **Expanding the automated test suite past pure functions** (Known
-  Issue #3, now partially resolved) — the 31 Vitest cases cover scoring,
-  recommendation, and membership-status logic; roadmap generation,
-  authorization helpers, and the API routes themselves are still only
-  verified live.
+- ~~Expanding the automated test suite past pure functions~~ **RESOLVED
+  — see the "Second Follow-Up Pass" section.** `npm run test:integration`
+  now covers `assertBusinessAccess` (real cross-tenant isolation),
+  `checkRateLimit` (real DB-backed limiting), the session-capacity race
+  itself (two real concurrent transactions), and a full route handler
+  (`POST /api/tools/automation/reorder`) — 15 tests against a real
+  Postgres database, on top of the 31 pure-function `npm test` cases.
+  Roadmap generation and the other route handlers are still verified
+  live only; this closed the highest-risk gap (the capacity race), not
+  every remaining one.
 - **A full assessment-history browser** (Known Issue #23) — only the two
   most recent completed assessments are ever compared; a member who
   reassesses multiple times has no in-app view of every past result.
-- **Full-field editing for the 8 Phase 10 tools** (Known Issue #24) —
-  Create/Read/Delete plus one quick status control today; editing every
-  field of an existing SOP, Offer, Marketing Plan, Automation step, or
-  Script in place is a natural follow-up if member usage asks for it.
+- ~~Full-field editing for the 8 Phase 10 tools~~ **RESOLVED — see the
+  "Second Follow-Up Pass" section.** All 8 tools now support editing
+  every field of an existing record in place via a shared modal, not
+  just Create/Read/Delete plus a quick status control.
 - **A dedicated `FacilitatorAssignment` admin UI outside an organization
   context** (Known Issue #28, narrowed) — Phase 12 gave organizations a
   real admin UI; a facilitator-to-business pairing that isn't part of

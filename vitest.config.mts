@@ -29,5 +29,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // *.integration.test.ts files use the real Prisma client against a
+    // real Postgres database (see vitest.integration.config.mts /
+    // `npm run test:integration`) — they'd fail here since this config's
+    // "@/lib/prisma" alias is a mock, not a live connection.
+    exclude: ["**/node_modules/**", "**/*.integration.test.ts"],
   },
 });

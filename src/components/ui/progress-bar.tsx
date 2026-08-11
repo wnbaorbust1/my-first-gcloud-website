@@ -16,6 +16,13 @@ interface ProgressBarProps {
   label?: string;
   /** Visually shows the percentage next to the bar. Screen readers always get it via aria. */
   showValue?: boolean;
+  /**
+   * Accessible name for the `role="progressbar"` element when there's no
+   * visible `label` to source it from (e.g. the assessment's progress bar,
+   * whose "Question X of Y" text lives in a separate sibling element).
+   * Falls back to `label` when omitted.
+   */
+  ariaLabel?: string;
 }
 
 export function ProgressBar({
@@ -25,6 +32,7 @@ export function ProgressBar({
   trackClassName,
   label,
   showValue = false,
+  ariaLabel,
 }: ProgressBarProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   const barColor = stage ? STAGE_BAR_COLOR[stage] : "bg-navy-700";
@@ -42,7 +50,7 @@ export function ProgressBar({
         aria-valuenow={clamped}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={label}
+        aria-label={ariaLabel ?? label}
         className={cn(
           "h-2.5 w-full overflow-hidden rounded-full bg-navy-100",
           trackClassName,

@@ -4,15 +4,27 @@ import Link from "next/link";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { DeleteButton } from "@/components/tools/delete-button";
+import { EditToolModal, type EditField } from "@/components/tools/edit-tool-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getGatedBusinessContext } from "@/lib/billing/access-guard";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { SALES_SCRIPT_TYPE_LABELS } from "@/lib/tools/meta";
+import { SALES_SCRIPT_TYPE_LABELS, SALES_SCRIPT_TYPE_ORDER } from "@/lib/tools/meta";
 
 import { CreateScriptForm } from "./create-script-form";
+
+const SCRIPT_EDIT_FIELDS: EditField[] = [
+  {
+    key: "type",
+    label: "Type",
+    type: "select",
+    options: SALES_SCRIPT_TYPE_ORDER.map((t) => ({ value: t, label: SALES_SCRIPT_TYPE_LABELS[t] })),
+  },
+  { key: "title", label: "Title", type: "text", required: true, maxLength: 200 },
+  { key: "content", label: "Script", type: "textarea", rows: 8, maxLength: 10000, required: true },
+];
 
 export const metadata: Metadata = { title: "Sales Scripts — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -66,7 +78,19 @@ export default async function ScriptsPage() {
                     {script.content}
                   </p>
                 </div>
-                <DeleteButton endpoint={`/api/tools/scripts/${script.id}`} />
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <EditToolModal
+                    endpoint={`/api/tools/scripts/${script.id}`}
+                    title="Edit Script"
+                    fields={SCRIPT_EDIT_FIELDS}
+                    initialValues={{
+                      type: script.type,
+                      title: script.title,
+                      content: script.content,
+                    }}
+                  />
+                  <DeleteButton endpoint={`/api/tools/scripts/${script.id}`} />
+                </div>
               </div>
             </Card>
           ))
