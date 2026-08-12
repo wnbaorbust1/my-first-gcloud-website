@@ -167,6 +167,10 @@
 
   --font-sans: var(--font-inter);
   --font-display: var(--font-fraunces);
+
+  /* Worksheet typography (Assessment Results, Blueprint Scorecard) — see layout.tsx */
+  --font-script: var(--font-caveat);
+  --font-hand: var(--font-kalam);
 }
 
 body {
@@ -200,5 +204,18 @@ body {
     box-shadow: none !important;
     border: none !important;
     margin: 0 !important;
+  }
+
+  /*
+   * Without this, Chrome/Safari/Firefox all drop background-color and
+   * border colors when printing/Save-as-PDF by default — meaning the
+   * Worksheet system's filled checkboxes, numbered badges, and rating
+   * dots (all colored via background, not just text) would render as
+   * blank outlines on the one output actually meant to be printed (the
+   * Blueprint Scorecard's own "Print / Save as PDF" button).
+   */
+  .print-page * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

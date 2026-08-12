@@ -4,29 +4,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PrintButton } from "@/components/shared/print-button";
+import {
+  WorksheetChecklist,
+  WorksheetChecklistItem,
+  WorksheetHeader,
+  WorksheetPage,
+  WorksheetPanel,
+  WorksheetRatingRow,
+  WorksheetStat,
+} from "@/components/blueprint/worksheet";
 import { getScorecardData } from "@/lib/blueprint/scorecard";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Blueprint Scorecard — My Blueprint" };
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">{label}</p>
-      <p className="mt-0.5 text-sm text-navy-900">{value ?? "—"}</p>
-    </div>
-  );
-}
-
-function ScoreBlock({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div className="flex flex-col items-center rounded-xl border border-navy-100 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-navy-900">{value !== null ? `${value}%` : "—"}</p>
-    </div>
-  );
-}
 
 export default async function ScorecardPage() {
   const user = await requireUser();
@@ -52,53 +43,101 @@ export default async function ScorecardPage() {
         <PrintButton />
       </div>
 
-      <article className="print-page rounded-2xl border border-navy-100 bg-surface p-10 shadow-sm shadow-navy-900/5 print:rounded-none print:border-0 print:p-0 print:shadow-none">
-        <header className="mb-6 border-b border-navy-100 pb-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gold-600">
-            Blueprint Scorecard
-          </p>
-          <h1 className="mt-1 font-display text-3xl font-semibold text-navy-900">
-            {data.businessName}
-          </h1>
-          <p className="mt-1 text-sm text-foreground-muted">
-            {data.date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
-          </p>
-        </header>
+      <div className="print-page print:rounded-none print:border-0 print:p-0 print:shadow-none">
+        <WorksheetPage>
+          <WorksheetHeader
+            name={data.businessName}
+            subtitle={`Blueprint Scorecard · ${data.date.toLocaleDateString(undefined, {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}`}
+          />
 
-        {!data.hasAssessment ? (
-          <p className="text-sm text-foreground-muted">
-            This business hasn&apos;t completed a Blueprint Assessment yet — scores will appear here
-            once it has.
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <ScoreBlock label="Passion" value={data.passionScore} />
-              <ScoreBlock label="Power" value={data.powerScore} />
-              <ScoreBlock label="Legacy" value={data.legacyScore} />
-              <ScoreBlock label="Business Health" value={data.healthScorePercent} />
-            </div>
+          {!data.hasAssessment ? (
+            <WorksheetPanel number={1} title="My Scores" icon="📊">
+              <p className="text-sm sm:text-base">
+                This business hasn&apos;t completed a Blueprint Assessment yet — scores will
+                appear here once it has.
+              </p>
+            </WorksheetPanel>
+          ) : (
+            <>
+              <WorksheetPanel number={1} title="My Scores" icon="📊">
+                <div className="flex flex-col divide-y divide-navy-100">
+                  {data.passionScore !== null && (
+                    <WorksheetRatingRow label="💗 Passion" scorePercent={data.passionScore} />
+                  )}
+                  {data.powerScore !== null && (
+                    <WorksheetRatingRow label="⚡ Power" scorePercent={data.powerScore} />
+                  )}
+                  {data.legacyScore !== null && (
+                    <WorksheetRatingRow label="👑 Legacy" scorePercent={data.legacyScore} />
+                  )}
+                </div>
+                {data.healthScorePercent !== null && (
+                  <div className="mt-4 flex justify-center">
+                    <WorksheetStat
+                      label="Business Health"
+                      value={`${data.healthScorePercent}%`}
+                    />
+                  </div>
+                )}
+              </WorksheetPanel>
 
-            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <Field
-                label="Strength"
-                value={data.strength ? `${data.strength.category} (${data.strength.scorePercent}%)` : null}
-              />
-              <Field
-                label="Priority Gap"
-                value={
-                  data.priorityGap
-                    ? `${data.priorityGap.category} (${data.priorityGap.scorePercent}%)`
-                    : null
-                }
-              />
-              <Field label="Current Goal" value={data.currentGoal} />
-              <Field label="Next Best Action" value={data.nextBestAction} />
-              <Field label="Recommended Session" value={data.recommendedSession} />
-            </div>
-          </>
-        )}
-      </article>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <WorksheetPanel number={2} title="My Strength" icon="💪">
+                  <WorksheetChecklist>
+                    <WorksheetChecklistItem checked>
+                      {data.strength
+                        ? `${data.strength.category} (${data.strength.scorePercent}%)`
+                        : "Complete an assessment to see this"}
+                    </WorksheetChecklistItem>
+                  </WorksheetChecklist>
+                </WorksheetPanel>
+
+                <WorksheetPanel number={3} title="Priority Gap" icon="🗺️">
+                  <WorksheetChecklist>
+                    <WorksheetChecklistItem checked={false}>
+                      {data.priorityGap
+                        ? `${data.priorityGap.category} (${data.priorityGap.scorePercent}%)`
+                        : "Complete an assessment to see this"}
+                    </WorksheetChecklistItem>
+                  </WorksheetChecklist>
+                </WorksheetPanel>
+              </div>
+
+              <WorksheetPanel number={4} title="My Blueprint" icon="📘">
+                <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
+                      Current Goal
+                    </dt>
+                    <dd className="mt-0.5">{data.currentGoal ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
+                      Next Best Action
+                    </dt>
+                    <dd className="mt-0.5">{data.nextBestAction ?? "—"}</dd>
+                  </div>
+                </dl>
+              </WorksheetPanel>
+
+              <WorksheetPanel
+                number={5}
+                title="Recommended For Me"
+                icon="🌟"
+                className="border-gold-300 bg-gold-50"
+              >
+                <p className="text-lg font-bold text-legacy-700">
+                  {data.recommendedSession ?? "Complete an assessment to see this"}
+                </p>
+              </WorksheetPanel>
+            </>
+          )}
+        </WorksheetPage>
+      </div>
     </div>
   );
 }

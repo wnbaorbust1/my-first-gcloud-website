@@ -1,16 +1,22 @@
-import { Check, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScoreCard } from "@/components/ui/score-card";
+import {
+  WorksheetChecklist,
+  WorksheetChecklistItem,
+  WorksheetHeader,
+  WorksheetPage,
+  WorksheetPanel,
+  WorksheetRatingRow,
+  WorksheetStat,
+} from "@/components/blueprint/worksheet";
 import { CATEGORY_CONTENT } from "@/lib/assessment/seed-content";
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
 import { prisma } from "@/lib/prisma";
 import { assertBusinessAccess, requireUser } from "@/lib/session";
-import { STAGES, type Stage } from "@/lib/utils";
+import { STAGES, STAGE_META, type Stage } from "@/lib/utils";
 
 import { SESSION_TYPE_DISPLAY } from "../session-type-display";
 
@@ -56,125 +62,103 @@ export default async function AssessmentResultsPage({
   const priorityContent = topPriority ? CATEGORY_CONTENT[topPriority.category] : undefined;
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-gold-600">
-          {assessment.business.name}
-        </p>
-        <h1 className="mt-2 font-display text-3xl font-semibold text-navy-900 sm:text-4xl">
-          Your Blueprint Results
-        </h1>
-      </div>
+    <WorksheetPage>
+      <WorksheetHeader
+        name={assessment.business.name}
+        subtitle={`Blueprint Results · ${assessment.completedAt?.toLocaleDateString(undefined, {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })}`}
+      />
 
-      <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {STAGES.map((stage) => (
-          <Link key={stage} href={`/assessment/results/${assessmentId}/stage/${stage}`}>
-            <ScoreCard stage={stage} scorePercent={scoreByStage.get(stage) ?? null} />
-          </Link>
-        ))}
-      </div>
-
-      {assessment.healthScorePercent !== null && (
-        <Card className="mt-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-navy-400">
-            Blueprint Business Health Score
-          </p>
-          <p className="mt-1 text-4xl font-semibold tabular-nums text-navy-900">
-            {assessment.healthScorePercent}%
-          </p>
-        </Card>
-      )}
+      <WorksheetPanel number={1} title="My Scores" icon="📊">
+        <div className="flex flex-col divide-y divide-navy-100">
+          {STAGES.map((stage) => {
+            const score = scoreByStage.get(stage);
+            if (score === undefined) return null;
+            const row = (
+              <WorksheetRatingRow
+                key={stage}
+                label={`${STAGE_META[stage].icon} ${STAGE_META[stage].label}`}
+                scorePercent={score}
+              />
+            );
+            return (
+              <Link
+                key={stage}
+                href={`/assessment/results/${assessmentId}/stage/${stage}`}
+                className="hover:opacity-70"
+              >
+                {row}
+              </Link>
+            );
+          })}
+        </div>
+        {assessment.healthScorePercent !== null && (
+          <div className="mt-4 flex justify-center">
+            <WorksheetStat label="Business Health" value={`${assessment.healthScorePercent}%`} />
+          </div>
+        )}
+      </WorksheetPanel>
 
       {recommendedDisplay && (
-        <Card className="mt-6 border-navy-200 bg-navy-900 text-cream-50">
-          <p className="text-sm font-semibold uppercase tracking-wide text-navy-300">
-            Your Current Blueprint Stage
-          </p>
-          <p className="mt-2 font-display text-2xl font-semibold">
-            <span aria-hidden="true">{recommendedDisplay.icon}</span> {recommendedDisplay.label}
-          </p>
+        <WorksheetPanel number={2} title="My Blueprint Stage" icon={recommendedDisplay.icon}>
+          <p className="text-xl font-bold text-legacy-700">{recommendedDisplay.label}</p>
           {assessment.recommendationReason && (
-            <p className="mt-3 max-w-2xl text-navy-200">{assessment.recommendationReason}</p>
+            <p className="mt-2 text-sm text-navy-600 sm:text-base">
+              {assessment.recommendationReason}
+            </p>
           )}
-          <Button asChild variant="gold" size="lg" className="mt-5">
-            <Link href="#recommended-session">View My Recommended Session</Link>
-          </Button>
-        </Card>
+        </WorksheetPanel>
       )}
 
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Strengths</CardTitle>
-          </CardHeader>
-          <ul className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <WorksheetPanel number={3} title="My Strengths" icon="💪">
+          <WorksheetChecklist>
             {strengths.map((s) => (
-              <li key={`${s.stage}-${s.category}`} className="flex items-start gap-2.5 text-sm">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
-                <span>
-                  <span className="font-medium text-navy-900">{s.category}</span>{" "}
-                  <span className="text-foreground-muted">({s.scorePercent}%)</span>
-                </span>
-              </li>
+              <WorksheetChecklistItem key={`${s.stage}-${s.category}`} checked>
+                {s.category}{" "}
+                <span className="text-navy-500">({s.scorePercent}%)</span>
+              </WorksheetChecklistItem>
             ))}
-          </ul>
-        </Card>
+          </WorksheetChecklist>
+        </WorksheetPanel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Next Opportunities</CardTitle>
-          </CardHeader>
-          <ul className="flex flex-col gap-3">
+        <WorksheetPanel number={4} title="Next Opportunities" icon="🗺️">
+          <WorksheetChecklist>
             {priorities.map((p) => (
-              <li key={`${p.stage}-${p.category}`} className="flex items-start gap-2.5 text-sm">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-power-500" aria-hidden="true" />
-                <span>
-                  <span className="font-medium text-navy-900">{p.category}</span>{" "}
-                  <span className="text-foreground-muted">({p.scorePercent}%)</span>
-                </span>
-              </li>
+              <WorksheetChecklistItem key={`${p.stage}-${p.category}`} checked={false}>
+                {p.category}{" "}
+                <span className="text-navy-500">({p.scorePercent}%)</span>
+              </WorksheetChecklistItem>
             ))}
-          </ul>
-        </Card>
+          </WorksheetChecklist>
+        </WorksheetPanel>
       </div>
 
       {priorityContent && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Your Next Best Action</CardTitle>
-          </CardHeader>
-          <p className="text-sm text-foreground-muted">{priorityContent.nextStep}</p>
-        </Card>
+        <WorksheetPanel number={5} title="My Next Best Action" icon="🎯">
+          <p className="text-sm sm:text-base">{priorityContent.nextStep}</p>
+        </WorksheetPanel>
       )}
 
       {recommendedType && (
-        <Card id="recommended-session" className="mt-6 scroll-mt-6 border-gold-200">
-          <p className="text-3xl" aria-hidden="true">
-            {SESSION_TYPE_DISPLAY[recommendedType].icon}
-          </p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gold-600">
-            Recommended for You
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-navy-900">
-            {sessionLabelFor(recommendedType)}
-          </h2>
+        <WorksheetPanel
+          number={6}
+          title="Recommended For Me"
+          icon={SESSION_TYPE_DISPLAY[recommendedType].icon}
+          className="border-gold-300 bg-gold-50"
+        >
+          <p className="text-xl font-bold text-legacy-700">{sessionLabelFor(recommendedType)}</p>
           {assessment.recommendationReason && (
-            <p className="mt-2 text-sm text-foreground-muted">{assessment.recommendationReason}</p>
+            <p className="mt-2 text-sm sm:text-base">{assessment.recommendationReason}</p>
           )}
           <Button asChild size="lg" className="mt-5">
             <Link href="/sessions">View Available Sessions</Link>
           </Button>
-        </Card>
+        </WorksheetPanel>
       )}
-
-      <p className="mt-8 text-center text-xs text-foreground-muted">
-        Assessment completed{" "}
-        {assessment.completedAt?.toLocaleDateString(undefined, {
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-        })}
-      </p>
-    </div>
+    </WorksheetPage>
   );
 }
