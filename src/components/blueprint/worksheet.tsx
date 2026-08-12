@@ -6,18 +6,19 @@ import { cn } from "@/lib/utils";
  * "WORKSHEET" VISUAL SYSTEM — the hand-drawn vision-board treatment for
  * the two outputs a member actually gets after finishing the quiz: the
  * Assessment Results page and the Blueprint Scorecard. Built from the
- * reference the business owner supplied (numbered panels, a script
- * headline, checklist rows, a crown/heart motif) — reusing Blueprint's
- * existing Legacy-purple/gold tokens rather than inventing a new
- * palette, and Caveat/Kalam (see layout.tsx) rather than the app's
- * standard Fraunces/Inter, since this is deliberately a different,
- * warmer register than the rest of the product chrome.
+ * reference the business owner supplied: a dense, poster-style grid of
+ * small numbered panels (not a single stacked column), a script
+ * headline, checklist rows, 1-5 rating dots, and a closing dark banner
+ * — reusing Blueprint's existing Legacy-purple/gold tokens rather than
+ * inventing a new palette, and Caveat/Kalam (see layout.tsx) rather
+ * than the app's standard Fraunces/Inter, since this is deliberately a
+ * different, warmer register than the rest of the product chrome.
  */
 
 export function WorksheetPage({ children }: { children: ReactNode }) {
   return (
     <div
-      className="mx-auto max-w-3xl rounded-[28px] border-2 border-legacy-200 bg-cream-50 p-5 sm:p-8"
+      className="relative mx-auto max-w-4xl overflow-hidden rounded-[28px] border-2 border-legacy-200 bg-cream-50 p-4 sm:p-7"
       style={{
         backgroundImage:
           "radial-gradient(var(--color-gold-200) 1px, transparent 1px)",
@@ -25,16 +26,30 @@ export function WorksheetPage({ children }: { children: ReactNode }) {
         backgroundPosition: "-8px -8px",
       }}
     >
-      <div className="flex flex-col gap-5">{children}</div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-3 -top-3 text-6xl opacity-10 sm:text-8xl"
+      >
+        👑
+      </span>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-4 -left-3 text-5xl opacity-10 sm:text-7xl"
+      >
+        💗
+      </span>
+      <div className="relative flex flex-col gap-4">{children}</div>
     </div>
   );
 }
 
 export function WorksheetHeader({
   name,
+  eyebrow,
   subtitle,
 }: {
   name: string;
+  eyebrow?: string;
   subtitle?: string;
 }) {
   return (
@@ -45,6 +60,11 @@ export function WorksheetHeader({
       <h1 className="mt-1 font-script text-4xl leading-tight text-legacy-700 sm:text-5xl">
         {name}
       </h1>
+      {eyebrow && (
+        <p className="mt-1 font-hand text-xs font-bold uppercase tracking-[0.15em] text-navy-500 sm:text-sm">
+          {eyebrow}
+        </p>
+      )}
       <p className="mt-2 font-hand text-lg text-gold-600 sm:text-xl">
         From Passion to Power to Legacy<sup className="text-sm">™</sup>
       </p>
@@ -55,39 +75,50 @@ export function WorksheetHeader({
   );
 }
 
+/** Bento-style grid — the reference packs many small panels side by side rather than stacking full-width cards. */
+export function WorksheetGrid({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
+  );
+}
+
 export function WorksheetPanel({
   number,
   title,
   icon,
   children,
   className,
+  span,
 }: {
   number: number;
   title: string;
   icon?: string;
   children: ReactNode;
   className?: string;
+  /** Take the full grid width instead of one column — for a wide/feature panel. */
+  span?: "full";
 }) {
   return (
     <section
       className={cn(
-        "rounded-3xl border-2 border-legacy-200 bg-surface p-5 sm:p-6",
+        "rounded-3xl border-2 border-legacy-200 bg-surface p-4 sm:p-5",
+        span === "full" && "sm:col-span-2",
         className,
       )}
     >
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden="true"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-legacy-600 font-hand text-sm font-bold text-cream-50"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-legacy-600 font-hand text-xs font-bold text-cream-50"
         >
           {number}
         </span>
-        <h2 className="font-hand text-lg font-bold uppercase tracking-wide text-legacy-700">
+        <h2 className="font-hand text-base font-bold uppercase tracking-wide text-legacy-700 sm:text-lg">
           {icon && <span aria-hidden="true">{icon} </span>}
           {title}
         </h2>
       </div>
-      <div className="mt-4 font-hand text-navy-800">{children}</div>
+      <div className="mt-3 font-hand text-sm text-navy-800 sm:text-base">{children}</div>
     </section>
   );
 }
@@ -128,7 +159,16 @@ export function WorksheetChecklistItem({
 }
 
 export function WorksheetChecklist({ children }: { children: ReactNode }) {
-  return <ul className="flex flex-col gap-2.5">{children}</ul>;
+  return <ul className="flex flex-col gap-2">{children}</ul>;
+}
+
+/** A small pill tag — like the reference's "MY VIBES" chip list (Ambitious, Passionate, ...). */
+export function WorksheetChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border-2 border-gold-300 bg-gold-50 px-2.5 py-0.5 text-xs font-bold text-legacy-700">
+      {children}
+    </span>
+  );
 }
 
 /** A label + five circles filled left-to-right, like the reference's "PASSION ASSESSMENT" ratings — score is 0-100, mapped to a 1-5 fill. */
@@ -171,12 +211,29 @@ export function WorksheetStat({
   value: string;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-2xl border-2 border-gold-200 bg-gold-50 px-3 py-4 text-center">
+    <div className="flex flex-col items-center rounded-2xl border-2 border-gold-200 bg-gold-50 px-3 py-3 text-center">
       <p className="font-hand text-xs font-bold uppercase tracking-wide text-gold-700">
         {label}
       </p>
-      <p className="mt-1 font-display text-3xl font-semibold tabular-nums text-legacy-700">
+      <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-legacy-700 sm:text-3xl">
         {value}
+      </p>
+    </div>
+  );
+}
+
+/** Closing dark banner — the reference's bottom black band with the org's tagline. */
+export function WorksheetBanner({ businessName }: { businessName: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-navy-900 px-5 py-3 text-center sm:text-left">
+      <p className="font-hand text-xs font-bold uppercase tracking-[0.15em] text-gold-400 sm:text-sm">
+        &ldquo;I build with purpose.&rdquo; 💗
+      </p>
+      <p className="font-hand text-xs font-bold uppercase tracking-[0.1em] text-cream-100 sm:text-sm">
+        👑 {businessName}
+      </p>
+      <p className="font-hand text-xs font-bold uppercase tracking-[0.15em] text-gold-400 sm:text-sm">
+        My Blueprint. My Future. My Legacy. 💗
       </p>
     </div>
   );

@@ -5,8 +5,10 @@ import { notFound } from "next/navigation";
 
 import { PrintButton } from "@/components/shared/print-button";
 import {
+  WorksheetBanner,
   WorksheetChecklist,
   WorksheetChecklistItem,
+  WorksheetGrid,
   WorksheetHeader,
   WorksheetPage,
   WorksheetPanel,
@@ -63,29 +65,29 @@ export default async function ScorecardPage() {
             </WorksheetPanel>
           ) : (
             <>
-              <WorksheetPanel number={1} title="My Scores" icon="📊">
-                <div className="flex flex-col divide-y divide-navy-100">
-                  {data.passionScore !== null && (
-                    <WorksheetRatingRow label="💗 Passion" scorePercent={data.passionScore} />
-                  )}
-                  {data.powerScore !== null && (
-                    <WorksheetRatingRow label="⚡ Power" scorePercent={data.powerScore} />
-                  )}
-                  {data.legacyScore !== null && (
-                    <WorksheetRatingRow label="👑 Legacy" scorePercent={data.legacyScore} />
-                  )}
-                </div>
-                {data.healthScorePercent !== null && (
-                  <div className="mt-4 flex justify-center">
-                    <WorksheetStat
-                      label="Business Health"
-                      value={`${data.healthScorePercent}%`}
-                    />
+              <WorksheetGrid>
+                <WorksheetPanel number={1} title="My Scores" icon="📊" span="full">
+                  <div className="flex flex-col divide-y divide-navy-100">
+                    {data.passionScore !== null && (
+                      <WorksheetRatingRow label="💗 Passion" scorePercent={data.passionScore} />
+                    )}
+                    {data.powerScore !== null && (
+                      <WorksheetRatingRow label="⚡ Power" scorePercent={data.powerScore} />
+                    )}
+                    {data.legacyScore !== null && (
+                      <WorksheetRatingRow label="👑 Legacy" scorePercent={data.legacyScore} />
+                    )}
                   </div>
-                )}
-              </WorksheetPanel>
+                  {data.healthScorePercent !== null && (
+                    <div className="mt-3 flex justify-center">
+                      <WorksheetStat
+                        label="Business Health"
+                        value={`${data.healthScorePercent}%`}
+                      />
+                    </div>
+                  )}
+                </WorksheetPanel>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <WorksheetPanel number={2} title="My Strength" icon="💪">
                   <WorksheetChecklist>
                     <WorksheetChecklistItem checked>
@@ -105,35 +107,38 @@ export default async function ScorecardPage() {
                     </WorksheetChecklistItem>
                   </WorksheetChecklist>
                 </WorksheetPanel>
-              </div>
 
-              <WorksheetPanel number={4} title="My Blueprint" icon="📘">
-                <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
-                      Current Goal
-                    </dt>
-                    <dd className="mt-0.5">{data.currentGoal ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
-                      Next Best Action
-                    </dt>
-                    <dd className="mt-0.5">{data.nextBestAction ?? "—"}</dd>
-                  </div>
-                </dl>
-              </WorksheetPanel>
+                <WorksheetPanel number={4} title="My Blueprint" icon="📘" span="full">
+                  <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
+                        Current Goal
+                      </dt>
+                      <dd className="mt-0.5">{data.currentGoal ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-bold uppercase tracking-wide text-gold-700">
+                        Next Best Action
+                      </dt>
+                      <dd className="mt-0.5">{data.nextBestAction ?? "—"}</dd>
+                    </div>
+                  </dl>
+                </WorksheetPanel>
 
-              <WorksheetPanel
-                number={5}
-                title="Recommended For Me"
-                icon="🌟"
-                className="border-gold-300 bg-gold-50"
-              >
-                <p className="text-lg font-bold text-legacy-700">
-                  {data.recommendedSession ?? "Complete an assessment to see this"}
-                </p>
-              </WorksheetPanel>
+                <WorksheetPanel
+                  number={5}
+                  title="Recommended For Me"
+                  icon="🌟"
+                  span="full"
+                  className="border-gold-300 bg-gold-50"
+                >
+                  <p className="text-lg font-bold text-legacy-700">
+                    {data.recommendedSession ?? "Complete an assessment to see this"}
+                  </p>
+                </WorksheetPanel>
+              </WorksheetGrid>
+
+              <WorksheetBanner businessName={data.businessName} />
             </>
           )}
         </WorksheetPage>

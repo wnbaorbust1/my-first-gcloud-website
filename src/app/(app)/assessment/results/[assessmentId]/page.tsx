@@ -4,8 +4,10 @@ import { notFound, redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
+  WorksheetBanner,
   WorksheetChecklist,
   WorksheetChecklistItem,
+  WorksheetGrid,
   WorksheetHeader,
   WorksheetPage,
   WorksheetPanel,
@@ -34,7 +36,7 @@ export default async function AssessmentResultsPage({
   const assessment = await prisma.assessment.findUnique({
     where: { id: assessmentId },
     include: {
-      business: { select: { id: true, name: true } },
+      business: { select: { id: true, name: true, industry: true, businessStage: true } },
       scores: true,
       categoryScores: true,
     },
@@ -61,10 +63,15 @@ export default async function AssessmentResultsPage({
   const topPriority = priorities[0];
   const priorityContent = topPriority ? CATEGORY_CONTENT[topPriority.category] : undefined;
 
+  const eyebrow = [assessment.business.industry, assessment.business.businessStage]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <WorksheetPage>
       <WorksheetHeader
         name={assessment.business.name}
+        eyebrow={eyebrow || undefined}
         subtitle={`Blueprint Results · ${assessment.completedAt?.toLocaleDateString(undefined, {
           month: "long",
           day: "numeric",
@@ -72,54 +79,53 @@ export default async function AssessmentResultsPage({
         })}`}
       />
 
-      <WorksheetPanel number={1} title="My Scores" icon="📊">
-        <div className="flex flex-col divide-y divide-navy-100">
-          {STAGES.map((stage) => {
-            const score = scoreByStage.get(stage);
-            if (score === undefined) return null;
-            const row = (
-              <WorksheetRatingRow
-                key={stage}
-                label={`${STAGE_META[stage].icon} ${STAGE_META[stage].label}`}
-                scorePercent={score}
-              />
-            );
-            return (
-              <Link
-                key={stage}
-                href={`/assessment/results/${assessmentId}/stage/${stage}`}
-                className="hover:opacity-70"
-              >
-                {row}
-              </Link>
-            );
-          })}
-        </div>
-        {assessment.healthScorePercent !== null && (
-          <div className="mt-4 flex justify-center">
-            <WorksheetStat label="Business Health" value={`${assessment.healthScorePercent}%`} />
+      <WorksheetGrid>
+        <WorksheetPanel number={1} title="My Scores" icon="📊">
+          <div className="flex flex-col divide-y divide-navy-100">
+            {STAGES.map((stage) => {
+              const score = scoreByStage.get(stage);
+              if (score === undefined) return null;
+              const row = (
+                <WorksheetRatingRow
+                  key={stage}
+                  label={`${STAGE_META[stage].icon} ${STAGE_META[stage].label}`}
+                  scorePercent={score}
+                />
+              );
+              return (
+                <Link
+                  key={stage}
+                  href={`/assessment/results/${assessmentId}/stage/${stage}`}
+                  className="hover:opacity-70"
+                >
+                  {row}
+                </Link>
+              );
+            })}
           </div>
-        )}
-      </WorksheetPanel>
-
-      {recommendedDisplay && (
-        <WorksheetPanel number={2} title="My Blueprint Stage" icon={recommendedDisplay.icon}>
-          <p className="text-xl font-bold text-legacy-700">{recommendedDisplay.label}</p>
-          {assessment.recommendationReason && (
-            <p className="mt-2 text-sm text-navy-600 sm:text-base">
-              {assessment.recommendationReason}
-            </p>
+          {assessment.healthScorePercent !== null && (
+            <div className="mt-3 flex justify-center">
+              <WorksheetStat label="Business Health" value={`${assessment.healthScorePercent}%`} />
+            </div>
           )}
         </WorksheetPanel>
-      )}
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        {recommendedDisplay && (
+          <WorksheetPanel number={2} title="My Blueprint Stage" icon={recommendedDisplay.icon}>
+            <p className="text-lg font-bold text-legacy-700 sm:text-xl">
+              {recommendedDisplay.label}
+            </p>
+            {assessment.recommendationReason && (
+              <p className="mt-2 text-sm text-navy-600">{assessment.recommendationReason}</p>
+            )}
+          </WorksheetPanel>
+        )}
+
         <WorksheetPanel number={3} title="My Strengths" icon="💪">
           <WorksheetChecklist>
             {strengths.map((s) => (
               <WorksheetChecklistItem key={`${s.stage}-${s.category}`} checked>
-                {s.category}{" "}
-                <span className="text-navy-500">({s.scorePercent}%)</span>
+                {s.category} <span className="text-navy-500">({s.scorePercent}%)</span>
               </WorksheetChecklistItem>
             ))}
           </WorksheetChecklist>
@@ -129,36 +135,39 @@ export default async function AssessmentResultsPage({
           <WorksheetChecklist>
             {priorities.map((p) => (
               <WorksheetChecklistItem key={`${p.stage}-${p.category}`} checked={false}>
-                {p.category}{" "}
-                <span className="text-navy-500">({p.scorePercent}%)</span>
+                {p.category} <span className="text-navy-500">({p.scorePercent}%)</span>
               </WorksheetChecklistItem>
             ))}
           </WorksheetChecklist>
         </WorksheetPanel>
-      </div>
 
-      {priorityContent && (
-        <WorksheetPanel number={5} title="My Next Best Action" icon="🎯">
-          <p className="text-sm sm:text-base">{priorityContent.nextStep}</p>
-        </WorksheetPanel>
-      )}
+        {priorityContent && (
+          <WorksheetPanel number={5} title="My Next Best Action" icon="🎯">
+            <p className="text-sm sm:text-base">{priorityContent.nextStep}</p>
+          </WorksheetPanel>
+        )}
 
-      {recommendedType && (
-        <WorksheetPanel
-          number={6}
-          title="Recommended For Me"
-          icon={SESSION_TYPE_DISPLAY[recommendedType].icon}
-          className="border-gold-300 bg-gold-50"
-        >
-          <p className="text-xl font-bold text-legacy-700">{sessionLabelFor(recommendedType)}</p>
-          {assessment.recommendationReason && (
-            <p className="mt-2 text-sm sm:text-base">{assessment.recommendationReason}</p>
-          )}
-          <Button asChild size="lg" className="mt-5">
-            <Link href="/sessions">View Available Sessions</Link>
-          </Button>
-        </WorksheetPanel>
-      )}
+        {recommendedType && (
+          <WorksheetPanel
+            number={6}
+            title="Recommended For Me"
+            icon={SESSION_TYPE_DISPLAY[recommendedType].icon}
+            className="border-gold-300 bg-gold-50"
+          >
+            <p className="text-lg font-bold text-legacy-700 sm:text-xl">
+              {sessionLabelFor(recommendedType)}
+            </p>
+            {assessment.recommendationReason && (
+              <p className="mt-2 text-sm">{assessment.recommendationReason}</p>
+            )}
+            <Button asChild size="lg" className="mt-4">
+              <Link href="/sessions">View Available Sessions</Link>
+            </Button>
+          </WorksheetPanel>
+        )}
+      </WorksheetGrid>
+
+      <WorksheetBanner businessName={assessment.business.name} />
     </WorksheetPage>
   );
 }
