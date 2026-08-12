@@ -24,6 +24,7 @@ const NAV_SECTIONS: NavSection[] = [
   { label: "Portfolios", href: "#" },
   { label: "Prep Checklist", href: "/prep-checklist" },
   { label: "Reflections", href: "/reflections" },
+  { label: "Billing", href: "/account/billing" },
 ];
 
 export function NavRail({ isAdmin = false }: { isAdmin?: boolean }) {

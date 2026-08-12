@@ -28,7 +28,8 @@ export type StripeSubscriptionStatus =
   | "active"
   | "past_due"
   | "canceled"
-  | "unpaid";
+  | "unpaid"
+  | "paused";
 export type CalendarDayType =
   | "regular"
   | "holiday"

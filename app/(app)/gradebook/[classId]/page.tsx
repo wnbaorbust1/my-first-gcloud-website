@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getGradebookData } from "@/lib/teacher/gradebook-queries";
 import { getUnitsForCourse } from "@/lib/admin/assignment-queries";
 import { getAllTeks } from "@/lib/admin/curriculum-queries";
+import { hasCourseAccess } from "@/lib/billing/access";
+import { Paywall } from "@/components/billing/paywall";
 import { RosterSection } from "@/components/teks/roster-section";
 import { GradeEntrySection } from "@/components/gradebook/grade-entry-section";
 import { TrendSection } from "@/components/gradebook/trend-section";
@@ -10,6 +12,30 @@ import { TrendSection } from "@/components/gradebook/trend-section";
 export default async function ClassGradebookPage({ params }: { params: { classId: string } }) {
   const gradebook = await getGradebookData(params.classId);
   if (!gradebook) notFound();
+
+  // Unlike lesson content, roster/grade data isn't RLS-gated by subscription
+  // (classes_all is purely "this teacher's own row") — the app layer is the
+  // only gate, so it has to check explicitly rather than lean on a null
+  // query result the way the lesson detail page does.
+  const canAccess = await hasCourseAccess(gradebook.courseId);
+  if (!canAccess) {
+    return (
+      <div className="mx-auto max-w-5xl">
+        <Link
+          href="/gradebook"
+          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ink"
+        >
+          ← All classes
+        </Link>
+        <div className="mt-8">
+          <Paywall
+            courseName={gradebook.courseDisplayName}
+            message="Subscribe to this course to unlock its gradebook."
+          />
+        </div>
+      </div>
+    );
+  }
 
   const [units, allTeks] = await Promise.all([
     getUnitsForCourse(gradebook.courseId),

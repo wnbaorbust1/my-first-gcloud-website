@@ -757,5 +757,10 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Assessment management: 8 question types, AI generation, retake/modified variants (admin-only)
 ✅ Gradebook: roster, grade entry (assessments + assignments), mastery trend chart
 ✅ Teacher reflections (favorites view) + weekly prep checklist, linked from lesson detail
-⬜ Portfolios / Stripe billing
-⬜ Deployment config
+✅ Stripe subscription billing: 3 tiers, Checkout + Customer Portal, webhook sync, paywall gating
+✅ Deployed on Vercel
+⬜ Student portfolios
+⬜ Bell ringer generator
+⬜ Financial life simulation
+⬜ Presentation builder
+⬜ Calendar sync
