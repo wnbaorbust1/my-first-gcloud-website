@@ -24,3 +24,19 @@ export const resetPasswordSchema = z.object({
     .max(200),
 });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+/**
+ * Change-password (spec gap found live: Settings had no self-service way
+ * to change a password while signed in — only signup and the
+ * signed-out forgot/reset-password flow existed). Requires the current
+ * password so a hijacked, already-open session can't be used to lock
+ * the real owner out.
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password"),
+  newPassword: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(200),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

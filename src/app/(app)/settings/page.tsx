@@ -1,10 +1,12 @@
-import { CreditCard, User as UserIcon } from "lucide-react";
+import { CreditCard, KeyRound, User as UserIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/session";
+
+import { ChangePasswordForm } from "./change-password-form";
 
 export const metadata: Metadata = { title: "Settings — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -40,6 +42,18 @@ export default async function SettingsPage() {
             <p className="text-foreground-muted">Role</p>
             <p className="font-medium text-navy-900">{user.role}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-navy-400" aria-hidden="true" />
+            <CardTitle>Password</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ChangePasswordForm />
         </CardContent>
       </Card>
 

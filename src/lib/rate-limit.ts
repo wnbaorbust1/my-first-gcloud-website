@@ -57,5 +57,6 @@ export const RATE_LIMITS = {
   LOGIN_PER_EMAIL: { limit: 10, windowMs: 15 * MINUTE },
   FORGOT_PASSWORD: { limit: 5, windowMs: 15 * MINUTE },
   RESET_PASSWORD: { limit: 10, windowMs: 15 * MINUTE },
+  CHANGE_PASSWORD: { limit: 10, windowMs: 15 * MINUTE },
   AI_MESSAGE: { limit: 30, windowMs: HOUR },
 } as const;
