@@ -21,6 +21,11 @@ interface FacilitatorOption {
   name: string;
 }
 
+interface OrganizationOption {
+  id: string;
+  name: string;
+}
+
 const SESSION_TYPES = [
   { value: "PASSION", label: "Passion" },
   { value: "POWER", label: "Power" },
@@ -28,7 +33,13 @@ const SESSION_TYPES = [
   { value: "GROWTH", label: "Growth" },
 ];
 
-export function CreateSessionForm({ facilitators }: { facilitators: FacilitatorOption[] }) {
+export function CreateSessionForm({
+  facilitators,
+  organizations,
+}: {
+  facilitators: FacilitatorOption[];
+  organizations: OrganizationOption[];
+}) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [sessionType, setSessionType] = useState("PASSION");
@@ -37,6 +48,7 @@ export function CreateSessionForm({ facilitators }: { facilitators: FacilitatorO
   const [startsAt, setStartsAt] = useState("");
   const [capacity, setCapacity] = useState("");
   const [facilitatorId, setFacilitatorId] = useState<string>("none");
+  const [organizationId, setOrganizationId] = useState<string>("none");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -56,6 +68,7 @@ export function CreateSessionForm({ facilitators }: { facilitators: FacilitatorO
         startsAt: startsAt ? new Date(startsAt).toISOString() : undefined,
         capacity: capacity ? Number(capacity) : undefined,
         facilitatorId: facilitatorId === "none" ? undefined : facilitatorId,
+        organizationId: organizationId === "none" ? undefined : organizationId,
       }),
     });
 
@@ -122,7 +135,7 @@ export function CreateSessionForm({ facilitators }: { facilitators: FacilitatorO
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <Label htmlFor="session-starts">Starts At</Label>
           <Input
@@ -154,6 +167,22 @@ export function CreateSessionForm({ facilitators }: { facilitators: FacilitatorO
               {facilitators.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
                   {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Organization</Label>
+          <Select value={organizationId} onValueChange={setOrganizationId}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None (platform session)</SelectItem>
+              {organizations.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.name}
                 </SelectItem>
               ))}
             </SelectContent>

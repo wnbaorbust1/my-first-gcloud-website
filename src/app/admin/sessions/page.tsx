@@ -6,13 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { STAFF_ROLES } from "@/lib/rbac";
 
 import { CreateSessionForm } from "./create-session-form";
+import { FacilitatorAssignmentForm } from "./facilitator-assignment-form";
 import { SessionStatusControl } from "./session-status-control";
 
 export const metadata: Metadata = { title: "Manage Sessions — Blueprint Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminSessionsPage() {
-  const [sessions, facilitators] = await Promise.all([
+  const [sessions, facilitators, organizations, assignments] = await Promise.all([
     prisma.sessionOffering.findMany({
       orderBy: { startsAt: "desc" },
       take: 100,
@@ -25,6 +26,18 @@ export default async function AdminSessionsPage() {
       where: { role: { in: STAFF_ROLES } },
       select: { id: true, firstName: true, lastName: true },
       orderBy: { firstName: "asc" },
+    }),
+    prisma.organization.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.facilitatorAssignment.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      include: {
+        facilitator: { select: { firstName: true, lastName: true, email: true } },
+        business: { select: { name: true } },
+      },
     }),
   ]);
 
@@ -66,6 +79,21 @@ export default async function AdminSessionsPage() {
         </CardHeader>
         <CreateSessionForm
           facilitators={facilitators.map((f) => ({ id: f.id, name: `${f.firstName} ${f.lastName}` }))}
+          organizations={organizations}
+        />
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Facilitator Assignments</CardTitle>
+        </CardHeader>
+        <p className="mb-4 text-sm text-foreground-muted">
+          Assign a facilitator to a business by the owner&apos;s account email — this is what a
+          facilitator&apos;s participant list and attendance permissions are scoped to.
+        </p>
+        <FacilitatorAssignmentForm
+          facilitators={facilitators.map((f) => ({ id: f.id, name: `${f.firstName} ${f.lastName}` }))}
+          assignments={assignments}
         />
       </Card>
     </div>

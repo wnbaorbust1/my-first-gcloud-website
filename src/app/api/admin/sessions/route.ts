@@ -14,6 +14,7 @@ const createSchema = z.object({
   capacity: z.number().int().positive().optional(),
   facilitatorId: z.string().min(1).optional(),
   programId: z.string().min(1).optional(),
+  organizationId: z.string().min(1).optional(),
 });
 
 /** CONTENT MANAGEMENT (spec Prompt 11): "Admin should manage: Sessions." */
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
       capacity: input.capacity,
       facilitatorId: input.facilitatorId,
       programId: input.programId,
+      organizationId: input.organizationId,
       status: "SCHEDULED",
     },
   });
