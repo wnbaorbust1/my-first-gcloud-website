@@ -45,6 +45,7 @@ export type PrepCategory =
   | "tech_to_test"
   | "supplies_needed";
 export type PrepPriority = "low" | "medium" | "high";
+export type PortfolioArtifactType = "file" | "link" | "text";
 export type TeksMasteryStatus =
   | "not_started"
   | "introduced"
@@ -834,6 +835,57 @@ export type Database = {
           },
         ];
       };
+      portfolio_items: {
+        Row: {
+          id: string;
+          student_id: string;
+          assignment_id: string | null;
+          title: string;
+          description: string | null;
+          artifact_type: PortfolioArtifactType;
+          file_path: string | null;
+          link_url: string | null;
+          text_content: string | null;
+          submitted_date: string;
+          teacher_notes: string | null;
+          is_featured: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          student_id: string;
+          assignment_id?: string | null;
+          title: string;
+          description?: string | null;
+          artifact_type: PortfolioArtifactType;
+          file_path?: string | null;
+          link_url?: string | null;
+          text_content?: string | null;
+          submitted_date?: string;
+          teacher_notes?: string | null;
+          is_featured?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["portfolio_items"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_items_student_id_fkey";
+            columns: ["student_id"];
+            isOneToOne: false;
+            referencedRelation: "students";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "portfolio_items_assignment_id_fkey";
+            columns: ["assignment_id"];
+            isOneToOne: false;
+            referencedRelation: "assignments";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -857,6 +909,7 @@ export type Database = {
       engagement_level: EngagementLevel;
       prep_category: PrepCategory;
       prep_priority: PrepPriority;
+      portfolio_artifact_type: PortfolioArtifactType;
     };
     CompositeTypes: Record<string, never>;
   };

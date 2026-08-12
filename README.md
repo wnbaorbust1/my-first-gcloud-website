@@ -759,7 +759,7 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Teacher reflections (favorites view) + weekly prep checklist, linked from lesson detail
 ✅ Stripe subscription billing: 3 tiers, Checkout + Customer Portal, webhook sync, paywall gating
 ✅ Deployed on Vercel
-⬜ Student portfolios
+✅ Student portfolios: file/link/text items, class showcase, Storage-backed uploads
 ⬜ Bell ringer generator
 ⬜ Financial life simulation
 ⬜ Presentation builder

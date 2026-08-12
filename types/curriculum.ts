@@ -14,6 +14,7 @@ export type Grade = Database["public"]["Tables"]["grades"]["Row"];
 export type TeksMastery = Database["public"]["Tables"]["teks_mastery"]["Row"];
 export type Reflection = Database["public"]["Tables"]["reflections"]["Row"];
 export type PrepItem = Database["public"]["Tables"]["prep_items"]["Row"];
+export type PortfolioItem = Database["public"]["Tables"]["portfolio_items"]["Row"];
 
 export type UnitWithWeeks = Unit & { weeks: Week[] };
 
