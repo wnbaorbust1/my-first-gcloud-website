@@ -100,7 +100,11 @@ app/
       [courseSlug]/layout.tsx    Fetches units+weeks, renders <CurriculumSpine> + children
       [courseSlug]/page.tsx      Course overview ("select a week")
       [courseSlug]/[weekNumber]/page.tsx             Week's lessons (Mon-Fri, ledger rows)
-      [courseSlug]/[weekNumber]/[dayNumber]/page.tsx  Lesson detail
+      [courseSlug]/[weekNumber]/[dayNumber]/page.tsx  Lesson detail, plus (below it) the signed-in
+                                                        teacher's own ReflectionSection + PrepItemsSection
+    reflections/page.tsx        Favorites-filtered (default) or all reflections, across every lesson
+    prep-checklist/page.tsx     Weekly prep dashboard — everything due this week, across every
+                                  lesson, grouped by category so it's batchable in one sitting
     admin/                      Admin-only content authoring (requireAdmin() layout guard, <AdminTabs>)
       curriculum/page.tsx        Course picker for admins
       curriculum/[courseSlug]/page.tsx                 Full outline incl. drafts + empty gaps,
@@ -142,7 +146,10 @@ components/
   auth/                      LoginForm, SignupForm, ForgotPasswordForm, ResetPasswordForm,
                               GoogleSignInButton, SignOutButton, form primitives
   curriculum/                CourseCard (the one sanctioned "card" use), CurriculumSpine
-                              (course-scoped planner spine), LessonDetailView
+                              (course-scoped planner spine), LessonDetailView, ReflectionSection
+                              (quick-entry, embedded in the lesson detail page), ReflectionFavoriteToggle,
+                              PrepItemsSection (lesson-scoped prep checklist), WeeklyPrepRow (the
+                              cross-lesson version, used by /prep-checklist)
   admin/                     AdminTabs (Curriculum/Assignments/Assessments/TEKS Import sub-nav),
                               CourseSwitcher, LessonGenerateForm, LessonEditorForm,
                               LessonAssistantPanel (chat-style AI panel), GapSuggestionsPanel,
@@ -178,8 +185,9 @@ lib/
     queries.ts                  getCourseBySlug/getAllCourses/getCourseUnitsWithWeeks/
                                  getWeekWithLessons/getLessonDetail/getPublishedAssignmentsForCourse
                                  — all RLS-only access control
-    constants.ts                 Segment/assignment-type/question-type/mastery-status order+labels,
-                                 struggling-TEKS threshold
+    constants.ts                 Segment/assignment-type/question-type/mastery-status/pacing/
+                                 engagement/prep-category/prep-priority order+labels, struggling-TEKS
+                                 threshold
   admin/
     curriculum-queries.ts        getCourseOutlineForAdmin/getWeekByNumber/getAllTeks/getLessonForEdit
                                   — admin reads, same RLS as teacher queries (is_admin() sees everything)
@@ -203,6 +211,12 @@ lib/
                                    chart's client-side controls can re-query without a Route Handler
     mastery-queries.ts            getMasteryDashboardData — the grid + chart + struggling-TEKS data
     mastery-actions.ts            updateMasteryStatusAction — the one write path for a mastery cell
+    reflection-queries.ts         getReflectionForLesson/getReflectionsForTeacher (favorites-only or all)
+    reflection-actions.ts         saveReflectionAction (upsert by profile_id+lesson_id) /
+                                   toggleFavoriteAction
+    prep-queries.ts                getPrepItemsForLesson/getPrepItemsDueThisWeek (overdue + this
+                                   week, Sunday-Saturday) / getWeekRange
+    prep-actions.ts                addPrepItemAction/togglePrepItemCompletedAction/deletePrepItemAction
   ai/
     client.ts                    getAnthropicClient() singleton, AI_MODEL constant, server-only
     prompts.ts                    PEDAGOGY_FRAMEWORK system prompt + per-task prompt builders,
@@ -224,8 +238,8 @@ lib/
 types/
   supabase.ts                 Database type, hand-written to match supabase/migrations/*.sql
   curriculum.ts                Course/Unit/Week/Lesson/LessonSegment/Teks/Assignment/Assessment/
-                                Class/Student/Grade/TeksMastery + composed types (UnitWithWeeks,
-                                WeekWithLessons, LessonDetail, UnitWithAssignments,
+                                Class/Student/Grade/TeksMastery/Reflection/PrepItem + composed types
+                                (UnitWithWeeks, WeekWithLessons, LessonDetail, UnitWithAssignments,
                                 UnitWithAssessments, ClassWithStudents)
   index.ts                    Barrel export
 
@@ -234,7 +248,8 @@ supabase/
                                academic_calendars/calendar_days, auth_rate_limit_attempts,
                                teks, units, weeks, lessons/lesson_segments, assignments,
                                classes/students/assignment_grades/teks_mastery,
-                               assessments/grades (assignment_grades retired into grades)
+                               assessments/grades (assignment_grades retired into grades),
+                               reflections/prep_items
   seed.sql                    Local-dev-only demo curriculum content (not run against hosted projects)
   README.md                   Supabase CLI workflow notes
 
@@ -320,6 +335,10 @@ RLS policies, not just "does it parse") before being committed.
   grades (exactly one of `assessment_id`/`assignment_id` set, enforced by
   a `CHECK` — it replaced an earlier assignment-only `assignment_grades`
   table, whose data was migrated across before that table was dropped).
+- **reflections** / **prep_items** — also teacher-owned (`profile_id =
+  auth.uid()`), see "Teacher reflections and prep checklist" below. Both
+  hang off a `lesson_id`, so multiple teachers teaching the same
+  admin-authored lesson each keep their own notes/checklist against it.
 - **auth_rate_limit_attempts** — backs the app-level rate limiting above.
   RLS is enabled with *no policies*, so it's reachable only via the
   service-role client, never through the anon/authenticated API.
@@ -681,6 +700,42 @@ lenses) — student roster, grade entry, and a mastery trend chart.
   score — client-side controls re-fetch via `fetchTrendDataAction`, a
   thin Server Action wrapper, rather than a dedicated Route Handler.
 
+## Teacher reflections and prep checklist
+
+Two small, deliberately un-fancy teacher-owned tools, both reachable
+straight from a lesson's detail page (`/curriculum/[courseSlug]/
+[weekNumber]/[dayNumber]`) — no AI, no admin gating, just quick-entry
+forms over `profile_id`-scoped tables, client-side state synced straight
+to Supabase.
+
+- **Reflections** (`components/curriculum/reflection-section.tsx`) — one
+  quick-entry form per lesson: what worked, what confused students,
+  pacing (`too_fast`/`just_right`/`too_slow`), engagement
+  (`low`/`medium`/`high`), a reteach flag, freeform action items, and a
+  star toggle. `saveReflectionAction` (`lib/teacher/reflection-actions.ts`)
+  always upserts by the table's `(profile_id, lesson_id)` unique
+  constraint, so re-opening a lesson you've already reflected on refines
+  that same row rather than creating a new one each time. `/reflections`
+  (`getReflectionsForTeacher()`) lists them newest-first, favorites-only
+  by default with a "Show all" toggle, each row linking back to its
+  lesson; the star can be flipped right from the list via
+  `ReflectionFavoriteToggle` without opening the lesson.
+- **Prep checklist** — `PrepItemsSection`
+  (`components/curriculum/prep-items-section.tsx`) is the lesson-scoped
+  add/check-off list (category, due date, priority) embedded in the
+  lesson detail page; `/prep-checklist` is the cross-lesson weekly view a
+  teacher actually works from Sunday night. `getPrepItemsDueThisWeek()`
+  (`lib/teacher/prep-queries.ts`) splits into two buckets — **Overdue**
+  (past due, not completed, surfaced separately so it doesn't get lost in
+  "this week") and **Due This Week** (the Sunday-Saturday range
+  containing today, from `getWeekRange()`) — each grouped by category so
+  the four categories (materials to print, materials to cut, tech to
+  test, supplies needed) become batchable work: print everything, then
+  cut, then test tech, then gather supplies. Every row
+  (`WeeklyPrepRow`) links back to the lesson it's for and checks off with
+  the same `togglePrepItemCompletedAction` the lesson-scoped list uses —
+  one write path regardless of which view triggered it.
+
 ## Environment variables
 
 See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
@@ -701,5 +756,6 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ TEKS import, AI semantic matching, mastery tracking + dashboard
 ✅ Assessment management: 8 question types, AI generation, retake/modified variants (admin-only)
 ✅ Gradebook: roster, grade entry (assessments + assignments), mastery trend chart
+✅ Teacher reflections (favorites view) + weekly prep checklist, linked from lesson detail
 ⬜ Portfolios / Stripe billing
 ⬜ Deployment config

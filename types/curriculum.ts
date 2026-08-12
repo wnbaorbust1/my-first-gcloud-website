@@ -12,6 +12,8 @@ export type Class = Database["public"]["Tables"]["classes"]["Row"];
 export type Student = Database["public"]["Tables"]["students"]["Row"];
 export type Grade = Database["public"]["Tables"]["grades"]["Row"];
 export type TeksMastery = Database["public"]["Tables"]["teks_mastery"]["Row"];
+export type Reflection = Database["public"]["Tables"]["reflections"]["Row"];
+export type PrepItem = Database["public"]["Tables"]["prep_items"]["Row"];
 
 export type UnitWithWeeks = Unit & { weeks: Week[] };
 

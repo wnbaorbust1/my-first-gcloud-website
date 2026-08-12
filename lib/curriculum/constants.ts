@@ -1,7 +1,11 @@
 import type {
   AssessmentVariant,
   AssignmentType,
+  EngagementLevel,
   LessonSegmentKey,
+  PacingAccuracy,
+  PrepCategory,
+  PrepPriority,
   QuestionType,
   TeksMasteryStatus,
 } from "@/types/supabase";
@@ -167,4 +171,54 @@ export const ASSESSMENT_VARIANT_LABELS: Record<AssessmentVariant, string> = {
   original: "Original",
   retake: "Retake",
   modified: "Modified",
+};
+
+export const PACING_ACCURACY_OPTIONS = [
+  "too_fast",
+  "just_right",
+  "too_slow",
+] as const satisfies readonly PacingAccuracy[];
+
+export const PACING_ACCURACY_LABELS: Record<PacingAccuracy, string> = {
+  too_fast: "Too Fast",
+  just_right: "Just Right",
+  too_slow: "Too Slow",
+};
+
+export const ENGAGEMENT_LEVEL_OPTIONS = [
+  "low",
+  "medium",
+  "high",
+] as const satisfies readonly EngagementLevel[];
+
+export const ENGAGEMENT_LEVEL_LABELS: Record<EngagementLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+export const PREP_CATEGORIES = [
+  "materials_to_print",
+  "materials_to_cut",
+  "tech_to_test",
+  "supplies_needed",
+] as const satisfies readonly PrepCategory[];
+
+export const PREP_CATEGORY_LABELS: Record<PrepCategory, string> = {
+  materials_to_print: "Materials to Print",
+  materials_to_cut: "Materials to Cut",
+  tech_to_test: "Tech to Test",
+  supplies_needed: "Supplies Needed",
+};
+
+export const PREP_PRIORITIES = [
+  "low",
+  "medium",
+  "high",
+] as const satisfies readonly PrepPriority[];
+
+export const PREP_PRIORITY_LABELS: Record<PrepPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
 };

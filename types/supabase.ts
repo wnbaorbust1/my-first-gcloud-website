@@ -36,6 +36,14 @@ export type CalendarDayType =
   | "early_release"
   | "block_day";
 export type RateLimitAction = "signup" | "login" | "password_reset";
+export type PacingAccuracy = "too_fast" | "just_right" | "too_slow";
+export type EngagementLevel = "low" | "medium" | "high";
+export type PrepCategory =
+  | "materials_to_print"
+  | "materials_to_cut"
+  | "tech_to_test"
+  | "supplies_needed";
+export type PrepPriority = "low" | "medium" | "high";
 export type TeksMasteryStatus =
   | "not_started"
   | "introduced"
@@ -735,6 +743,96 @@ export type Database = {
           },
         ];
       };
+      reflections: {
+        Row: {
+          id: string;
+          lesson_id: string;
+          profile_id: string;
+          what_worked: string | null;
+          what_confused_students: string | null;
+          pacing_accuracy: PacingAccuracy | null;
+          engagement_level: EngagementLevel | null;
+          reteach_flag: boolean;
+          action_items: string | null;
+          is_favorite: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          lesson_id: string;
+          profile_id: string;
+          what_worked?: string | null;
+          what_confused_students?: string | null;
+          pacing_accuracy?: PacingAccuracy | null;
+          engagement_level?: EngagementLevel | null;
+          reteach_flag?: boolean;
+          action_items?: string | null;
+          is_favorite?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reflections"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "reflections_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "lessons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reflections_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      prep_items: {
+        Row: {
+          id: string;
+          lesson_id: string;
+          profile_id: string;
+          description: string;
+          category: PrepCategory;
+          due_date: string | null;
+          priority: PrepPriority;
+          completed: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          lesson_id: string;
+          profile_id: string;
+          description: string;
+          category: PrepCategory;
+          due_date?: string | null;
+          priority?: PrepPriority;
+          completed?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["prep_items"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "prep_items_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "lessons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prep_items_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -754,6 +852,10 @@ export type Database = {
       teks_mastery_status: TeksMasteryStatus;
       question_type: QuestionType;
       assessment_variant: AssessmentVariant;
+      pacing_accuracy: PacingAccuracy;
+      engagement_level: EngagementLevel;
+      prep_category: PrepCategory;
+      prep_priority: PrepPriority;
     };
     CompositeTypes: Record<string, never>;
   };
