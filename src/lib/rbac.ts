@@ -58,6 +58,10 @@ export const can = {
   accessFacilitatorArea: (role?: Role) => hasAnyRole(role, STAFF_ROLES),
   /** spec Prompt 8 EXISTING MEMBER RULE: "Admin may manually grant promotional credit later." */
   grantMembership: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
+  /** Phase 7: Admin and Facilitator Controls — bypassing the normal attend-and-pay gate is an admin-level override. */
+  unlockVisionBoard: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
+  /** Phase 7: Admin and Facilitator Controls — a facilitator's real-world judgment call, same level as recommending a session. */
+  correctStageAssignment: (role?: Role) => hasAnyRole(role, STAFF_ROLES),
   /** spec Prompt 12: platform-level Organization creation and org-membership assignment. */
   manageOrganizations: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
 };

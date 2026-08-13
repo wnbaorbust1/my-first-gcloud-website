@@ -138,6 +138,10 @@ export async function completeAssessment(assessmentId: string) {
         completedAt: new Date(),
         healthScorePercent: healthScore,
         recommendedSessionType: recommendation.type,
+        // Phase 7: Admin and Facilitator Controls — the immutable "what
+        // did the engine actually say" snapshot; recommendedSessionType
+        // above is the mutable one a later correction can change.
+        systemRecommendedSessionType: recommendation.type,
         recommendationReason: recommendation.reason,
         assessmentVersion: assessment.assessmentVersion,
       },

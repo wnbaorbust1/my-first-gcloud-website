@@ -6,6 +6,8 @@ import { notFound } from "next/navigation";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScoreCard } from "@/components/ui/score-card";
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
+import { formatAnswerValue } from "@/lib/ai/context";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { prisma } from "@/lib/prisma";
 import { can, STAFF_ROLES } from "@/lib/rbac";
@@ -17,6 +19,8 @@ import { MembershipGrantForm } from "../membership-grant-form";
 import { NoteForm } from "../note-form";
 import { EncouragementForm } from "./encouragement-form";
 import { RecommendSessionForm } from "./recommend-session-form";
+import { StageOverrideForm } from "./stage-override-form";
+import { UnlockVisionBoardForm } from "./unlock-vision-board-form";
 
 export const metadata: Metadata = { title: "Participant Detail — Blueprint Facilitator" };
 export const dynamic = "force-dynamic";
@@ -26,6 +30,17 @@ const NOTE_TYPE_LABELS: Record<string, string> = {
   PARTICIPANT_VISIBLE: "Participant-Visible",
   RECOMMENDATION: "Recommendation",
   TASK_RECOMMENDATION: "Task Recommendation",
+};
+
+const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
+  COMPLIMENTARY: "Complimentary Trial",
+  ACTIVE_MONTHLY: "Active — Monthly",
+  ACTIVE_ANNUAL: "Active — Annual",
+  PAYMENT_ISSUE: "Payment Issue (grace period)",
+  CANCELLED: "Cancelled (access through period end)",
+  EXPIRED: "Expired",
+  SPONSORED: "Sponsored",
+  ADMIN_GRANTED: "Admin Granted",
 };
 
 export default async function ParticipantDetailPage({
@@ -56,11 +71,21 @@ export default async function ParticipantDetailPage({
     notes,
     aiConversations,
     upcomingSessions,
+    membership,
+    versionCount,
   ] = await Promise.all([
     prisma.assessment.findFirst({
       where: { businessId, status: "COMPLETED" },
       orderBy: { completedAt: "desc" },
-      include: { scores: true, categoryScores: true },
+      include: {
+        scores: true,
+        categoryScores: true,
+        responses: {
+          include: { question: { select: { prompt: true, order: true } } },
+          orderBy: { question: { order: "asc" } },
+        },
+        stageOverriddenBy: { select: { firstName: true, lastName: true } },
+      },
     }),
     prisma.roadmap.findFirst({ where: { businessId }, include: { tasks: true } }),
     prisma.goal.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 5 }),
@@ -92,9 +117,12 @@ export default async function ParticipantDetailPage({
       take: 20,
       select: { id: true, title: true, startsAt: true },
     }),
+    getSyncedMembership(businessId),
+    prisma.visionBoardVersion.count({ where: { businessId } }),
   ]);
 
   const owner = business.memberships[0]?.user;
+  const boardAccess = getBuilderAccessState(business.builderAccessEligible, membership);
   const categoryScores =
     assessment?.categoryScores.map((c) => ({
       stage: c.stage as Stage,
@@ -191,11 +219,63 @@ export default async function ParticipantDetailPage({
                 </ul>
               </div>
             </div>
-            {assessment.recommendedSessionType && (
-              <p className="mt-3 text-sm text-navy-700">
-                <span className="font-medium">System Recommendation: </span>
-                {sessionLabelFor(assessment.recommendedSessionType)}
-              </p>
+            {/* STAGE ASSIGNMENT (Phase 7: Admin and Facilitator Controls) —
+                recommendedSessionType is the live, correctable value;
+                systemRecommendedSessionType is the engine's own
+                never-touched original. */}
+            <div className="mt-4 border-t border-navy-100 pt-4">
+              {assessment.systemRecommendedSessionType && (
+                <p className="text-sm text-navy-700">
+                  <span className="font-medium">System Recommendation: </span>
+                  {sessionLabelFor(assessment.systemRecommendedSessionType)}
+                </p>
+              )}
+              {assessment.recommendedSessionType &&
+                assessment.recommendedSessionType !== assessment.systemRecommendedSessionType && (
+                  <p className="mt-1 text-sm text-legacy-700">
+                    <span className="font-medium">Corrected to: </span>
+                    {sessionLabelFor(assessment.recommendedSessionType)}
+                    {assessment.stageOverriddenBy && (
+                      <span className="text-foreground-muted">
+                        {" "}
+                        by {assessment.stageOverriddenBy.firstName} {assessment.stageOverriddenBy.lastName}
+                        {assessment.stageOverriddenAt
+                          ? ` on ${assessment.stageOverriddenAt.toLocaleDateString()}`
+                          : ""}
+                      </span>
+                    )}
+                  </p>
+                )}
+              {assessment.stageOverrideNote && (
+                <p className="mt-1 text-sm text-foreground-muted">“{assessment.stageOverrideNote}”</p>
+              )}
+              {can.correctStageAssignment(user.role) && assessment.recommendedSessionType && (
+                <div className="mt-3">
+                  <StageOverrideForm
+                    assessmentId={assessment.id}
+                    currentType={assessment.recommendedSessionType}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* ASSESSMENT ANSWERS (Phase 7: Admin and Facilitator Controls)
+                — the member's own raw responses, not just the aggregate
+                scores above. */}
+            {assessment.responses.length > 0 && (
+              <details className="mt-4 border-t border-navy-100 pt-4">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-navy-400">
+                  Assessment Answers ({assessment.responses.length})
+                </summary>
+                <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+                  {assessment.responses.map((r) => (
+                    <li key={r.id} className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+                      <span className="text-navy-800">{r.question.prompt}</span>
+                      <span className="text-foreground-muted">→ {formatAnswerValue(r.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </>
         ) : (
@@ -388,13 +468,83 @@ export default async function ParticipantDetailPage({
         <EncouragementForm businessId={businessId} />
       </Card>
 
-      {/* Membership */}
-      {can.grantMembership(user.role) && (
+      {/* Subscription status + Vision Board unlock (Phase 7: Admin and Facilitator Controls) */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Subscription &amp; Vision Board Access</CardTitle>
+        </CardHeader>
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-xl bg-navy-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">Vision Board</p>
+            <p className="mt-1 font-medium text-navy-900">
+              {business.builderAccessEligible ? "Unlocked" : "Locked"}
+            </p>
+            {business.visionBoardUnlockedAt && (
+              <p className="text-xs text-foreground-muted">
+                Since {business.visionBoardUnlockedAt.toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="rounded-xl bg-navy-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+              Subscription Status
+            </p>
+            <p className="mt-1 font-medium text-navy-900">
+              {membership ? (MEMBERSHIP_STATUS_LABELS[membership.status] ?? membership.status) : "None yet"}
+            </p>
+            {membership?.trialEndsAt && (
+              <p className="text-xs text-foreground-muted">
+                Trial ends {membership.trialEndsAt.toLocaleDateString()}
+              </p>
+            )}
+            {membership?.currentPeriodEndsAt && (
+              <p className="text-xs text-foreground-muted">
+                {membership.status === "CANCELLED" ? "Access through" : "Renews"}{" "}
+                {membership.currentPeriodEndsAt.toLocaleDateString()}
+              </p>
+            )}
+            {boardAccess.locked && (
+              <p className="mt-1 text-xs font-medium text-danger">
+                {boardAccess.reason === "membership-expired" ? "Access has ended" : "Never unlocked"}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {can.unlockVisionBoard(user.role) && boardAccess.locked && (
+          <div className="mt-4 border-t border-navy-100 pt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">
+              Unlock Full Vision Board
+            </p>
+            <UnlockVisionBoardForm businessId={businessId} />
+          </div>
+        )}
+
+        {can.grantMembership(user.role) && (
+          <div className="mt-4 border-t border-navy-100 pt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">
+              Grant Membership
+            </p>
+            <MembershipGrantForm businessId={businessId} />
+          </div>
+        )}
+      </Card>
+
+      {/* Vision Board version history (Phase 7: Admin and Facilitator Controls) */}
+      {versionCount > 0 && (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Grant Membership</CardTitle>
+            <CardTitle>Vision Board Version History</CardTitle>
           </CardHeader>
-          <MembershipGrantForm businessId={businessId} />
+          <p className="text-sm text-foreground-muted">
+            {versionCount} saved version{versionCount === 1 ? "" : "s"} of this business&apos;s Vision Board.
+          </p>
+          <Link
+            href={`/facilitator/participants/${businessId}/vision-board/versions`}
+            className="mt-2 inline-block text-sm font-medium text-navy-500 underline hover:text-navy-800"
+          >
+            Review Previous Versions
+          </Link>
         </Card>
       )}
     </div>

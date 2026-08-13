@@ -3095,3 +3095,82 @@ now" message with no `RESEND_API_KEY` configured, confirmed
 `window.print()` fires without error, and queried Postgres directly to
 confirm one real `BoardDownload` row per action with the correct
 `format`.
+
+## PHASE 7 — Admin and Facilitator Controls (complete)
+
+The directive listed ten capabilities the shared admin/facilitator
+surface should have. Gap analysis first: `/facilitator/participants/
+[businessId]` (already reachable by both roles — `assertBusinessAccess`
+grants ADMIN_ROLES access to every business, and the admin business page
+already links out to this "Full participant view" rather than
+duplicating it) already covered review scores, add session notes/
+recommendations (`FacilitatorNote` + `NoteForm`'s RECOMMENDATION type),
+edit the 90-day plan and regenerate recommendations (both already in
+`VisionBoardForm`, reused as-is on the facilitator's Vision Board edit
+page since Phase 3), and mark session attended/completed
+(`AttendanceControl`, already staff-gated). Four were real gaps, closed
+here:
+
+**1. View assessment answers** — the Assessment card now includes a
+collapsible list of every real `AssessmentResponse` (question prompt →
+`formatAnswerValue()`, exported from `src/lib/ai/context.ts` rather than
+duplicated), not just the aggregate scores.
+
+**2. Correct stage assignment** — new `stageOverrideForm` +
+`PATCH /api/facilitator/assessments/[assessmentId]/stage`
+(`can.correctStageAssignment`, STAFF_ROLES). The engine's own original
+computation is never lost: `Assessment.recommendedSessionType` is now
+the *live, correctable* value every real consumer already read, while a
+new `systemRecommendedSessionType` column (set once, at completion, in
+`src/lib/assessment/session.ts`) is an immutable snapshot of what the
+algorithm actually said — so "what did the algorithm say" stays
+honestly recoverable after a human correction, without threading an
+override-preference check through every one of the ~13 call sites that
+read the recommendation. Provenance (who/when/why) is on the row
+*and* in a new `AuditLog` entry with the before/after values.
+
+**3. Unlock the full vision board** — new `UnlockVisionBoardForm` +
+`POST /api/admin/vision-board/[businessId]/unlock`
+(`can.unlockVisionBoard`, ADMIN-only — a bigger override than a
+facilitator's usual actions, same level as granting membership). A real
+*working* unlock, not a half-measure: flipping `builderAccessEligible`
+alone would leave `resolveBlueprintAccess` reading "expired" (full
+access needs a membership that currently grants it too — Phase 5), so
+this only touches `Membership` when the business doesn't already have
+one that grants access, never downgrading a real paid/trial membership
+that's already working — verified directly: a business with a real
+`ACTIVE_MONTHLY` membership keeps that exact status after unlocking,
+while a business with none gets a real `ADMIN_GRANTED` one. Also calls
+`ensureRoadmapGenerated` and logs to `AuditLog`.
+
+**4. Review previous board versions** — new
+`GET /api/blueprint/vision-board/versions/[id]` plus two facilitator
+pages (a list, and a read-only detail render of the exact
+`VisionBoardExport` snapshot Phase 6's "Save New Version" stored) —
+Phase 6 built the storage and a member-facing list; this is the first
+place anyone could actually open one and read what it said.
+
+**5. See subscription status** — new "Subscription & Vision Board
+Access" card: real `builderAccessEligible`/`visionBoardUnlockedAt`, and
+the real synced `Membership` status/trial/period dates (`getSyncedMembership`
+— the same lazy-sync used everywhere else), replacing the old
+write-only "Grant Membership" form with an actual read+write section.
+
+**6. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (66 — 8 new: 4 for the stage-correction route
+covering auth/role-gating/the correction-plus-preserved-original-plus-
+audit-log/404, 4 for the unlock route covering auth/admin-only-gating/
+a-fresh-unlock-granting-ADMIN_GRANTED/never-downgrading-a-real-paid-
+membership), and a production build (`next build --webpack`) all pass.
+Live-verified end-to-end with Playwright against freshly seeded
+facilitator/admin accounts and two real businesses (one already
+unlocked with a real assessment + answers + a saved version, one
+locked): the facilitator saw real Q&A ("How clear are you on your
+business's purpose? → 4"), corrected Power → Legacy and confirmed via a
+direct DB query that `systemRecommendedSessionType` stayed POWER while
+`recommendedSessionType` became LEGACY with real provenance; the admin
+unlocked the locked business and confirmed via direct DB queries that
+`builderAccessEligible` flipped, a real roadmap was generated, an
+`ADMIN_GRANTED` membership was created, and an `AuditLog` row exists;
+and the version history list and read-only detail page both rendered
+the real saved snapshot correctly.

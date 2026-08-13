@@ -80,6 +80,7 @@ model User {
   boardDownloads              BoardDownload[]
   visionBoardProfileEdits     VisionBoardProfile[]    @relation("VisionBoardProfileLastEditedBy")
   visionBoardVersionsSaved    VisionBoardVersion[]
+  assessmentStageOverrides    Assessment[]            @relation("AssessmentStageOverriddenBy")
 
   @@index([role])
 }
@@ -625,8 +626,24 @@ model Assessment {
   assessmentVersion String @default("v1")
 
   healthScorePercent     Int?
+  /// The *current, effective* recommendation — every real consumer
+  /// (Assessment Results, the Vision Board roadmap, session
+  /// recommendations, Blueprint AI's "Assigned Stage" context) reads
+  /// this field. Starts out equal to systemRecommendedSessionType below
+  /// and only ever changes via an explicit facilitator/admin correction
+  /// (Phase 7: Admin and Facilitator Controls).
   recommendedSessionType RecommendedSessionType?
   recommendationReason   String?                 @db.Text
+
+  /// STAGE ASSIGNMENT CORRECTION (Phase 7) — an immutable snapshot of
+  /// what the scoring engine itself computed at completion time, set
+  /// once and never touched again, so "what did the algorithm actually
+  /// say" stays honestly recoverable even after a human correction.
+  systemRecommendedSessionType RecommendedSessionType?
+  stageOverriddenByUserId      String?
+  stageOverriddenBy            User?                   @relation("AssessmentStageOverriddenBy", fields: [stageOverriddenByUserId], references: [id])
+  stageOverriddenAt            DateTime?
+  stageOverrideNote            String?                 @db.Text
 
   startedAt   DateTime?
   completedAt DateTime?

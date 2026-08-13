@@ -138,7 +138,8 @@ export async function assembleAiContext(businessId: string): Promise<string> {
 
 const MAX_ANSWERS_IN_CONTEXT = 40;
 
-function formatAnswerValue(value: unknown): string {
+/** Also used by the facilitator/admin "view assessment answers" panel (Phase 7: Admin and Facilitator Controls). */
+export function formatAnswerValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
