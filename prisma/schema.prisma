@@ -75,8 +75,30 @@ model User {
   weeklyCheckIns              WeeklyCheckIn[]
   aiPromptTemplatesUpdated    AiPromptTemplate[]
   supportRequests             SupportRequest[]
+  personalAccessTokens        PersonalAccessToken[]
 
   @@index([role])
+}
+
+/// PERSONAL ACCESS TOKENS — lets a member authorize an external agent
+/// (a Custom GPT Action, a script) to call Blueprint's export API as
+/// themselves, without sharing their password/session cookie. Bearer-
+/// token auth is what ChatGPT's Custom GPT Action builder supports
+/// natively ("API Key" auth type), so this is the minimum viable server
+/// side of that — no OAuth flow, just an opaque token the member
+/// generates and pastes into their own GPT's Action config. Only the
+/// SHA-256 hash is stored; the raw token is shown once, at creation.
+model PersonalAccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  tokenHash  String    @unique
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
 }
 
 /// OAuth account link (e.g. Google). Architected now per Task 3 even
@@ -363,7 +385,52 @@ model Business {
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
+  visionBoardProfile VisionBoardProfile?
+
   @@index([status])
+}
+
+/// VISION BOARD PROFILE — real, member-entered content for the pillars
+/// of the hand-drawn vision-board reference that nothing else in this
+/// schema tracks: My Vibes, Resources (have/need), a lightweight
+/// Business Model Canvas, Daily Affirmations, and the accountability
+/// partner's actual name/contact (Business.accountabilityCadence only
+/// ever stored the check-in frequency, never who the partner is). This
+/// exists specifically so the vision-board export (see
+/// src/app/api/gpt/vision-board/route.ts) never fabricates these
+/// fields — every one is optional and simply omitted until the member
+/// fills it in themselves.
+model VisionBoardProfile {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// Free-form, comma- or newline-separated traits in the member's own words.
+  vibes String? @db.Text
+
+  resourcesHave String? @db.Text
+  resourcesNeed String? @db.Text
+
+  /// Classic Business Model Canvas blocks, each a short free-text note —
+  /// not a full canvas editor, just enough for the export to have real
+  /// content instead of an empty section.
+  bmcKeyPartners    String? @db.Text
+  bmcKeyActivities  String? @db.Text
+  bmcValue          String? @db.Text
+  bmcCustomers      String? @db.Text
+  bmcChannels       String? @db.Text
+  bmcRevenueStreams String? @db.Text
+  bmcCostStructure  String? @db.Text
+
+  /// One affirmation per line.
+  dailyAffirmations String? @db.Text
+
+  accountabilityPartnerName    String?
+  accountabilityPartnerContact String?
+  accountabilityCommitment     String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum BusinessMembershipRole {

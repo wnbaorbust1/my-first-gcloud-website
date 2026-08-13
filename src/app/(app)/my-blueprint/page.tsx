@@ -1,4 +1,4 @@
-import { BookOpen, FileText, Lock } from "lucide-react";
+import { BookOpen, FileText, Lock, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -73,6 +73,12 @@ export default async function MyBlueprintPage() {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/my-blueprint/vision-board">
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              Vision Board Profile
+            </Link>
+          </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/my-blueprint/scorecard">
               <FileText className="h-4 w-4" aria-hidden="true" />

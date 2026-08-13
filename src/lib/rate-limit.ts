@@ -59,4 +59,6 @@ export const RATE_LIMITS = {
   RESET_PASSWORD: { limit: 10, windowMs: 15 * MINUTE },
   CHANGE_PASSWORD: { limit: 10, windowMs: 15 * MINUTE },
   AI_MESSAGE: { limit: 30, windowMs: HOUR },
+  API_TOKEN_CREATE: { limit: 10, windowMs: HOUR },
+  GPT_EXPORT: { limit: 60, windowMs: HOUR },
 } as const;

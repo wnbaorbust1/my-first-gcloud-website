@@ -1,4 +1,4 @@
-import { CreditCard, KeyRound, User as UserIcon } from "lucide-react";
+import { CreditCard, KeyRound, Sparkles, User as UserIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/session";
 
 import { ChangePasswordForm } from "./change-password-form";
+import { ConnectChatGptCard } from "./connect-chatgpt-card";
 
 export const metadata: Metadata = { title: "Settings — Blueprint" };
 export const dynamic = "force-dynamic";
@@ -54,6 +55,18 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ChangePasswordForm />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-navy-400" aria-hidden="true" />
+            <CardTitle>Connect ChatGPT</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ConnectChatGptCard />
         </CardContent>
       </Card>
 
