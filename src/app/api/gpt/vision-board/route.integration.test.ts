@@ -25,22 +25,41 @@ describe("GET /api/gpt/vision-board (real DB)", () => {
   const suffix = `vbexport-${Date.now()}`;
   const userId = `usr-${suffix}`;
   const noBusinessUserId = `usr-nobiz-${suffix}`;
+  const lockedUserId = `usr-locked-${suffix}`;
   const businessId = `biz-${suffix}`;
+  const lockedBusinessId = `biz-locked-${suffix}`;
   let rawToken: string;
   let tokenId: string;
   let noBusinessRawToken: string;
+  let lockedRawToken: string;
 
   beforeAll(async () => {
     await prisma.user.createMany({
       data: [
         { id: userId, email: `${suffix}@test.local`, firstName: "V", lastName: "Board", role: "MEMBER" },
         { id: noBusinessUserId, email: `nobiz-${suffix}@test.local`, firstName: "No", lastName: "Biz", role: "MEMBER" },
+        { id: lockedUserId, email: `locked-${suffix}@test.local`, firstName: "Locked", lastName: "Biz", role: "MEMBER" },
       ],
     });
-    await prisma.business.create({ data: { id: businessId, name: "Vision Board Export Co" } });
+    await prisma.business.create({
+      data: { id: businessId, name: "Vision Board Export Co", builderAccessEligible: true },
+    });
+    // Preview-tier business: never attended/paid for a qualifying session,
+    // so builderAccessEligible stays false and the export should 403.
+    await prisma.business.create({
+      data: { id: lockedBusinessId, name: "Locked Preview Co" },
+    });
     await prisma.userBusinessMembership.create({ data: { userId, businessId } });
+    await prisma.userBusinessMembership.create({ data: { userId: lockedUserId, businessId: lockedBusinessId } });
     await prisma.visionBoardProfile.create({
       data: { businessId, vibes: "Ambitious, Passionate", accountabilityPartnerName: "Test Partner" },
+    });
+    // FULL-TIER GATE: this route now also requires an active Membership
+    // (see the audited access-tiering change) — ADMIN_GRANTED needs no
+    // Stripe subscription and never expires, so it's the simplest "full
+    // access" fixture for a test that isn't exercising billing itself.
+    await prisma.membership.create({
+      data: { businessId, status: "ADMIN_GRANTED", activatedAt: new Date() },
     });
 
     const created = generateApiToken();
@@ -55,14 +74,23 @@ describe("GET /api/gpt/vision-board (real DB)", () => {
     await prisma.personalAccessToken.create({
       data: { userId: noBusinessUserId, label: "Test", tokenHash: createdNoBiz.tokenHash },
     });
+
+    const createdLocked = generateApiToken();
+    lockedRawToken = createdLocked.token;
+    await prisma.personalAccessToken.create({
+      data: { userId: lockedUserId, label: "Test", tokenHash: createdLocked.tokenHash },
+    });
   });
 
   afterAll(async () => {
-    await prisma.personalAccessToken.deleteMany({ where: { userId: { in: [userId, noBusinessUserId] } } });
+    await prisma.personalAccessToken.deleteMany({
+      where: { userId: { in: [userId, noBusinessUserId, lockedUserId] } },
+    });
+    await prisma.membership.deleteMany({ where: { businessId } });
     await prisma.visionBoardProfile.deleteMany({ where: { businessId } });
-    await prisma.userBusinessMembership.deleteMany({ where: { userId } });
-    await prisma.business.delete({ where: { id: businessId } });
-    await prisma.user.deleteMany({ where: { id: { in: [userId, noBusinessUserId] } } });
+    await prisma.userBusinessMembership.deleteMany({ where: { userId: { in: [userId, lockedUserId] } } });
+    await prisma.business.deleteMany({ where: { id: { in: [businessId, lockedBusinessId] } } });
+    await prisma.user.deleteMany({ where: { id: { in: [userId, noBusinessUserId, lockedUserId] } } });
   });
 
   it("401s with no token", async () => {
@@ -90,6 +118,13 @@ describe("GET /api/gpt/vision-board (real DB)", () => {
   it("404s when the token's account has no business profile", async () => {
     const res = await callWithToken(noBusinessRawToken);
     expect(res.status).toBe(404);
+  });
+
+  it("403s when the business hasn't unlocked the full tier yet", async () => {
+    const res = await callWithToken(lockedRawToken);
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/qualifying Blueprint Session/);
   });
 
   it("401s once the token is revoked — not just until a restart", async () => {

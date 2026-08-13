@@ -1,9 +1,10 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PrintButton } from "@/components/shared/print-button";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import {
   WorksheetBanner,
   WorksheetChecklist,
@@ -15,6 +16,9 @@ import {
   WorksheetRatingRow,
   WorksheetStat,
 } from "@/components/blueprint/worksheet";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { getScorecardData } from "@/lib/blueprint/scorecard";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -27,8 +31,32 @@ export default async function ScorecardPage() {
   const membership = await prisma.userBusinessMembership.findFirst({
     where: { userId: user.id },
     orderBy: { createdAt: "asc" },
+    include: { business: { select: { builderAccessEligible: true } } },
   });
   if (!membership) notFound();
+
+  // FULL-TIER GATE (Vision Board & Blueprint Generator, audited
+  // 2026-08-13): "downloads... remain locked until a qualifying $150
+  // Blueprint Session is marked completed." Same builderAccessEligible +
+  // Membership check as every other Builder surface — see the identical
+  // gate on the Vision Board Profile page for the full reasoning.
+  if (!membership.business.builderAccessEligible) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="Your Scorecard unlocks after your Blueprint Session"
+        description="Complete your assessment and attend (and pay for) your recommended session to unlock your full Scorecard and downloads."
+        action={
+          <Button asChild size="sm">
+            <Link href="/sessions">View Available Sessions</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) return <MembershipLockedNotice />;
 
   const data = await getScorecardData(membership.businessId);
 

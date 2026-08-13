@@ -1,9 +1,11 @@
-import { BookOpen } from "lucide-react";
+import { BookOpen, Lock } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -35,6 +37,32 @@ export default async function VisionBoardProfilePage() {
       />
     );
   }
+
+  // FULL-TIER GATE (Vision Board & Blueprint Generator, audited
+  // 2026-08-13): "editing... remain[s] locked until a qualifying $150
+  // Blueprint Session is marked completed." Reuses the exact same
+  // builderAccessEligible + Membership check every other Builder surface
+  // (roadmap, My Blueprint, Build) already uses — builderAccessEligible
+  // itself now only flips true once that session is both attended AND
+  // paid (see src/lib/sessions/qualification.ts), so this one check
+  // already covers both "attended" and "paid," not just attendance.
+  if (!membership.business.builderAccessEligible) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="Your Vision Board unlocks after your Blueprint Session"
+        description="Complete your assessment and attend (and pay for) your recommended session to unlock full editing."
+        action={
+          <Button asChild size="sm">
+            <Link href="/sessions">View Available Sessions</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  const billingMembership = await getSyncedMembership(membership.businessId);
+  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
+  if (access.locked) return <MembershipLockedNotice />;
 
   const profile = membership.business.visionBoardProfile;
   const initial: VisionBoardProfileValues = {

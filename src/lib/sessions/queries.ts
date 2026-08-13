@@ -3,10 +3,11 @@ import "server-only";
 import type { RecommendedSessionType } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
-import { ensureSessionContentSeeded } from "./seed-content";
+import { ensureSessionContentSeeded, ensureSessionPricingBackfilled } from "./seed-content";
 
 export async function getUpcomingSessions(sessionType?: RecommendedSessionType) {
   await ensureSessionContentSeeded();
+  await ensureSessionPricingBackfilled();
   return prisma.sessionOffering.findMany({
     where: {
       status: "SCHEDULED",

@@ -65,17 +65,18 @@ model User {
   facilitatorNotesWritten FacilitatorNote[]       @relation("FacilitatorNoteAuthor")
 
   sessionRegistrations        SessionRegistration[]
-  sessionsFacilitated         SessionOffering[]     @relation("SessionFacilitator")
-  postSessionSummariesWritten PostSessionSummary[]  @relation("PostSessionSummaryAuthor")
+  sessionsFacilitated         SessionOffering[]       @relation("SessionFacilitator")
+  postSessionSummariesWritten PostSessionSummary[]    @relation("PostSessionSummaryAuthor")
   goals                       Goal[]
   notifications               Notification[]
   auditLogs                   AuditLog[]
   aiConversations             AiConversation[]
-  membershipsGranted          Membership[]          @relation("MembershipGrantedBy")
+  membershipsGranted          Membership[]            @relation("MembershipGrantedBy")
   weeklyCheckIns              WeeklyCheckIn[]
   aiPromptTemplatesUpdated    AiPromptTemplate[]
   supportRequests             SupportRequest[]
   personalAccessTokens        PersonalAccessToken[]
+  visionBoardGenerations      VisionBoardGeneration[]
 
   @@index([role])
 }
@@ -385,7 +386,8 @@ model Business {
 
   qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
 
-  visionBoardProfile VisionBoardProfile?
+  visionBoardProfile     VisionBoardProfile?
+  visionBoardGenerations VisionBoardGeneration[]
 
   @@index([status])
 }
@@ -407,6 +409,22 @@ model VisionBoardProfile {
 
   /// Free-form, comma- or newline-separated traits in the member's own words.
   vibes String? @db.Text
+
+  /// NARRATIVE SECTIONS (Vision Board & Blueprint Generator, audited
+  /// 2026-08-13) — "My Story," "My Why," and "Legacy" from the board's
+  /// fixed 12-section layout. Member-editable free text; can also be
+  /// pre-filled from a validated AI-generated VisionBoardGeneration, but
+  /// always stored here as the one live, editable copy.
+  myStory      String? @db.Text
+  myWhy        String? @db.Text
+  legacyImpact String? @db.Text
+
+  /// "Action Plan" section, split into the two cadences the reference
+  /// board shows ("This Week" / "This Month") — free text, not derived
+  /// from RoadmapTask, since a member's stated plan and their actual
+  /// task queue are related but not identical.
+  actionPlanThisWeek  String? @db.Text
+  actionPlanThisMonth String? @db.Text
 
   resourcesHave String? @db.Text
   resourcesNeed String? @db.Text
@@ -431,6 +449,34 @@ model VisionBoardProfile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// AI-GENERATED VISION BOARD CONTENT (Vision Board & Blueprint Generator,
+/// audited 2026-08-13): every AI generation attempt is stored — never
+/// just the winning one — as an audit trail and so a bad/rejected
+/// generation is diagnosable. `payload` is the *already zod-validated*
+/// structured JSON (never raw/unvalidated model output). `promotedAt`
+/// marks the one generation, if any, whose fields were actually copied
+/// into `VisionBoardProfile` — copied, not referenced live, so a member's
+/// later hand-edit is never silently overwritten by a stale generation.
+model VisionBoardGeneration {
+  id                String  @id @default(cuid())
+  businessId        String
+  assessmentId      String?
+  generatedByUserId String?
+
+  model   String
+  payload Json
+
+  promotedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assessment  Assessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  generatedBy User?       @relation(fields: [generatedByUserId], references: [id])
+
+  @@index([businessId])
+  @@index([assessmentId])
 }
 
 enum BusinessMembershipRole {
@@ -500,10 +546,11 @@ model Assessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  business       Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  responses      AssessmentResponse[]
-  scores         AssessmentScore[]
-  categoryScores AssessmentCategoryScore[]
+  business               Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses              AssessmentResponse[]
+  scores                 AssessmentScore[]
+  categoryScores         AssessmentCategoryScore[]
+  visionBoardGenerations VisionBoardGeneration[]
 
   @@index([businessId])
 }
@@ -732,6 +779,19 @@ model SessionRegistration {
 
   checkedInAt     DateTime?
   attendanceNotes String?   @db.Text
+
+  /// SESSION PAYMENT (Vision Board & Blueprint Generator, audited
+  /// 2026-08-13): the $150 qualifying-session charge. Deliberately
+  /// separate from `Membership`/`MembershipInvoice` — this is a one-time
+  /// charge tied to one registration, not a subscription. `paidAt` null
+  /// means "not required or not yet paid"; see
+  /// SessionOffering.priceCents for whether it's actually required.
+  /// Written only by the checkout.session.completed webhook handler
+  /// (src/lib/billing/webhook-handlers.ts), never by client input.
+  paidAt                  DateTime?
+  amountPaidCents         Int?
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

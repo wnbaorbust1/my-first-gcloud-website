@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 
 import type { MembershipModel } from "@/generated/prisma/models/Membership";
 import { prisma } from "@/lib/prisma";
+import { unlockBuilderAccessIfQualifying } from "@/lib/sessions/qualification";
 
 import { STRIPE_PRICE_IDS } from "./stripe";
 
@@ -140,6 +141,44 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   ]);
 }
 
+/**
+ * SESSION PAYMENT (Vision Board & Blueprint Generator, audited
+ * 2026-08-13): the $150 qualifying-session charge, created with
+ * `metadata.kind = "session_payment"` by
+ * src/lib/billing/session-checkout.ts. Writes directly onto the
+ * `SessionRegistration` this checkout was for — never guesses which
+ * registration by customer/email, only the registrationId stamped into
+ * metadata at checkout-creation time. `update` (not `upsert`) is
+ * deliberate: if the registration doesn't exist any more, that's a real
+ * inconsistency worth a thrown error and a Stripe retry, not a silent
+ * no-op.
+ */
+async function handleSessionPaymentCompleted(session: Stripe.Checkout.Session): Promise<void> {
+  const registrationId = session.metadata?.registrationId;
+  if (!registrationId) return;
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : (session.payment_intent?.id ?? null);
+
+  await prisma.sessionRegistration.update({
+    where: { id: registrationId },
+    data: {
+      paidAt: new Date(),
+      amountPaidCents: session.amount_total,
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: paymentIntentId,
+    },
+  });
+
+  // Covers the ordering where a facilitator already marked this
+  // registration ATTENDED/COMPLETED before payment cleared — the same
+  // unlock check src/lib/sessions/qualification.ts's markAttendance runs,
+  // just triggered by payment landing instead of attendance landing.
+  await unlockBuilderAccessIfQualifying(registrationId);
+}
+
 /** A new/updated card — the only Stripe event whose payload includes full card details inline, so this is the one place payment-method display fields get synced without an extra API round-trip. */
 async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod): Promise<void> {
   if (!paymentMethod.card) return;
@@ -158,13 +197,17 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod):
 }
 
 /**
- * Dispatches one already signature-verified Stripe event. `checkout.session.completed`
- * deliberately does *no* subscription-state work — `customer.subscription.created`
- * fires around the same time and carries the full subscription object
- * inline, so it (not an extra `subscriptions.retrieve` call from here) is
- * the single source of truth for status/plan/period, and it's exactly
- * the same handler a renewal or a Stripe-Portal-initiated cancellation
- * later uses too.
+ * Dispatches one already signature-verified Stripe event.
+ * `checkout.session.completed` fires for *both* the Membership
+ * subscription flow and the one-time session-payment flow — it's routed
+ * by `metadata.kind`, not by a second event type, because Stripe only
+ * sends one `checkout.session.completed` per Checkout Session regardless
+ * of mode. For a subscription Checkout it's still deliberately a no-op
+ * here: `customer.subscription.created` fires around the same time and
+ * carries the full subscription object inline, so it (not an extra
+ * `subscriptions.retrieve` call from here) stays the single source of
+ * truth for status/plan/period — exactly the same handler a renewal or a
+ * Stripe-Portal-initiated cancellation later uses too.
  */
 export async function handleStripeWebhookEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
@@ -184,6 +227,13 @@ export async function handleStripeWebhookEvent(event: Stripe.Event): Promise<voi
     case "payment_method.attached":
       await handlePaymentMethodAttached(event.data.object as Stripe.PaymentMethod);
       break;
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.kind === "session_payment") {
+        await handleSessionPaymentCompleted(session);
+      }
+      break;
+    }
     default:
       // Unhandled event types are a normal, expected no-op — Stripe
       // sends far more event types than this integration needs to act on.

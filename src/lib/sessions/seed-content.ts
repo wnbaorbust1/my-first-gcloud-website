@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { RecommendedSessionType } from "@/generated/prisma/enums";
+import { QUALIFYING_SESSION_PRICE_CENTS } from "@/lib/billing/pricing";
 import { prisma } from "@/lib/prisma";
 
 interface SessionOfferingSeed {
@@ -132,10 +133,27 @@ export async function ensureSessionContentSeeded(): Promise<void> {
         timezone: "America/New_York",
         virtualLink: "https://meet.example.com/blueprint-session",
         capacity: template.capacity,
-        priceCents: null,
+        priceCents: QUALIFYING_SESSION_PRICE_CENTS,
       };
     }),
   );
 
   await prisma.sessionOffering.createMany({ data: rows });
+}
+
+/**
+ * BACKFILL (Vision Board & Blueprint Generator, audited 2026-08-13): the
+ * original seed created every session with `priceCents: null` — this
+ * environment's `SessionOffering` rows already existed before the $150
+ * qualifying-session requirement, so the fresh-seed path above alone
+ * won't price them. Idempotent, same lazy-backfill pattern as
+ * `syncMembershipIfStale` — a no-op once every row has a price. Never
+ * touches a session someone already deliberately priced (only rows still
+ * at the `null` default).
+ */
+export async function ensureSessionPricingBackfilled(): Promise<void> {
+  await prisma.sessionOffering.updateMany({
+    where: { priceCents: null },
+    data: { priceCents: QUALIFYING_SESSION_PRICE_CENTS },
+  });
 }

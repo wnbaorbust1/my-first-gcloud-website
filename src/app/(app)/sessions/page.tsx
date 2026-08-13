@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StageBadge } from "@/components/ui/stage-badge";
 import { sessionLabelFor } from "@/lib/assessment/scoring";
+import { formatCents } from "@/lib/money";
 import { getSeatsRemaining, getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -94,6 +95,11 @@ export default async function SessionsPage() {
                 · {seatsRemaining} seat{seatsRemaining === 1 ? "" : "s"} left
               </span>
             )}
+            {session.priceCents !== null && session.priceCents > 0 && (
+              <span className="font-medium text-navy-600">
+                · {formatCents(session.priceCents)} qualifying session
+              </span>
+            )}
           </p>
         </div>
         <div className="w-full sm:w-48">
@@ -102,6 +108,8 @@ export default async function SessionsPage() {
               registrationId={registration.id}
               status={registration.status as "REGISTERED" | "WAITLISTED"}
               waitlistPosition={registration.waitlistPosition}
+              priceCents={session.priceCents}
+              paidAt={registration.paidAt?.toISOString() ?? null}
             />
           ) : (
             <RegisterButton sessionId={session.id} hasRoom={hasRoom} size="sm" />
