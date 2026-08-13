@@ -19,7 +19,7 @@ import {
   WorksheetRoadmap,
   WorksheetStat,
 } from "@/components/blueprint/worksheet";
-import { PrintButton } from "@/components/shared/print-button";
+import { VisionBoardCapture } from "@/components/blueprint/vision-board-capture";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { resolveBlueprintAccess } from "@/lib/blueprint/access";
@@ -27,7 +27,7 @@ import { getVisionBoardExport, getVisionBoardSectionSources } from "@/lib/bluepr
 import { GOAL_TYPE_LABELS } from "@/lib/goals/meta";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import type { Stage } from "@/lib/utils";
+import { slugify, type Stage } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My Vision Board — My Blueprint" };
 
@@ -230,7 +230,7 @@ export default async function VisionBoardPage() {
           fine as portrait. */}
       <style>{"@media print { @page { size: landscape; margin: 0.4in; } }"}</style>
 
-      <div className="no-print mb-6 flex items-center justify-between">
+      <div className="no-print mb-6">
         <Link
           href="/my-blueprint"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-navy-500 hover:text-navy-800"
@@ -238,9 +238,12 @@ export default async function VisionBoardPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to My Blueprint
         </Link>
-        <PrintButton logDownload={{ businessId: membership.businessId, document: "vision_board" }} />
       </div>
 
+      <VisionBoardCapture
+        businessId={membership.businessId}
+        fileBaseName={`${slugify(data.business.name)}-vision-board`}
+      >
       <div className="print-page print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <WorksheetPage>
           <WorksheetHeader
@@ -554,6 +557,7 @@ export default async function VisionBoardPage() {
           <WorksheetBanner businessName={data.business.name} />
         </WorksheetPage>
       </div>
+      </VisionBoardCapture>
     </div>
   );
 }

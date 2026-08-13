@@ -62,4 +62,5 @@ export const RATE_LIMITS = {
   API_TOKEN_CREATE: { limit: 10, windowMs: HOUR },
   GPT_EXPORT: { limit: 60, windowMs: HOUR },
   VISION_BOARD_GENERATE: { limit: 10, windowMs: HOUR },
+  VISION_BOARD_EMAIL: { limit: 10, windowMs: HOUR },
 } as const;

@@ -8,12 +8,14 @@ import { logBoardDownloadSchema } from "@/lib/validations/board-download";
 /**
  * DOWNLOAD HISTORY (Vision Board & Blueprint Generator, structured-storage
  * follow-up, audited 2026-08-13): one row per time a member (or an admin
- * viewing on their behalf) actually downloads/prints the rendered Vision
- * Board or Scorecard — written by the print pages' PrintButton right
- * before it calls `window.print()`. A page *view* isn't a *download*, so
- * this is only ever called from that explicit action, never on render.
- * Fire-and-forget from the client — a logging failure must never block
- * the member from getting their PDF.
+ * viewing on their behalf) actually downloads/prints/emails the rendered
+ * Vision Board or Scorecard — written by PrintButton or (Phase 6:
+ * Downloads) BoardDownloadToolbar right before the corresponding action
+ * fires (`window.print()`, a client-generated PDF/PNG save, or an email
+ * send). A page *view* isn't a *download*, so this is only ever called
+ * from an explicit action, never on render. Fire-and-forget from the
+ * client — a logging failure must never block the member from actually
+ * getting their file.
  */
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -38,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   const download = await prisma.boardDownload.create({
-    data: { businessId: input.businessId, userId: user.id, document: input.document },
+    data: { businessId: input.businessId, userId: user.id, document: input.document, format: input.format },
   });
 
   return NextResponse.json({ download });

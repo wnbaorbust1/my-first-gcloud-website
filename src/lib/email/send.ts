@@ -14,11 +14,20 @@ import "server-only";
  * server-side instead of sent, exactly like every other unconfigured
  * integration in this codebase.
  */
+export interface EmailAttachment {
+  /** File name as it will appear in the recipient's inbox, e.g. "vision-board.pdf". */
+  filename: string;
+  /** Base64-encoded file content — Resend's attachment format. */
+  content: string;
+}
+
 export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  /** Phase 6: Downloads — "Email My Blueprint" attaches the member's PDF. */
+  attachments?: EmailAttachment[];
 }
 
 export type SendEmailResult = { sent: true } | { sent: false; reason: string };
@@ -46,6 +55,7 @@ export async function sendEmail(message: EmailMessage): Promise<SendEmailResult>
         subject: message.subject,
         text: message.text,
         html: message.html ?? `<p>${message.text}</p>`,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       }),
     });
 

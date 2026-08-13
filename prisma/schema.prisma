@@ -79,6 +79,7 @@ model User {
   visionBoardGenerations      VisionBoardGeneration[]
   boardDownloads              BoardDownload[]
   visionBoardProfileEdits     VisionBoardProfile[]    @relation("VisionBoardProfileLastEditedBy")
+  visionBoardVersionsSaved    VisionBoardVersion[]
 
   @@index([role])
 }
@@ -400,6 +401,7 @@ model Business {
   visionBoardProfile     VisionBoardProfile?
   visionBoardGenerations VisionBoardGeneration[]
   boardDownloads         BoardDownload[]
+  visionBoardVersions    VisionBoardVersion[]
 
   @@index([status])
 }
@@ -495,11 +497,11 @@ model BoardDownload {
   id         String  @id @default(cuid())
   businessId String
   userId     String?
-  /// What was downloaded — "vision_board" | "scorecard" — and how —
-  /// "print" (browser print/Save-as-PDF, the only mechanism this app
-  /// actually offers today, per the "no PDF library" decision in
-  /// BUILD_STATUS.md's Important Decisions).
+  /// What was downloaded — "vision_board" | "scorecard".
   document   String
+  /// How — "print" (browser Print/Save-as-PDF), or (Phase 6: Downloads)
+  /// "pdf" / "png" (client-rendered from the completed HTML board via
+  /// html2canvas + jsPDF) / "email" (same PDF, sent as an attachment).
   format     String  @default("print")
 
   downloadedAt DateTime @default(now())
@@ -509,6 +511,32 @@ model BoardDownload {
 
   @@index([businessId])
   @@index([userId])
+}
+
+/// SAVE NEW VERSION (Phase 6: Downloads) — an explicit, member-triggered
+/// checkpoint of the whole assembled board (the same shape
+/// `getVisionBoardExport()` returns/renders), distinct from
+/// `VisionBoardProfile.version`'s silent per-edit counter. That counter
+/// answers "has this changed since I last looked"; this table answers
+/// "what did my board actually say on the day I saved it" — a real,
+/// inspectable snapshot rather than a number that can't be looked back
+/// at once overwritten by later edits.
+model VisionBoardVersion {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// 1, 2, 3... per business — the Nth snapshot ever saved for it.
+  version Int
+  /// The full getVisionBoardExport() shape at save time.
+  snapshot Json
+
+  createdByUserId String?
+  createdBy       User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([businessId, version])
+  @@index([businessId])
 }
 
 /// AI-GENERATED VISION BOARD CONTENT (Vision Board & Blueprint Generator,

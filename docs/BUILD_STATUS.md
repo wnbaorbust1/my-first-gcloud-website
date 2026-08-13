@@ -2986,3 +2986,112 @@ with the Phase 4 roadmap centerpiece and the Print/Save button; and
 `expired` shows the crisp read-only scores/stage summary with a
 "Billing & Reactivation" button and no editing or download affordance
 anywhere on the page.
+
+## PHASE 6 — Downloads (complete)
+
+The directive: add Download as PDF, Download as PNG, Print My Vision
+Board, Email My Blueprint, and Save New Version — "PDF should be the
+most reliable primary download. PNG should be generated from the
+completed HTML board."
+
+This directly revisits a documented prior decision ("Print, not a PDF
+library" — see Important Decisions: "Revisit only if a requirement
+appears for a document to exist as a file server-side, e.g. to email or
+archive"). That requirement now exists twice over: Email needs a real
+file to attach, and "most reliable primary download" asks for a
+one-click file every time, not "hope the member finds Save-as-PDF in
+their OS print dialog." The original `window.print()` path is kept
+exactly as-is for "Print My Vision Board," it just now sits alongside
+four new real actions.
+
+**1. PDF + PNG, both from the same captured canvas** — new
+`BoardDownloadToolbar` (`src/components/blueprint/board-download-toolbar.tsx`,
+client component) captures the real rendered board with `html2canvas`
+against a DOM ref (`VisionBoardCapture`, a thin client wrapper that
+passes the server-rendered `WorksheetPage` JSX through as `children`
+untouched) — never a separately maintained template, so what downloads
+can never visually drift from what's on screen. PNG downloads that
+canvas directly (lossless, `canvas.toBlob`); PDF drops the same canvas
+into a same-size single-page `jsPDF` document and triggers a real client-
+side file save — a real `.pdf`/`.png` file every time, with no server
+round-trip and no OS print-dialog step, which is what makes it "the
+reliable, one-click primary" the directive asked for. Both dynamic-
+`import()`ed so `html2canvas`/`jsPDF` (the only two new dependencies this
+phase adds) never bloat the initial page bundle.
+
+**2. A real file-size finding, caught by actually inspecting the
+output, not just "it downloaded something":** the board's own dotted
+background texture (`WorksheetPage`'s `radial-gradient` pattern —
+Phase 4's Worksheet visual system) is exactly the kind of dense,
+repeating detail that makes a naive full-quality PNG capture huge — an
+initial `scale: 2` PNG-embedded PDF came out to 18.8MB for one board.
+Switched the PDF's embedded image to JPEG at quality 0.92 and the
+capture scale to 1.5 (still crisp for on-screen/print use): the same
+board's PDF dropped to ~390KB, comfortably under the email attachment
+cap. PNG (which stays lossless, since a member downloading a PNG
+presumably wants the lossless option) came down to ~530KB from the
+scale change alone. Verified by instrumenting `URL.createObjectURL` in
+a live Playwright session to inspect the actual generated `Blob`'s
+size/type/content directly — headless Chromium's native download-event
+plumbing turned out not to fire reliably for blob-URL downloads in this
+sandbox, so this was the way to actually confirm real bytes were
+produced, and the saved PDF/PNG were then visually inspected and
+matched the on-screen board exactly.
+
+**3. Email My Blueprint** — `POST /api/blueprint/vision-board/email`:
+the client generates the same PDF client-side and posts the base64
+bytes; the server attaches it (new `EmailAttachment`/`attachments` field
+on `sendEmail`, `src/lib/email/send.ts` — Resend's REST API already
+supports base64 attachments, so this was additive, not a rewrite) and
+sends it to *the authenticated member's own account email only* — never
+an address from the request body, since this is a delivery convenience
+for content the member already has full access to, not a mail-relay.
+Full-tier gated (`resolveBlueprintAccess` must be `"full"`), rate-limited
+(`VISION_BOARD_EMAIL: 10/hour`), and degrades exactly like every other
+unconfigured integration in this app (Stripe, Blueprint AI) when
+`RESEND_API_KEY` isn't set — a friendly 502 ("Email delivery isn't
+available right now. Try downloading your Vision Board instead."), never
+a crash.
+
+**4. Save New Version** — new `VisionBoardVersion` model, a real,
+inspectable snapshot of the whole assembled board
+(`getVisionBoardExport()`'s exact shape) per explicit save, numbered
+1, 2, 3... per business. Deliberately distinct from
+`VisionBoardProfile.version`'s existing silent per-edit counter: that
+counter answers "has this changed since I last looked" and was never
+meant to be a lookback tool; this is a real checkpoint a member asked to
+keep, inspectable later (not just a number). `POST/GET
+/api/blueprint/vision-board/versions`, full-tier gated the same way.
+The toolbar shows a live, expandable "Version History" list (version
+number, real timestamp, real saver name) that refreshes after every
+save — a "Save" button nobody can ever see the result of isn't a real
+feature.
+
+**5. All five actions log a real `BoardDownload` row** (`format`:
+`"print" | "pdf" | "png" | "email"` — the model's `format` column
+already existed with exactly this shape in mind, just unused until now;
+`logBoardDownloadSchema` gained the field, defaulting to `"print"` for
+the untouched `PrintButton` call sites on Scorecard/Documents/Impact
+Report, which this phase deliberately left alone — "Print My Vision
+Board" is the only action from this directive that isn't specific to
+the Vision Board's own toolbar, and it already worked).
+
+**6. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (58 — 14 new: 5 for the email route covering
+auth/full-tier-gating/successful-send/graceful-`sent:false`-handling/
+oversized-payload-rejection with the Resend call mocked, 4 for the
+versions route covering auth/gating/incrementing version numbers/real
+snapshot content/newest-first listing against real Postgres rows, plus
+extended the existing download-logging test for the new `format` field),
+and a production build (`next build --webpack`, same pre-existing
+Turbopack/Google-Fonts sandbox quirk as Phase 5, unrelated to this
+phase's code) all pass. Live-verified end-to-end with Playwright against
+a freshly seeded full-access business: clicked all five buttons for
+real, confirmed real ~390KB PDF and ~530KB PNG blobs matching the
+on-screen board exactly (inspected visually), confirmed two real
+`VisionBoardVersion` rows saved and listed with correct version numbers/
+timestamps, confirmed the graceful "Email delivery isn't available right
+now" message with no `RESEND_API_KEY` configured, confirmed
+`window.print()` fires without error, and queried Postgres directly to
+confirm one real `BoardDownload` row per action with the correct
+`format`.

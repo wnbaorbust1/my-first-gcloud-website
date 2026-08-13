@@ -6,6 +6,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** A safe, lowercase-hyphenated filename fragment — e.g. for downloaded PDFs/PNGs (Phase 6: Downloads). */
+export function slugify(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "blueprint"
+  );
+}
+
 /** The three Blueprint stages, in journey order. */
 export const STAGES = ["PASSION", "POWER", "LEGACY"] as const;
 export type Stage = (typeof STAGES)[number];

@@ -66,6 +66,13 @@ describe("POST /api/blueprint/board-downloads (real DB)", () => {
     expect(count).toBe(1);
   });
 
+  it("logs the real format when one is passed (Phase 6: Downloads)", async () => {
+    const res = await callLog({ businessId, document: "vision_board", format: "pdf" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.download.format).toBe("pdf");
+  });
+
   it("404s for a business the user has no membership on", async () => {
     const res = await callLog({ businessId: otherBusinessId, document: "scorecard" });
     expect(res.status).toBe(404);
