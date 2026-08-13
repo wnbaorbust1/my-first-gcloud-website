@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-13 — Personalized Vision Board & Blueprint Generator: pre-implementation audit_
+_Last updated: 2026-08-13 — Personalized Vision Board & Blueprint Generator: implementation complete_
 
 ## COMPLETE
 
@@ -2553,3 +2553,102 @@ generation + validation, template completion for the 4 partial sections,
 gated downloads, then the standard verify-and-document pass. Per explicit
 instruction, **implementation has not started** and should not begin
 until separately approved.
+
+---
+
+## IMPLEMENTATION — Personalized Vision Board & Blueprint Generator (complete)
+
+**Date:** 2026-08-13. User approved the audit above ("ok move forward")
+and the full 7-step phased plan was built, verified, and deployed in one
+continuous pass. Every acceptance criterion in the audit's §14 is met.
+
+**1. Schema** (`prisma migrate dev` — `vision_board_generator_payment_and_narrative_fields`):
+- `SessionRegistration`: `paidAt`, `amountPaidCents`, `stripeCheckoutSessionId`,
+  `stripePaymentIntentId` — written only by the payment webhook.
+- `VisionBoardProfile`: `myStory`, `myWhy`, `legacyImpact`,
+  `actionPlanThisWeek`, `actionPlanThisMonth` (all `@db.Text`, all optional).
+- New `VisionBoardGeneration` model — stores every AI draft (`payload`
+  Json, validated before it's ever written) with `promotedAt` marking
+  whether/when a member accepted it into their real profile.
+
+**2. Qualifying-session payment:**
+- `QUALIFYING_SESSION_PRICE_CENTS = 15000` in `src/lib/billing/pricing.ts`;
+  backfilled onto every existing `SessionOffering` via an idempotent
+  `ensureSessionPricingBackfilled()`.
+- Real Stripe Checkout (`mode: "payment"`) at
+  `POST /api/sessions/registrations/[id]/checkout`; the
+  `checkout.session.completed` webhook now routes by
+  `metadata.kind` to either the existing subscription handler or the new
+  `handleSessionPaymentCompleted` — same signature-verified,
+  idempotency-table-protected webhook endpoint as Phase 8, no new
+  webhook route.
+- `RegistrationStatus` shows a "Pay $150 to Confirm" button once
+  registered, "✓ Paid $150" once paid.
+
+**3. Payment-gated qualification:**
+- `unlockBuilderAccessIfQualifying()` (`src/lib/sessions/qualification.ts`)
+  is the single shared check called from both `markAttendance` (facilitator
+  marks attendance) and the payment webhook (member pays) — whichever
+  event lands second is what actually flips `Business.builderAccessEligible`.
+  Attendance status itself is always recorded honestly regardless of
+  payment state; only the *qualifying* determination waits on payment for
+  sessions with a `priceCents`.
+
+**4. Access tiering (preview vs. full):**
+- Preview tier (free, unlocks at assessment completion): Assessment
+  Results — unchanged, plus a new locked teaser panel advertising the
+  full Vision Board.
+- Full tier (needs `builderAccessEligible` + an active `Membership`, the
+  same `getBuilderAccessState()` every other Builder surface already
+  used): Vision Board Profile editing, the full Vision Board render, the
+  print Scorecard, and the GPT export API.
+
+**5. AI structured-JSON generation:**
+- `POST /api/blueprint/vision-board/generate` — grounds a Claude call in
+  the business's real context (`assembleAiContext`, the same assembly
+  Blueprint AI chat uses), demands a single JSON object back, and
+  zod-validates it before it's ever stored. Anything that fails
+  validation or parsing is discarded (502), never reaches a profile.
+- `POST /api/blueprint/vision-board/generate/[id]/promote` — the only
+  path a drafted field can take into the real `VisionBoardProfile`; a
+  field the model returned `null` for is skipped, never overwrites real
+  content with nothing.
+- The Vision Board Profile form's "AI Draft Assist" button calls
+  `generate` directly and drops results into the form's *unsaved* local
+  state — the member reviews/edits and hits the existing Save button,
+  so `promote` stays available as a standalone API without needing a
+  second round-trip in this particular UI.
+
+**6. The board itself:**
+- `/my-blueprint/vision-board/view` — the rendering constraint's actual
+  deliverable: a fixed, responsive HTML/CSS template (the existing
+  Worksheet system), never an AI-generated image. All twelve required
+  sections render from `getVisionBoardExport()`, so this page and the
+  GPT export JSON can never drift apart. The 90-Day Goal Tracker needed
+  no new field — `GoalCadence.NINETY_DAY` already existed — just the
+  filtered query.
+
+**7. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (35, including new coverage for the payment
+gate, the full-tier gate, and the generate/promote round trip), and a
+production `next build` all pass. Live-verified with Playwright against
+a real seeded account and a real `ANTHROPIC_API_KEY`: the full board
+renders correctly with real data and honest empty states, and AI Draft
+Assist produced genuinely grounded (non-fabricated) content. That live
+pass caught and fixed one real bug (not present in the final code): the
+draft-assist notice text initially read an outer array mutated as a side
+effect inside a `setValues()` updater, which React doesn't guarantee
+runs synchronously — the drafted fields still applied correctly, but the
+notice could say "nothing changed" when something had. Fixed by
+computing that list from the response directly, before calling
+`setValues`.
+
+**What's genuinely still open, not blocking this feature:**
+- `STRIPE_WEBHOOK_SECRET` for the $150 session Checkout is the same
+  production-secret gap Phase 8 already flagged for the subscription
+  webhook — one webhook endpoint, one secret, already tracked above.
+- No admin-facing full-board *viewer* (admins have full edit access via
+  the existing Vision Board Profile editor at
+  `/admin/businesses/[businessId]/vision-board`, just not a read-only
+  rendered board) — not required by the spec, which only mandates the
+  member-facing board.
