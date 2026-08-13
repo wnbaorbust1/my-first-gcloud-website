@@ -4,11 +4,13 @@ import { notFound, redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
+  WorksheetAppointmentCard,
   WorksheetBanner,
   WorksheetChecklist,
   WorksheetChecklistItem,
   WorksheetGrid,
   WorksheetHeader,
+  WorksheetLockedTeaser,
   WorksheetPage,
   WorksheetPanel,
   WorksheetRatingRow,
@@ -16,7 +18,7 @@ import {
 } from "@/components/blueprint/worksheet";
 import { CATEGORY_CONTENT } from "@/lib/assessment/seed-content";
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
-import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { resolveBlueprintAccess } from "@/lib/blueprint/access";
 import { prisma } from "@/lib/prisma";
 import { assertBusinessAccess, requireUser } from "@/lib/session";
 import { STAGES, STAGE_META, type Stage } from "@/lib/utils";
@@ -76,14 +78,16 @@ export default async function AssessmentResultsPage({
     .filter(Boolean)
     .join(" · ");
 
-  // PREVIEW TIER (Vision Board & Blueprint Generator, audited 2026-08-13):
-  // this page itself is the free preview — every panel above stays fully
-  // visible the moment the assessment completes, no payment required. The
-  // only thing gated is the teaser below, advertising the FULL Vision
-  // Board/Builder tier that unlocks once the qualifying session is
-  // attended and paid.
-  const billingMembership = await getSyncedMembership(assessment.businessId);
-  const access = getBuilderAccessState(assessment.business.builderAccessEligible, billingMembership);
+  // ACCESS LADDER (Phase 5: Locking and Unlocking): this page itself is
+  // the free "Assessment completed" preview — every panel above stays
+  // fully visible the moment the assessment completes, no payment
+  // required. The teaser below reflects exactly where this member sits
+  // on the ladder: still deciding (preview), booked (preview +
+  // appointment details), or previously full but now lapsed (expired,
+  // renewal CTA instead of a booking one). Nothing shown here when the
+  // member already has full access — they'd see the real board, not a
+  // teaser of it.
+  const accessInfo = await resolveBlueprintAccess(user.id, assessment.businessId);
 
   return (
     <WorksheetPage>
@@ -183,24 +187,55 @@ export default async function AssessmentResultsPage({
             </Button>
           </WorksheetPanel>
         )}
-        {access.locked && (
-          <WorksheetPanel
-            number={7}
-            title="Your Full Vision Board"
-            icon="🔒"
-            span="full"
-            className="border-navy-200 bg-navy-50"
-          >
-            <p className="text-sm sm:text-base">
-              This preview is just the start. Attend (and pay for) your recommended Blueprint
-              Session to unlock your full Vision Board — My Story, My Why, My Blueprint, My
-              Resources, Action Plan, Legacy, Accountability, My Big Goals, the Business Model
-              Canvas, your 90-Day Goal Tracker, and Daily Affirmations — plus editing, downloads,
-              and your full Builder dashboard.
-            </p>
-            <Button asChild size="lg" className="mt-4">
-              <Link href="/sessions">View Available Sessions</Link>
-            </Button>
+        {accessInfo.state === "preview_booked" && accessInfo.appointment && (
+          <WorksheetPanel number={7} title="My Appointment" icon="📅" className="border-gold-300 bg-gold-50">
+            <WorksheetAppointmentCard
+              statusLabel={accessInfo.appointment.status === "WAITLISTED" ? "Waitlisted" : "Registered"}
+              title={accessInfo.appointment.sessionTitle}
+              dateLabel={accessInfo.appointment.startsAt.toLocaleString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+              formatLabel={accessInfo.appointment.format === "VIRTUAL" ? "Virtual" : "In Person"}
+              locationLabel={
+                accessInfo.appointment.format === "IN_PERSON"
+                  ? (accessInfo.appointment.location ?? undefined)
+                  : undefined
+              }
+            />
+          </WorksheetPanel>
+        )}
+        {(accessInfo.state === "preview" || accessInfo.state === "preview_booked") && (
+          <WorksheetPanel number={8} title="Your Full Vision Board" icon="🔒" span="full">
+            <WorksheetLockedTeaser
+              message={
+                accessInfo.state === "preview_booked"
+                  ? "You're booked! Your full board — My Story, My Why, Action Plan, Legacy, and more — unlocks the moment your session is marked complete."
+                  : "Attend (and pay for) your recommended Blueprint Session to unlock your full Vision Board — My Story, My Why, Action Plan, Legacy, editing, downloads, and your full Builder dashboard."
+              }
+              cta={
+                accessInfo.state === "preview" ? (
+                  <Button asChild size="lg">
+                    <Link href="/sessions">View Available Sessions</Link>
+                  </Button>
+                ) : undefined
+              }
+            />
+          </WorksheetPanel>
+        )}
+        {accessInfo.state === "expired" && (
+          <WorksheetPanel number={8} title="Your Blueprint Is Saved" icon="🔒" span="full">
+            <WorksheetLockedTeaser
+              message="Your Builder access has ended, but nothing you built is gone. Reactivate to see your full Vision Board again."
+              cta={
+                <Button asChild size="lg" variant="gold">
+                  <Link href="/billing">Billing &amp; Reactivation</Link>
+                </Button>
+              }
+            />
           </WorksheetPanel>
         )}
       </WorksheetGrid>

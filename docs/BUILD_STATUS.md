@@ -2907,3 +2907,82 @@ orientations, and print-media emulation confirms the app chrome
 (`no-print`) is stripped while panel colors/borders survive
 `print-color-adjust: exact`. The generated landscape PDF's `MediaBox`
 was inspected directly to confirm the `@page` rule takes effect.
+
+## PHASE 5 — Locking and Unlocking (complete)
+
+The directive specified a seven-row access table (assessment not
+completed / completed / session booked / session completed / free
+month active / paid subscription active / subscription expired) and
+required that only an authorized facilitator or a verified attendance
+process can mark a session complete.
+
+**1. Authorization audit (no code change needed, verified):** grepped
+every write of `builderAccessEligible`/session-attendance status
+site-wide. There is exactly one writer,
+`markAttendance`/`unlockBuilderAccessIfQualifying`
+(`src/lib/sessions/qualification.ts`), reached from exactly two
+callers: the attendance API route
+(`src/app/api/sessions/registrations/[id]/attendance/route.ts`), which
+requires `STAFF_ROLES` (Facilitator/Implementation Specialist/Admin/
+Super Admin) *and* `assertBusinessAccess` (the facilitator must
+actually be assigned to that business); and the Stripe session-payment
+webhook (`src/lib/billing/webhook-handlers.ts`), a signature-verified
+server-to-server "verified attendance process." No member-facing route
+can flip either field. This already fully satisfied the requirement —
+documented here rather than re-implemented.
+
+**2. New single source of truth for the access ladder** —
+`resolveBlueprintAccess()` (`src/lib/blueprint/access.ts`), returning
+one of `assessment_only | preview | preview_booked | full | expired`
+plus real appointment details when booked. Every branch reads a real
+`Assessment`/`Business`/`Membership`/`SessionRegistration` row — session
+completed, a free trial, and a paid subscription all collapse to the
+same real `full` state (`getBuilderAccessState` already treats them
+identically), matching the table's "Complete dashboard" for all three.
+The dashboard (`src/lib/dashboard/data.ts`) already computed its own
+richer version of this same ladder from a previous phase and was left
+alone; this resolver is for the two board-facing surfaces that weren't
+already correct.
+
+**3. Blurred/limited board preview + appointment details** — two new
+Worksheet primitives (`WorksheetLockedTeaser`, `WorksheetAppointmentCard`
+in `src/components/blueprint/worksheet.tsx`). The teaser renders
+literal ghost/placeholder bars behind a lock overlay — never real (or
+invented) section content, since there's honestly nothing there yet
+pre-unlock. Wired into both `/assessment/results/[assessmentId]`
+(alongside the existing always-visible scores/stage/strengths/summary
+panels — replacing the old text-only teaser) and
+`/my-blueprint/vision-board/view` (replacing the old flat "locked"
+`EmptyState` with a real preview board: crisp real scores + stage,
+the appointment card when booked, and the same locked teaser).
+
+**4. Read-only expired summary** — the Vision Board view page's old
+full-page `MembershipLockedNotice` lockout is now a real read-only
+board: business name, real Passion/Power/Legacy scores, and Blueprint
+Stage, with a "Billing & Reactivation" CTA — no editing UI, no
+download button, matching the table's "Read-only summary with renewal
+option" (the same treatment the dashboard already gave the "expired"
+state in an earlier phase).
+
+**5. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (48 — 5 new tests in
+`src/lib/blueprint/access.integration.test.ts` exercising every
+resolver branch against a real Postgres row: assessment_only → preview
+→ preview_booked with real appointment details → full once
+`builderAccessEligible` flips and a fresh membership grants access →
+expired once that membership's trial lapses), and a production build
+all pass (`next build --webpack`; plain `next build` currently fails
+in this sandbox on a Turbopack Google-Fonts module-resolution error
+that reproduces identically on the unmodified base commit — a
+pre-existing environment quirk, not a regression from this phase).
+Live-verified with Playwright by seeding one business through all five
+states in turn and screenshotting the Assessment Results, Vision Board,
+and dashboard pages at each: `assessment_only` shows the "complete your
+assessment" prompt with no preview; `preview` shows real 88/52/40%
+scores, "My Blueprint Stage," and the blurred teaser; `preview_booked`
+adds a real "Registered · Blueprint Power Session · Aug 18, 2026 ·
+Virtual" appointment card; `full` renders the entire 12-panel board
+with the Phase 4 roadmap centerpiece and the Print/Save button; and
+`expired` shows the crisp read-only scores/stage summary with a
+"Billing & Reactivation" button and no editing or download affordance
+anywhere on the page.

@@ -319,6 +319,79 @@ export function WorksheetStat({
   );
 }
 
+const LOCKED_TEASER_SECTIONS = [
+  { icon: "📖", label: "My Story" },
+  { icon: "💗", label: "My Why" },
+  { icon: "🗺️", label: "Action Plan" },
+  { icon: "👑", label: "Legacy" },
+];
+
+/**
+ * BLURRED/LIMITED BOARD PREVIEW (Phase 5: Locking and Unlocking —
+ * "Assessment completed: ... blurred/limited board preview"; "Session
+ * booked: preview plus appointment details"). Shown in place of the real
+ * board sections before a qualifying session is completed. Deliberately
+ * renders ghost/placeholder bars, never real (or invented) board
+ * content — the member hasn't unlocked those sections yet, so there's
+ * nothing true to show there anyway; this communicates the board's real
+ * shape without faking its content.
+ */
+export function WorksheetLockedTeaser({ message, cta }: { message: string; cta?: ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border-2 border-legacy-200 bg-surface p-4 sm:p-5">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none grid select-none grid-cols-1 gap-3 opacity-60 blur-[3px] sm:grid-cols-2"
+      >
+        {LOCKED_TEASER_SECTIONS.map((s) => (
+          <div key={s.label} className="rounded-2xl border-2 border-legacy-100 bg-cream-50 p-3">
+            <p className="font-hand text-sm font-bold uppercase tracking-wide text-legacy-700">
+              {s.icon} {s.label}
+            </p>
+            <div className="mt-2 h-2.5 w-5/6 rounded-full bg-navy-100" />
+            <div className="mt-1.5 h-2.5 w-2/3 rounded-full bg-navy-100" />
+            <div className="mt-1.5 h-2.5 w-4/5 rounded-full bg-navy-100" />
+          </div>
+        ))}
+      </div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface/80 px-6 text-center">
+        <span aria-hidden="true" className="text-3xl">
+          🔒
+        </span>
+        <p className="max-w-sm font-hand text-sm font-bold text-navy-800 sm:text-base">{message}</p>
+        {cta}
+      </div>
+    </div>
+  );
+}
+
+/** Real, non-invented appointment details for a booked-but-not-yet-completed session (Phase 5). */
+export function WorksheetAppointmentCard({
+  statusLabel,
+  title,
+  dateLabel,
+  formatLabel,
+  locationLabel,
+}: {
+  statusLabel: string;
+  title: string;
+  dateLabel: string;
+  formatLabel: string;
+  locationLabel?: string;
+}) {
+  return (
+    <div className="rounded-2xl border-2 border-gold-300 bg-gold-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-gold-700">{statusLabel}</p>
+      <p className="mt-1 font-hand text-lg font-bold text-legacy-700">{title}</p>
+      <p className="mt-1 text-sm text-navy-700">{dateLabel}</p>
+      <p className="text-sm text-navy-700">
+        {formatLabel}
+        {locationLabel ? ` · ${locationLabel}` : ""}
+      </p>
+    </div>
+  );
+}
+
 /** Closing dark banner — the reference's bottom black band with the org's tagline. */
 export function WorksheetBanner({ businessName }: { businessName: string }) {
   return (

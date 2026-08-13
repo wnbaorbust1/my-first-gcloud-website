@@ -3,15 +3,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import {
   AiSuggestedBadge,
+  WorksheetAppointmentCard,
   WorksheetBanner,
   WorksheetChecklist,
   WorksheetChecklistItem,
   WorksheetChip,
   WorksheetGrid,
   WorksheetHeader,
+  WorksheetLockedTeaser,
   WorksheetPage,
   WorksheetPanel,
   WorksheetRatingRow,
@@ -21,7 +22,7 @@ import {
 import { PrintButton } from "@/components/shared/print-button";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { resolveBlueprintAccess } from "@/lib/blueprint/access";
 import { getVisionBoardExport, getVisionBoardSectionSources } from "@/lib/blueprint/vision-board";
 import { GOAL_TYPE_LABELS } from "@/lib/goals/meta";
 import { prisma } from "@/lib/prisma";
@@ -33,6 +34,46 @@ export const metadata: Metadata = { title: "My Vision Board — My Blueprint" };
 function formatDate(iso: string | null): string | null {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Real, always-allowed scores/stage summary — used by both the preview and expired (read-only) states. */
+function BoardScoresSummary({
+  data,
+}: {
+  data: Awaited<ReturnType<typeof getVisionBoardExport>>;
+}) {
+  const { board } = data;
+  if (!board.passionAssessment) return null;
+  return (
+    <div className="rounded-3xl border-2 border-legacy-200 bg-surface p-4 sm:p-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col divide-y divide-navy-100">
+          {board.passionAssessment.passionPercent !== null && (
+            <WorksheetRatingRow label="💗 Passion" scorePercent={board.passionAssessment.passionPercent} />
+          )}
+          {board.passionAssessment.powerPercent !== null && (
+            <WorksheetRatingRow label="⚡ Power" scorePercent={board.passionAssessment.powerPercent} />
+          )}
+          {board.passionAssessment.legacyPercent !== null && (
+            <WorksheetRatingRow label="👑 Legacy" scorePercent={board.passionAssessment.legacyPercent} />
+          )}
+        </div>
+        <div>
+          {board.passionAssessment.businessHealthPercent !== null && (
+            <div className="mb-3 flex justify-center sm:justify-start">
+              <WorksheetStat label="Business Health" value={`${board.passionAssessment.businessHealthPercent}%`} />
+            </div>
+          )}
+          {data.recommendedSession && (
+            <p className="text-sm">
+              <span className="font-bold text-legacy-700">My Blueprint Stage: </span>
+              {data.recommendedSession}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -57,24 +98,117 @@ export default async function VisionBoardPage() {
   });
   if (!membership) notFound();
 
-  if (!membership.business.builderAccessEligible) {
+  // ACCESS LADDER (Phase 5: Locking and Unlocking) — the single resolver
+  // every row of the access table maps through; see
+  // src/lib/blueprint/access.ts for the full state list and reasoning.
+  const accessInfo = await resolveBlueprintAccess(user.id, membership.businessId);
+
+  if (accessInfo.state === "assessment_only") {
     return (
       <EmptyState
         icon={Lock}
-        title="Your Vision Board unlocks after your Blueprint Session"
-        description="Complete your assessment and attend (and pay for) your recommended session to unlock your full Vision Board."
+        title="Complete your Blueprint Assessment first"
+        description="Your Vision Board starts with your Passion, Power, and Legacy scores — finish your assessment to see your preview."
         action={
           <Button asChild size="sm">
-            <Link href="/sessions">View Available Sessions</Link>
+            <Link href="/assessment">Start My Assessment</Link>
           </Button>
         }
       />
     );
   }
-  const billingMembership = await getSyncedMembership(membership.businessId);
-  const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
-  if (access.locked) return <MembershipLockedNotice />;
 
+  if (accessInfo.state === "preview" || accessInfo.state === "preview_booked") {
+    const data = await getVisionBoardExport(membership.businessId);
+    return (
+      <div className="mx-auto max-w-3xl">
+        <Link
+          href="/my-blueprint"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-navy-500 hover:text-navy-800"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to My Blueprint
+        </Link>
+        <WorksheetPage>
+          <WorksheetHeader
+            name={data.business.name}
+            eyebrow={[data.business.industry, data.business.businessStage].filter(Boolean).join(" · ") || undefined}
+            subtitle="My Vision Board Preview"
+          />
+          <BoardScoresSummary data={data} />
+          {accessInfo.state === "preview_booked" && accessInfo.appointment && (
+            <WorksheetAppointmentCard
+              statusLabel={accessInfo.appointment.status === "WAITLISTED" ? "Waitlisted" : "Registered"}
+              title={accessInfo.appointment.sessionTitle}
+              dateLabel={accessInfo.appointment.startsAt.toLocaleString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+              formatLabel={accessInfo.appointment.format === "VIRTUAL" ? "Virtual" : "In Person"}
+              locationLabel={
+                accessInfo.appointment.format === "IN_PERSON"
+                  ? (accessInfo.appointment.location ?? undefined)
+                  : undefined
+              }
+            />
+          )}
+          <WorksheetLockedTeaser
+            message={
+              accessInfo.state === "preview_booked"
+                ? "You're booked! Your full board — My Story, My Why, Action Plan, Legacy, editing, and downloads — unlocks the moment your session is marked complete."
+                : "Attend (and pay for) your recommended Blueprint Session to unlock your full Vision Board, editing, and downloads."
+            }
+            cta={
+              accessInfo.state === "preview" ? (
+                <Button asChild size="lg">
+                  <Link href="/sessions">View Available Sessions</Link>
+                </Button>
+              ) : undefined
+            }
+          />
+        </WorksheetPage>
+      </div>
+    );
+  }
+
+  if (accessInfo.state === "expired") {
+    const data = await getVisionBoardExport(membership.businessId);
+    return (
+      <div className="mx-auto max-w-3xl">
+        <Link
+          href="/my-blueprint"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-navy-500 hover:text-navy-800"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to My Blueprint
+        </Link>
+        <WorksheetPage>
+          <WorksheetHeader
+            name={data.business.name}
+            eyebrow={[data.business.industry, data.business.businessStage].filter(Boolean).join(" · ") || undefined}
+            subtitle="My Vision Board (Read-Only)"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-navy-200 bg-navy-50 p-4">
+            <p className="text-sm text-navy-700">
+              Your Builder access has ended, but nothing you built is gone. Reactivate to unlock full
+              editing and downloads again.
+            </p>
+            <Button asChild size="sm" variant="gold">
+              <Link href="/billing">Billing &amp; Reactivation</Link>
+            </Button>
+          </div>
+          <BoardScoresSummary data={data} />
+        </WorksheetPage>
+      </div>
+    );
+  }
+
+  // accessInfo.state === "full" — Session completed, and a trial or paid
+  // membership currently grants access: the real board, editing, roadmap,
+  // and downloads.
   const [data, sectionSources] = await Promise.all([
     getVisionBoardExport(membership.businessId),
     getVisionBoardSectionSources(membership.businessId),
