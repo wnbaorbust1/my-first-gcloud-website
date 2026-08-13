@@ -11,6 +11,11 @@ const optionalText = (max: number) =>
 /** VISION BOARD PROFILE — every field optional, one PATCH updates whichever the member filled in. */
 export const visionBoardProfileSchema = z.object({
   businessId: z.string().min(1),
+  myStory: optionalText(1200),
+  myWhy: optionalText(1200),
+  legacyImpact: optionalText(1200),
+  actionPlanThisWeek: optionalText(800),
+  actionPlanThisMonth: optionalText(800),
   vibes: optionalText(500),
   resourcesHave: optionalText(1000),
   resourcesNeed: optionalText(1000),

@@ -66,6 +66,11 @@ export default async function VisionBoardProfilePage() {
 
   const profile = membership.business.visionBoardProfile;
   const initial: VisionBoardProfileValues = {
+    myStory: profile?.myStory ?? "",
+    myWhy: profile?.myWhy ?? "",
+    legacyImpact: profile?.legacyImpact ?? "",
+    actionPlanThisWeek: profile?.actionPlanThisWeek ?? "",
+    actionPlanThisMonth: profile?.actionPlanThisMonth ?? "",
     vibes: profile?.vibes ?? "",
     resourcesHave: profile?.resourcesHave ?? "",
     resourcesNeed: profile?.resourcesNeed ?? "",
@@ -84,14 +89,19 @@ export default async function VisionBoardProfilePage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Link href="/my-blueprint" className="text-sm font-medium text-navy-500 hover:text-navy-800">
-        ← Back to My Blueprint
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/my-blueprint" className="text-sm font-medium text-navy-500 hover:text-navy-800">
+          ← Back to My Blueprint
+        </Link>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/my-blueprint/vision-board/view">View My Vision Board</Link>
+        </Button>
+      </div>
       <h1 className="mt-2 font-display text-3xl font-semibold text-navy-900">Vision Board Profile</h1>
       <p className="mt-1 text-foreground-muted">
-        These fields feed your Vision Board export — fill in what applies to you. Nothing here is
-        required, and nothing is ever invented on your behalf: whatever you leave blank stays blank
-        in your export.
+        These fields feed your Vision Board — fill in what applies to you, or use AI Draft Assist
+        below. Nothing here is required, and nothing is ever invented on your behalf: whatever you
+        leave blank stays blank on your board.
       </p>
 
       <div className="mt-8">

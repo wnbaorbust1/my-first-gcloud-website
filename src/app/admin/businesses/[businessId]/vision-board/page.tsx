@@ -30,6 +30,11 @@ export default async function AdminVisionBoardPage({
 
   const profile = business.visionBoardProfile;
   const initial: VisionBoardProfileValues = {
+    myStory: profile?.myStory ?? "",
+    myWhy: profile?.myWhy ?? "",
+    legacyImpact: profile?.legacyImpact ?? "",
+    actionPlanThisWeek: profile?.actionPlanThisWeek ?? "",
+    actionPlanThisMonth: profile?.actionPlanThisMonth ?? "",
     vibes: profile?.vibes ?? "",
     resourcesHave: profile?.resourcesHave ?? "",
     resourcesNeed: profile?.resourcesNeed ?? "",

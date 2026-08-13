@@ -17,7 +17,7 @@ import type { Stage } from "@/lib/utils";
 export async function getVisionBoardExport(businessId: string) {
   const business = await prisma.business.findUniqueOrThrow({ where: { id: businessId } });
 
-  const [assessment, goals, roadmap, profile] = await Promise.all([
+  const [assessment, goals, ninetyDayGoals, roadmap, profile] = await Promise.all([
     prisma.assessment.findFirst({
       where: { businessId, status: "COMPLETED" },
       orderBy: { completedAt: "desc" },
@@ -27,6 +27,14 @@ export async function getVisionBoardExport(businessId: string) {
       where: { businessId, status: "ACTIVE" },
       orderBy: { createdAt: "desc" },
       take: 10,
+    }),
+    // 90-DAY GOAL TRACKER (Vision Board & Blueprint Generator, audited
+    // 2026-08-13): a real, filtered view over the member's own Goals —
+    // GoalCadence already has a NINETY_DAY value (see spec Prompt 9), so
+    // this section never needed a new field, just this query.
+    prisma.goal.findMany({
+      where: { businessId, status: "ACTIVE", cadence: "NINETY_DAY" },
+      orderBy: { targetDate: "asc" },
     }),
     prisma.roadmap.findFirst({
       where: { businessId },
@@ -56,12 +64,27 @@ export async function getVisionBoardExport(businessId: string) {
       businessStage: business.businessStage,
       whatIOffer: business.primaryProductOrService,
       description: business.description,
+      narrative: profile?.myStory ?? null,
     },
     myWhy: {
       idealCustomer: business.idealCustomer,
       problemISolve: business.primaryChallenge,
       myGoal: business.primaryGoal,
+      narrative: profile?.myWhy ?? null,
     },
+    legacyImpact: profile?.legacyImpact ?? null,
+    actionPlan: {
+      thisWeek: profile?.actionPlanThisWeek ?? null,
+      thisMonth: profile?.actionPlanThisMonth ?? null,
+    },
+    ninetyDayGoalTracker: ninetyDayGoals.map((g) => ({
+      title: g.title,
+      goalType: g.goalType,
+      targetDate: g.targetDate,
+      targetValue: g.targetValue,
+      unit: g.unit,
+      progressPercent: g.progressPercent,
+    })),
     myScores: assessment
       ? {
           passionPercent: scoreByStage.PASSION ?? null,

@@ -72,11 +72,17 @@ export default async function MyBlueprintPage() {
             complete or edit lives here, organized by Passion, Power, and Legacy.
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button asChild size="sm">
+            <Link href="/my-blueprint/vision-board/view">
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              My Vision Board
+            </Link>
+          </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/my-blueprint/vision-board">
               <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Vision Board Profile
+              Edit Vision Board
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">

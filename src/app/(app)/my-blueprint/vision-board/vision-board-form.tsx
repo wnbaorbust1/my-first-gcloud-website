@@ -1,5 +1,6 @@
 "use client";
 
+import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -10,6 +11,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 export interface VisionBoardProfileValues {
+  myStory: string;
+  myWhy: string;
+  legacyImpact: string;
+  actionPlanThisWeek: string;
+  actionPlanThisMonth: string;
   vibes: string;
   resourcesHave: string;
   resourcesNeed: string;
@@ -24,6 +30,15 @@ export interface VisionBoardProfileValues {
   accountabilityPartnerName: string;
   accountabilityPartnerContact: string;
   accountabilityCommitment: string;
+}
+
+interface GeneratedDraft {
+  myStory: string | null;
+  myWhy: string | null;
+  legacyImpact: string | null;
+  actionPlanThisWeek: string | null;
+  actionPlanThisMonth: string | null;
+  dailyAffirmations: string[] | null;
 }
 
 function Field({
@@ -68,10 +83,74 @@ export function VisionBoardForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
 
   function set<K extends keyof VisionBoardProfileValues>(key: K, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
     setSaved(false);
+  }
+
+  // AI DRAFT ASSIST (Vision Board & Blueprint Generator, audited
+  // 2026-08-13): calls the structured-JSON generation endpoint
+  // (src/app/api/blueprint/vision-board/generate) and drops any drafted
+  // field straight into this form's *unsaved* local state — nothing
+  // reaches VisionBoardProfile until the member reviews it here and
+  // hits Save, same as typing it themselves. A field the model
+  // returned null for (no grounded content to draft) is left untouched
+  // rather than overwriting whatever the member already had.
+  async function handleGenerate() {
+    setError(null);
+    setDraftNotice(null);
+    setIsGenerating(true);
+
+    const res = await fetch("/api/blueprint/vision-board/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessId }),
+    });
+
+    setIsGenerating(false);
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      setError(data?.error ?? "Couldn't generate a draft right now.");
+      return;
+    }
+
+    const data = (await res.json()) as { generation: { payload: GeneratedDraft } };
+    const draft = data.generation.payload;
+
+    // Computed from `draft` directly, not as a side effect inside the
+    // setValues updater below — React doesn't guarantee that updater runs
+    // synchronously, so mutating an outer array from inside it and reading
+    // that array right after is a real bug (the fields still applied
+    // correctly; only the "what got drafted" notice text read stale/empty
+    // state before the updater had actually run).
+    const filled: string[] = [];
+    if (draft.myStory) filled.push("My Story");
+    if (draft.myWhy) filled.push("My Why");
+    if (draft.legacyImpact) filled.push("Legacy");
+    if (draft.actionPlanThisWeek) filled.push("Action Plan (this week)");
+    if (draft.actionPlanThisMonth) filled.push("Action Plan (this month)");
+    if (draft.dailyAffirmations?.length) filled.push("Daily Affirmations");
+
+    setValues((prev) => ({
+      ...prev,
+      ...(draft.myStory ? { myStory: draft.myStory } : {}),
+      ...(draft.myWhy ? { myWhy: draft.myWhy } : {}),
+      ...(draft.legacyImpact ? { legacyImpact: draft.legacyImpact } : {}),
+      ...(draft.actionPlanThisWeek ? { actionPlanThisWeek: draft.actionPlanThisWeek } : {}),
+      ...(draft.actionPlanThisMonth ? { actionPlanThisMonth: draft.actionPlanThisMonth } : {}),
+      ...(draft.dailyAffirmations?.length
+        ? { dailyAffirmations: draft.dailyAffirmations.join("\n") }
+        : {}),
+    }));
+    setSaved(false);
+    setDraftNotice(
+      filled.length
+        ? `Drafted: ${filled.join(", ")}. Review and edit below, then Save to keep it.`
+        : "Blueprint AI didn't have enough grounded context yet to draft anything new — nothing was changed.",
+    );
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -99,6 +178,81 @@ export function VisionBoardForm({
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       {error && <Alert variant="danger">{error}</Alert>}
       {saved && <Alert variant="success">Saved.</Alert>}
+      {draftNotice && <Alert variant="info">{draftNotice}</Alert>}
+
+      <section className="flex flex-col gap-3 rounded-lg border border-navy-200 bg-navy-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-navy-900">AI Draft Assist</h2>
+            <p className="text-sm text-foreground-muted">
+              Draft My Story, My Why, Legacy, Action Plan, and Daily Affirmations from your real
+              business data below. Nothing is saved until you review it and hit Save yourself.
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            {isGenerating ? "Drafting…" : "Generate My Draft"}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-semibold text-navy-900">My Story</h2>
+        <Field
+          id="myStory"
+          label="How did your business come to be?"
+          multiline
+          rows={4}
+          value={values.myStory}
+          onChange={(v) => set("myStory", v)}
+        />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-semibold text-navy-900">My Why</h2>
+        <Field
+          id="myWhy"
+          label="What's the deeper motivation behind your business?"
+          multiline
+          rows={4}
+          value={values.myWhy}
+          onChange={(v) => set("myWhy", v)}
+        />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-semibold text-navy-900">Legacy</h2>
+        <Field
+          id="legacyImpact"
+          label="What lasting impact do you want this business to leave?"
+          multiline
+          rows={4}
+          value={values.legacyImpact}
+          onChange={(v) => set("legacyImpact", v)}
+        />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-semibold text-navy-900">Action Plan</h2>
+        <Field
+          id="actionPlanThisWeek"
+          label="This Week"
+          hint="Concrete actions for the next 7 days"
+          multiline
+          rows={3}
+          value={values.actionPlanThisWeek}
+          onChange={(v) => set("actionPlanThisWeek", v)}
+        />
+        <Field
+          id="actionPlanThisMonth"
+          label="This Month"
+          hint="Concrete actions for the next 30 days"
+          multiline
+          rows={3}
+          value={values.actionPlanThisMonth}
+          onChange={(v) => set("actionPlanThisMonth", v)}
+        />
+      </section>
 
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-semibold text-navy-900">My Vibes</h2>
