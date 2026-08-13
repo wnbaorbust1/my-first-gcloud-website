@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { assertBusinessAccess, getCurrentUser } from "@/lib/session";
+import { parseSectionSources, type EditableSectionKey } from "@/lib/validations/vision-board-data";
 import { visionBoardProfileSchema } from "@/lib/validations/vision-board";
 
 /**
@@ -19,6 +20,11 @@ import { visionBoardProfileSchema } from "@/lib/validations/vision-board";
  * 2026-08-13): every successful save bumps `version` and stamps
  * `lastEditedAt`/`lastEditedByUserId` with *this* request's user — the
  * "practical minimum" tracking requested, not a per-field audit log.
+ *
+ * PROVENANCE (Phase 3: AI Blueprint Generator — "separate user answers
+ * from AI suggestions"): every section this PATCH touches is marked
+ * "user" in `sectionSources`, even if it previously held an AI-promoted
+ * draft — the member typing over it here is direct authorship again.
  */
 export async function PATCH(request: Request) {
   const user = await getCurrentUser();
@@ -44,10 +50,25 @@ export async function PATCH(request: Request) {
 
   const { businessId, ...sections } = input;
 
+  const existing = await prisma.visionBoardProfile.findUnique({
+    where: { businessId },
+    select: { sectionSources: true },
+  });
+  const sectionSources = parseSectionSources(existing?.sectionSources);
+  for (const key of Object.keys(sections) as EditableSectionKey[]) {
+    sectionSources[key] = "user";
+  }
+
   const profile = await prisma.visionBoardProfile.upsert({
     where: { businessId },
-    create: { businessId, ...sections, lastEditedAt: new Date(), lastEditedByUserId: user.id },
-    update: { ...sections, version: { increment: 1 }, lastEditedAt: new Date(), lastEditedByUserId: user.id },
+    create: { businessId, ...sections, sectionSources, lastEditedAt: new Date(), lastEditedByUserId: user.id },
+    update: {
+      ...sections,
+      sectionSources,
+      version: { increment: 1 },
+      lastEditedAt: new Date(),
+      lastEditedByUserId: user.id,
+    },
   });
 
   return NextResponse.json({ profile });

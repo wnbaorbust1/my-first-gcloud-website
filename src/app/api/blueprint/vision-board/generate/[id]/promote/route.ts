@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { assertBusinessAccess, getCurrentUser } from "@/lib/session";
+import { parseSectionSources, type EditableSectionKey } from "@/lib/validations/vision-board-data";
 import {
   promoteVisionBoardGenerationSchema,
   visionBoardGenerationOutputSchema,
@@ -103,6 +104,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const applied: string[] = [];
   const skipped: string[] = [];
   const data: Record<string, unknown> = {};
+  const sectionSources = parseSectionSources(existingProfile?.sectionSources);
 
   for (const field of input.fields) {
     if (field === "affirmations") {
@@ -110,6 +112,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (payload.affirmations.length > 0) {
         data.affirmations = payload.affirmations;
         applied.push(field);
+        sectionSources[field as EditableSectionKey] = "ai";
       } else {
         skipped.push(field);
       }
@@ -122,6 +125,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (changed) {
       data[field] = merged;
       applied.push(field);
+      // PROVENANCE (Phase 3: AI Blueprint Generator) — marked "ai" even
+      // though mergeSection may have kept some pre-existing leaves
+      // untouched; the section as a whole now carries at least one
+      // AI-sourced value, so it's flagged for review, not silently
+      // folded back into "user" as if nothing changed.
+      sectionSources[field as EditableSectionKey] = "ai";
     } else {
       skipped.push(field);
     }
@@ -133,10 +142,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         create: {
           businessId: generation.businessId,
           ...data,
+          sectionSources,
           lastEditedAt: new Date(),
           lastEditedByUserId: user.id,
         },
-        update: { ...data, version: { increment: 1 }, lastEditedAt: new Date(), lastEditedByUserId: user.id },
+        update: {
+          ...data,
+          sectionSources,
+          version: { increment: 1 },
+          lastEditedAt: new Date(),
+          lastEditedByUserId: user.id,
+        },
       })
     : existingProfile;
 

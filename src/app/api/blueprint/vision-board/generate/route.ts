@@ -65,11 +65,13 @@ export async function POST(request: Request) {
     );
   }
 
+  // PHASE 3: AI Blueprint Generator — generation now always succeeds:
+  // a real AI call, or the rules-based fallback (src/lib/ai/vision-board-generation.ts)
+  // when no key is configured or the model's response was unusable.
+  // Either way the result is schema-validated before it ever reaches
+  // here, so this route no longer has an error path for "AI didn't
+  // work" — only for auth/access/input, same as any other route.
   const result = await generateVisionBoardRecommendations(input.businessId);
-  if (!result.ok) {
-    const status = result.reason === "not_configured" ? 503 : 502;
-    return NextResponse.json({ error: result.message }, { status });
-  }
 
   const latestAssessment = await prisma.assessment.findFirst({
     where: { businessId: input.businessId, status: "COMPLETED" },
@@ -87,5 +89,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ generation });
+  return NextResponse.json({ generation, source: result.source });
 }

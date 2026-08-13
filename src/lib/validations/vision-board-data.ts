@@ -148,6 +148,40 @@ export const visionBoardDataSchema = z.object({
 });
 export type VisionBoardData = z.infer<typeof visionBoardDataSchema>;
 
+/**
+ * PROVENANCE (Phase 3: AI Blueprint Generator) — the editable section
+ * keys `VisionBoardProfile.sectionSources` can track, and the two states
+ * a section can be in: typed directly by a member ("user"), or accepted
+ * from an AI/rules-based draft via promote() and never since hand-edited
+ * ("ai"). See the model's doc comment in prisma/schema.prisma for the
+ * full reasoning.
+ */
+export const EDITABLE_SECTION_KEYS = [
+  "myStory",
+  "myWhy",
+  "legacy",
+  "blueprint",
+  "actionPlan",
+  "resources",
+  "businessModelCanvas",
+  "vibes",
+  "affirmations",
+  "accountability",
+] as const;
+export type EditableSectionKey = (typeof EDITABLE_SECTION_KEYS)[number];
+export type SectionSource = "user" | "ai";
+export type SectionSources = Partial<Record<EditableSectionKey, SectionSource>>;
+
+export function parseSectionSources(value: unknown): SectionSources {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: SectionSources = {};
+  for (const key of EDITABLE_SECTION_KEYS) {
+    const v = (value as Record<string, unknown>)[key];
+    if (v === "user" || v === "ai") result[key] = v;
+  }
+  return result;
+}
+
 /** Empty defaults for every editable section — used to fill gaps when a member hasn't saved a section yet. */
 export const EMPTY_MY_STORY: MyStorySection = { name: null, businesses: [], passionStatement: null, superpowers: [] };
 export const EMPTY_MY_WHY: MyWhySection = { whyStatement: null, problemToSolve: null, peopleToHelp: [] };

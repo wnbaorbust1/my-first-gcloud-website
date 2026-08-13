@@ -135,6 +135,12 @@ export default async function ParticipantDetailPage({
         >
           Manage Roadmap (Assign / Reorder / Unlock / Pause / Set Priority)
         </Link>
+        <Link
+          href={`/facilitator/participants/${businessId}/vision-board`}
+          className="font-medium text-navy-500 underline hover:text-navy-800"
+        >
+          Edit Vision Board Recommendations
+        </Link>
       </div>
 
       {/* Assessment */}

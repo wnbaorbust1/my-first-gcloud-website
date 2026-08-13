@@ -77,7 +77,14 @@ describe("POST /api/blueprint/vision-board/generate (real DB)", () => {
       data: { id: userId, email: `${suffix}@test.local`, firstName: "V", lastName: "Gen", role: "MEMBER" },
     });
     await prisma.business.create({
-      data: { id: unlockedBusinessId, name: "Unlocked Vision Co", builderAccessEligible: true },
+      data: {
+        id: unlockedBusinessId,
+        name: "Unlocked Vision Co",
+        builderAccessEligible: true,
+        industry: "Coaching",
+        primaryProductOrService: "one-on-one business coaching",
+        primaryGoal: "help 100 coaches launch profitable practices",
+      },
     });
     await prisma.business.create({ data: { id: lockedBusinessId, name: "Locked Vision Co" } });
     await prisma.userBusinessMembership.createMany({
@@ -115,21 +122,30 @@ describe("POST /api/blueprint/vision-board/generate (real DB)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("503s when no AI provider key is configured", async () => {
+  it("falls back to a rules-based draft (never errors) when no AI provider key is configured", async () => {
     mockUser.id = userId;
     mockAi.configured = false;
     const res = await callGenerate(unlockedBusinessId);
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.source).toBe("rules_based");
+    expect(body.generation.model).toBe("rules-based-v1");
+    // Grounded in the business's own real fields, not invented.
+    expect(body.generation.payload.myStory.passionStatement).toContain("one-on-one business coaching");
   });
 
-  it("502s and saves nothing when the model returns unparseable output", async () => {
+  it("falls back to a rules-based draft when the model returns unparseable output", async () => {
     mockAi.configured = true;
     mockAi.response = "Sure, here's your vision board! Sorry, I can't do JSON right now.";
     const res = await callGenerate(unlockedBusinessId);
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.source).toBe("rules_based");
 
-    const count = await prisma.visionBoardGeneration.count({ where: { businessId: unlockedBusinessId } });
-    expect(count).toBe(0);
+    const count = await prisma.visionBoardGeneration.count({
+      where: { businessId: unlockedBusinessId, model: "rules-based-v1" },
+    });
+    expect(count).toBeGreaterThan(0);
   });
 
   it("generates, validates, and stores a real draft — then promotes selected sections", async () => {
@@ -149,6 +165,11 @@ describe("POST /api/blueprint/vision-board/generate (real DB)", () => {
     expect(promoteBody.skipped).toEqual(["legacy"]);
     expect(promoteBody.profile.myStory.passionStatement).toContain("local families");
     expect(promoteBody.profile.affirmations).toContain("I show up for my customers every day.");
+    // PROVENANCE (Phase 3: AI Blueprint Generator): promoted sections are
+    // marked "ai" — the skipped section (legacy, nothing changed) is not.
+    expect(promoteBody.profile.sectionSources.myStory).toBe("ai");
+    expect(promoteBody.profile.sectionSources.affirmations).toBe("ai");
+    expect(promoteBody.profile.sectionSources.legacy).toBeUndefined();
 
     const generation = await prisma.visionBoardGeneration.findUniqueOrThrow({
       where: { id: body.generation.id },

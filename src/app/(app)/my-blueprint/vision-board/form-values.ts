@@ -17,7 +17,9 @@ import {
   myStorySectionSchema,
   myWhySectionSchema,
   parseSection,
+  parseSectionSources,
   resourcesSectionSchema,
+  type SectionSources,
 } from "@/lib/validations/vision-board-data";
 
 import type { Next90DaysRow, VisionBoardProfileValues } from "./vision-board-form";
@@ -34,6 +36,7 @@ type ProfileJsonColumns = {
   vibes: unknown;
   affirmations: unknown;
   accountability: unknown;
+  sectionSources: unknown;
 } | null;
 
 const lines = (arr: string[]) => arr.join("\n");
@@ -47,6 +50,7 @@ const lines = (arr: string[]) => arr.join("\n");
 export function toFormValues(profile: ProfileJsonColumns): {
   initial: VisionBoardProfileValues;
   initialNext90Days: Next90DaysRow[];
+  sectionSources: SectionSources;
 } {
   const myStory = parseSection(myStorySectionSchema, profile?.myStory, EMPTY_MY_STORY);
   const myWhy = parseSection(myWhySectionSchema, profile?.myWhy, EMPTY_MY_WHY);
@@ -95,5 +99,6 @@ export function toFormValues(profile: ProfileJsonColumns): {
       goal: item.goal,
       actionSteps: lines(item.actionSteps),
     })),
+    sectionSources: parseSectionSources(profile?.sectionSources),
   };
 }

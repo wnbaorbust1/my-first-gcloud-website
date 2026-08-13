@@ -65,7 +65,7 @@ export default async function VisionBoardProfilePage() {
   const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
   if (access.locked) return <MembershipLockedNotice />;
 
-  const { initial, initialNext90Days } = toFormValues(membership.business.visionBoardProfile);
+  const { initial, initialNext90Days, sectionSources } = toFormValues(membership.business.visionBoardProfile);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -89,6 +89,7 @@ export default async function VisionBoardProfilePage() {
           businessId={membership.businessId}
           initial={initial}
           initialNext90Days={initialNext90Days}
+          initialSectionSources={sectionSources}
         />
       </div>
     </div>

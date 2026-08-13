@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import {
+  AiSuggestedBadge,
   WorksheetBanner,
   WorksheetChecklist,
   WorksheetChecklistItem,
@@ -20,7 +21,7 @@ import { PrintButton } from "@/components/shared/print-button";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
-import { getVisionBoardExport } from "@/lib/blueprint/vision-board";
+import { getVisionBoardExport, getVisionBoardSectionSources } from "@/lib/blueprint/vision-board";
 import { GOAL_TYPE_LABELS } from "@/lib/goals/meta";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -72,7 +73,10 @@ export default async function VisionBoardPage() {
   const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
   if (access.locked) return <MembershipLockedNotice />;
 
-  const data = await getVisionBoardExport(membership.businessId);
+  const [data, sectionSources] = await Promise.all([
+    getVisionBoardExport(membership.businessId),
+    getVisionBoardSectionSources(membership.businessId),
+  ]);
   const { board } = data;
 
   return (
@@ -97,7 +101,12 @@ export default async function VisionBoardPage() {
           />
 
           <WorksheetGrid>
-            <WorksheetPanel number={1} title="My Story" icon="📖">
+            <WorksheetPanel
+              number={1}
+              title="My Story"
+              icon="📖"
+              badge={sectionSources.myStory === "ai" ? <AiSuggestedBadge /> : undefined}
+            >
               {board.myStory.passionStatement ? (
                 <p>{board.myStory.passionStatement}</p>
               ) : data.business.description || data.business.whatIOffer ? (
@@ -114,7 +123,12 @@ export default async function VisionBoardPage() {
               )}
             </WorksheetPanel>
 
-            <WorksheetPanel number={2} title="My Why" icon="💗">
+            <WorksheetPanel
+              number={2}
+              title="My Why"
+              icon="💗"
+              badge={sectionSources.myWhy === "ai" ? <AiSuggestedBadge /> : undefined}
+            >
               {board.myWhy.whyStatement ? (
                 <p>{board.myWhy.whyStatement}</p>
               ) : data.business.myGoal ? (
@@ -186,7 +200,12 @@ export default async function VisionBoardPage() {
               )}
             </WorksheetPanel>
 
-            <WorksheetPanel number={5} title="Action Plan" icon="🗺️">
+            <WorksheetPanel
+              number={5}
+              title="Action Plan"
+              icon="🗺️"
+              badge={sectionSources.actionPlan === "ai" ? <AiSuggestedBadge /> : undefined}
+            >
               <p className="text-xs font-bold uppercase tracking-wide text-gold-700">This Week</p>
               {board.actionPlan.thisWeek.length ? (
                 <WorksheetChecklist>
@@ -219,7 +238,12 @@ export default async function VisionBoardPage() {
               )}
             </WorksheetPanel>
 
-            <WorksheetPanel number={6} title="Legacy" icon="👑">
+            <WorksheetPanel
+              number={6}
+              title="Legacy"
+              icon="👑"
+              badge={sectionSources.legacy === "ai" ? <AiSuggestedBadge /> : undefined}
+            >
               {board.legacy.legacyStatement ? (
                 <p>{board.legacy.legacyStatement}</p>
               ) : (
@@ -350,7 +374,13 @@ export default async function VisionBoardPage() {
               )}
             </WorksheetPanel>
 
-            <WorksheetPanel number={12} title="Daily Affirmations" icon="✨" span="full">
+            <WorksheetPanel
+              number={12}
+              title="Daily Affirmations"
+              icon="✨"
+              span="full"
+              badge={sectionSources.affirmations === "ai" ? <AiSuggestedBadge /> : undefined}
+            >
               {board.affirmations.length ? (
                 <div className="flex flex-wrap gap-2">
                   {board.affirmations.map((a, i) => (

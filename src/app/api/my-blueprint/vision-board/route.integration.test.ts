@@ -11,12 +11,12 @@ import { prisma } from "@/lib/prisma";
  * key name still "compiles" against `Record<string, unknown>`), so this
  * exercises a real save against a real Postgres row.
  */
-const mockUser: { id: string } = { id: "" };
+const mockUser: { id: string; role: "MEMBER" | "FACILITATOR" } = { id: "", role: "MEMBER" };
 vi.mock("@/lib/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/session")>();
   return {
     ...actual,
-    getCurrentUser: async () => (mockUser.id ? { id: mockUser.id, role: "MEMBER" } : null),
+    getCurrentUser: async () => (mockUser.id ? { id: mockUser.id, role: mockUser.role } : null),
   };
 });
 
@@ -70,6 +70,9 @@ describe("PATCH /api/my-blueprint/vision-board (real DB)", () => {
     expect(body.profile.vibes).toEqual(["Ambitious", "Passionate"]);
     expect(body.profile.lastEditedByUserId).toBe(userId);
     expect(body.profile.lastEditedAt).not.toBeNull();
+    // PROVENANCE (Phase 3: AI Blueprint Generator): a direct PATCH always
+    // marks the sections it touched "user" — this member typed it themselves.
+    expect(body.profile.sectionSources).toEqual({ myStory: "user", vibes: "user" });
   });
 
   it("a second save on a different section bumps the version and leaves the first section untouched", async () => {
@@ -90,5 +93,42 @@ describe("PATCH /api/my-blueprint/vision-board (real DB)", () => {
     const res = await callPatch({ businessId, vibes: ["x"] });
     expect(res.status).toBe(401);
     mockUser.id = userId;
+  });
+
+  describe("facilitator edit access (Phase 3: AI Blueprint Generator)", () => {
+    const facilitatorId = `usr-facilitator-${suffix}`;
+
+    beforeAll(async () => {
+      await prisma.user.create({
+        data: { id: facilitatorId, email: `facilitator-${suffix}@test.local`, firstName: "F", lastName: "Ac", role: "FACILITATOR" },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.facilitatorAssignment.deleteMany({ where: { facilitatorId } });
+      await prisma.user.delete({ where: { id: facilitatorId } });
+      mockUser.role = "MEMBER";
+      mockUser.id = userId;
+    });
+
+    it("404s for a facilitator with no assignment to this business", async () => {
+      mockUser.id = facilitatorId;
+      mockUser.role = "FACILITATOR";
+      const res = await callPatch({ businessId, vibes: ["Unassigned attempt"] });
+      expect(res.status).toBe(404);
+    });
+
+    it("lets an assigned facilitator edit the same recommendations a member would", async () => {
+      await prisma.facilitatorAssignment.create({ data: { facilitatorId, businessId } });
+      const res = await callPatch({
+        businessId,
+        legacy: { legacyStatement: "Facilitator-suggested legacy statement.", impactGroups: [] },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.profile.legacy.legacyStatement).toBe("Facilitator-suggested legacy statement.");
+      expect(body.profile.lastEditedByUserId).toBe(facilitatorId);
+      expect(body.profile.sectionSources.legacy).toBe("user");
+    });
   });
 });

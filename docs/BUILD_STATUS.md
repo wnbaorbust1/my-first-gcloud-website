@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-13 — Vision Board & Blueprint Generator: structured-storage follow-up complete_
+_Last updated: 2026-08-13 — Vision Board & Blueprint Generator: Phase 3 (AI Blueprint Generator) complete_
 
 ## COMPLETE
 
@@ -2736,3 +2736,89 @@ edit form, a real Save round-trip (confirmed `version` incremented and
 `lastEditedByUserId` stamped in Postgres), and the Print button's
 download-logging (confirmed a real `BoardDownload` row) all worked
 end to end.
+
+---
+
+## PHASE 3 — AI Blueprint Generator (complete)
+
+**Date:** 2026-08-13. Closes the six explicit requirements: what the AI
+receives, JSON-only validated output, and five safeguards (never invent
+businesses/revenue/contacts/achievements; separate user answers from AI
+suggestions; mark AI recommendations clearly; limit every section to fit
+the board; let the facilitator edit after the session; fall back to a
+rules-based result if generation fails).
+
+**1. Expanded AI context** (`src/lib/ai/context.ts`):
+- `assembleAiContext` (shared with Blueprint AI chat) now also includes
+  the assessment's **assigned stage** (`recommendedSessionType` +
+  reason) and **all** active goals (was the single newest one).
+- New `assembleVisionBoardGenerationContext` layers on top of that with
+  two blocks too heavy for every ordinary chat turn: the member's real
+  **raw assessment answers** (`AssessmentResponse` + question prompt,
+  not just the aggregate scores) and their **current Resources**
+  (Have/Need, from `VisionBoardProfile`). Used only by generation, so
+  chat's per-message context size is unaffected.
+
+**2. Safeguards, in the prompt and the schema** (`src/lib/ai/vision-board-generation.ts`,
+`src/lib/validations/vision-board-generation.ts`):
+- The system prompt explicitly forbids four fabrication categories —
+  invented businesses, revenue/dollar figures, contact names/emails/
+  phones, and achievements/awards — rather than a single generic "don't
+  invent."
+- The AI output schema is now its own, tighter-capped schema (arrays
+  max 3-6 items, strings max 150-400 chars) instead of reusing the more
+  generous storage schema (member-typed content can run up to 10-15
+  items / 600-1200 chars) — "limit every section so it fits the board."
+
+**3. Rules-based fallback** (`generateRulesBasedRecommendations`): a
+deterministic generator with no model call — built entirely from
+templates over the business's own real fields (name, industry, primary
+product/goal/challenge/customer), real strengths (from the assessment's
+category scores), and real roadmap task titles/goal titles. Runs
+whenever no AI key is configured, or a real call returns something that
+fails JSON parsing or schema validation. `generateVisionBoardRecommendations`
+now **always succeeds** — the generate route has no "AI didn't work"
+error path anymore, only auth/access/input, same as any other route.
+Every generation row records which path produced it (`model`:
+`"rules-based-v1"` vs. a real model id) and the response includes
+`source: "ai" | "rules_based"`.
+
+**4. Provenance — "separate user answers from AI suggestions," "mark
+clearly"** (`VisionBoardProfile.sectionSources`, new migration
+`vision_board_section_provenance`): `Record<section, "user" | "ai">`.
+A direct PATCH always marks the sections it touched `"user"` — even
+over a prior AI draft, typing over it is authorship again. `promote()`
+marks accepted sections `"ai"`. Rendered as a small "✨ AI Suggested"
+badge (`WorksheetPanel`'s new `badge` prop) on both the edit form
+(cleared live the instant a member edits that section, before any
+Save) and the rendered board — never hidden. The Vision Board Profile
+form's own "AI Draft Assist" button still funnels through the ordinary
+manual Save (member reviews inline, hits Save themselves), which
+correctly marks those sections `"user"` — the `"ai"` marker specifically
+surfaces content accepted via `promote()` without that inline review
+step (e.g. a facilitator accepting a draft directly).
+
+**5. Facilitator edit access** — "let the facilitator edit
+recommendations after the session": new
+`/facilitator/participants/[businessId]/vision-board`, reusing the
+exact same `VisionBoardForm`/`toFormValues` the member and admin pages
+use. No new authorization logic was needed — `assertBusinessAccess`
+already grants a facilitator access to any business they're assigned to
+(`FacilitatorAssignment`) or running a session for, the same check
+every other facilitator surface already relies on; the only real gap
+was a dedicated page, linked from the participant detail page.
+
+**6. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (43 — new coverage: rules-based fallback on
+both "not configured" and "invalid response," provenance marking on
+both PATCH and promote, and facilitator PATCH access — 404 unassigned,
+200 once assigned), and a production `next build` all pass.
+Live-verified with Playwright against a freshly seeded business (real
+industry/product/goal/challenge/customer fields, a real goal): the
+facilitator page loaded and saved for an assigned participant; a real
+AI generation produced genuinely grounded, non-fabricated content from
+the expanded context and displayed the "Blueprint AI drafted: ..."
+notice; saving through the form correctly left sections marked `"user"`
+(no badge); and calling `generate` + `promote` directly showed the
+"✨ AI Suggested" badge on the rendered board's My Why panel exactly
+as designed.

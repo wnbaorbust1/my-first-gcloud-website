@@ -4,11 +4,13 @@ import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { AiSuggestedBadge } from "@/components/blueprint/worksheet";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { EditableSectionKey, SectionSources } from "@/lib/validations/vision-board-data";
 
 /**
  * FORM STATE — kept as flat strings (mostly "one per line" for list
@@ -59,6 +61,23 @@ export interface Next90DaysRow {
   goal: string;
   actionSteps: string;
 }
+
+/** Which section a given form field belongs to, for clearing that section's "AI Suggested" badge the moment a member edits it directly. */
+const FIELD_TO_SECTION: Partial<Record<keyof VisionBoardProfileValues, EditableSectionKey>> = {
+  myStoryName: "myStory",
+  myStoryBusinesses: "myStory",
+  myStoryPassionStatement: "myStory",
+  myStorySuperpowers: "myStory",
+  myWhyStatement: "myWhy",
+  myWhyProblemToSolve: "myWhy",
+  myWhyPeopleToHelp: "myWhy",
+  legacyStatement: "legacy",
+  legacyImpactGroups: "legacy",
+  actionPlanThisWeek: "actionPlan",
+  actionPlanThisMonth: "actionPlan",
+  actionPlanFirstStep: "actionPlan",
+  affirmations: "affirmations",
+};
 
 interface GeneratedDraft {
   myStory: { passionStatement: string | null; superpowers: string[] };
@@ -117,16 +136,20 @@ export function VisionBoardForm({
   businessId,
   initial,
   initialNext90Days,
+  initialSectionSources,
 }: {
   businessId: string;
   initial: VisionBoardProfileValues;
   initialNext90Days: Next90DaysRow[];
+  /** Which sections currently hold an accepted AI/rules-based draft vs. member-typed content (Phase 3: AI Blueprint Generator). */
+  initialSectionSources?: SectionSources;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [next90Days, setNext90Days] = useState<Next90DaysRow[]>(
     initialNext90Days.length ? initialNext90Days : [{ goal: "", actionSteps: "" }],
   );
+  const [sectionSources, setSectionSources] = useState<SectionSources>(initialSectionSources ?? {});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -136,6 +159,17 @@ export function VisionBoardForm({
   function set<K extends keyof VisionBoardProfileValues>(key: K, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
     setSaved(false);
+    // Editing any field in an AI-sourced section is direct authorship
+    // again — clear its badge immediately rather than waiting for a
+    // reload, matching what the next Save will actually persist.
+    const section = FIELD_TO_SECTION[key];
+    if (section && sectionSources[section]) {
+      setSectionSources((prev) => {
+        const next = { ...prev };
+        delete next[section];
+        return next;
+      });
+    }
   }
 
   function setNext90DaysRow(index: number, field: keyof Next90DaysRow, v: string) {
@@ -169,7 +203,10 @@ export function VisionBoardForm({
       return;
     }
 
-    const data = (await res.json()) as { generation: { payload: GeneratedDraft } };
+    const data = (await res.json()) as {
+      generation: { payload: GeneratedDraft };
+      source: "ai" | "rules_based";
+    };
     const draft = data.generation.payload;
 
     const filled: string[] = [];
@@ -197,10 +234,16 @@ export function VisionBoardForm({
       ...(draft.affirmations.length ? { affirmations: draft.affirmations.join("\n") } : {}),
     }));
     setSaved(false);
+    // PHASE 3: AI Blueprint Generator — "mark AI-generated recommendations
+    // clearly." Generation now always succeeds (a real AI call, or the
+    // rules-based fallback when no key is configured or the model's
+    // response was unusable) — the notice says plainly which one ran, so
+    // a member never mistakes a template-assembled draft for an AI one.
+    const sourceLabel = data.source === "ai" ? "Blueprint AI drafted" : "Auto-filled from your own data";
     setDraftNotice(
       filled.length
-        ? `Drafted: ${filled.join(", ")}. Review and edit below, then Save to keep it.`
-        : "Blueprint AI didn't have enough grounded context yet to draft anything new — nothing was changed.",
+        ? `${sourceLabel}: ${filled.join(", ")}. Review and edit below, then Save to keep it.`
+        : "Not enough grounded data yet to draft anything new — nothing was changed.",
     );
   }
 
@@ -301,7 +344,10 @@ export function VisionBoardForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">My Story</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
+          My Story
+          {sectionSources.myStory === "ai" && <AiSuggestedBadge />}
+        </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="myStoryName" label="Name" value={values.myStoryName} onChange={(v) => set("myStoryName", v)} />
           <Field
@@ -332,7 +378,10 @@ export function VisionBoardForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">My Why</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
+          My Why
+          {sectionSources.myWhy === "ai" && <AiSuggestedBadge />}
+        </h2>
         <Field
           id="myWhyStatement"
           label="Why does this matter to you?"
@@ -421,7 +470,10 @@ export function VisionBoardForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">Action Plan</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
+          Action Plan
+          {sectionSources.actionPlan === "ai" && <AiSuggestedBadge />}
+        </h2>
         <Field
           id="actionPlanThisWeek"
           label="This Week"
@@ -450,7 +502,10 @@ export function VisionBoardForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">Legacy</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
+          Legacy
+          {sectionSources.legacy === "ai" && <AiSuggestedBadge />}
+        </h2>
         <Field
           id="legacyStatement"
           label="What lasting impact do you want this business to leave?"
@@ -534,7 +589,10 @@ export function VisionBoardForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">Daily Affirmations</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
+          Daily Affirmations
+          {sectionSources.affirmations === "ai" && <AiSuggestedBadge />}
+        </h2>
         <Field
           id="affirmations"
           label="Your affirmations"

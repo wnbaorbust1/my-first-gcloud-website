@@ -471,6 +471,17 @@ model VisionBoardProfile {
   lastEditedByUserId String?
   lastEditedBy       User?     @relation("VisionBoardProfileLastEditedBy", fields: [lastEditedByUserId], references: [id])
 
+  /// PROVENANCE (Phase 3: AI Blueprint Generator — "separate user answers
+  /// from AI suggestions" / "mark AI-generated recommendations clearly"):
+  /// `Record<section name, "user" | "ai">`, one entry per section that's
+  /// ever been written. A direct PATCH always marks that section "user"
+  /// — even if it started from an AI draft, the member typing over it is
+  /// direct authorship again. A promote() call marks the section "ai".
+  /// Sections with no entry yet have no content either. Rendered as a
+  /// small "AI Suggested" badge on the edit form and the board — never
+  /// hidden, per "mark AI-generated recommendations clearly."
+  sectionSources Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

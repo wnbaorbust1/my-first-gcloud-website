@@ -89,6 +89,7 @@ export function WorksheetPanel({
   children,
   className,
   span,
+  badge,
 }: {
   number: number;
   title: string;
@@ -97,6 +98,8 @@ export function WorksheetPanel({
   className?: string;
   /** Take the full grid width instead of one column — for a wide/feature panel. */
   span?: "full";
+  /** Small pill next to the title — e.g. an "AI Suggested" provenance marker (Phase 3: AI Blueprint Generator). */
+  badge?: ReactNode;
 }) {
   return (
     <section
@@ -106,7 +109,7 @@ export function WorksheetPanel({
         className,
       )}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
         <span
           aria-hidden="true"
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-legacy-600 font-hand text-xs font-bold text-cream-50"
@@ -117,9 +120,19 @@ export function WorksheetPanel({
           {icon && <span aria-hidden="true">{icon} </span>}
           {title}
         </h2>
+        {badge}
       </div>
       <div className="mt-3 font-hand text-sm text-navy-800 sm:text-base">{children}</div>
     </section>
+  );
+}
+
+/** "AI Suggested" provenance pill (Phase 3: AI Blueprint Generator — "mark AI-generated recommendations clearly"). */
+export function AiSuggestedBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-navy-200 bg-navy-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-navy-600">
+      ✨ AI Suggested
+    </span>
   );
 }
 

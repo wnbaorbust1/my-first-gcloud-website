@@ -4,6 +4,7 @@ import { topStrengthsAndPriorities } from "@/lib/assessment/scoring";
 import { getMyBlueprintData } from "@/lib/blueprint/data";
 import { prisma } from "@/lib/prisma";
 import { STAGES, type Stage } from "@/lib/utils";
+import { EMPTY_RESOURCES, parseSection, resourcesSectionSchema } from "@/lib/validations/vision-board-data";
 
 const MAX_SECTION_CHARS = 500;
 const MAX_NOTE_CHARS = 300;
@@ -33,7 +34,7 @@ function truncate(text: string, max: number): string {
  * something written for the member to read verbatim).
  */
 export async function assembleAiContext(businessId: string): Promise<string> {
-  const [business, assessment, roadmap, goal, notes, sectionsByStage] = await Promise.all([
+  const [business, assessment, roadmap, goals, notes, sectionsByStage] = await Promise.all([
     prisma.business.findUniqueOrThrow({ where: { id: businessId } }),
     prisma.assessment.findFirst({
       where: { businessId, status: "COMPLETED" },
@@ -44,7 +45,9 @@ export async function assembleAiContext(businessId: string): Promise<string> {
       where: { businessId },
       include: { tasks: { orderBy: { order: "asc" } } },
     }),
-    prisma.goal.findFirst({ where: { businessId, status: "ACTIVE" }, orderBy: { createdAt: "desc" } }),
+    // USER GOALS (plural) — every active goal, not just the newest one, so
+    // the AI is grounded in the member's full real goal set.
+    prisma.goal.findMany({ where: { businessId, status: "ACTIVE" }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.facilitatorNote.findMany({
       where: { businessId, noteType: { in: ["PARTICIPANT_VISIBLE", "RECOMMENDATION"] } },
       orderBy: { createdAt: "desc" },
@@ -83,12 +86,25 @@ export async function assembleAiContext(businessId: string): Promise<string> {
       lines.push(`Top Strengths: ${strengths.map((s) => `${s.category} (${s.scorePercent}%)`).join(", ")}`);
     if (priorities.length)
       lines.push(`Top Priority Gaps: ${priorities.map((p) => `${p.category} (${p.scorePercent}%)`).join(", ")}`);
+    // ASSIGNED STAGE — the scoring waterfall's actual recommendation
+    // (Passion/Power/Legacy/Growth), not just the raw per-stage scores.
+    if (assessment.recommendedSessionType) {
+      lines.push(
+        `Assigned Stage: ${assessment.recommendedSessionType}${
+          assessment.recommendationReason ? ` — ${truncate(assessment.recommendationReason, MAX_SECTION_CHARS)}` : ""
+        }`,
+      );
+    }
   } else {
     lines.push("Assessment Scores: not completed yet.");
   }
 
-  if (goal) {
-    lines.push(`Active Goal: ${goal.title}${goal.progressPercent ? ` (${goal.progressPercent}% progress)` : ""}`);
+  if (goals.length) {
+    lines.push(
+      `Active Goals: ${goals
+        .map((g) => `${g.title}${g.progressPercent ? ` (${g.progressPercent}% progress)` : ""}`)
+        .join("; ")}`,
+    );
   }
 
   if (roadmap) {
@@ -115,6 +131,59 @@ export async function assembleAiContext(businessId: string): Promise<string> {
     for (const n of notes) {
       lines.push(`- ${truncate(n.note, MAX_NOTE_CHARS)}`);
     }
+  }
+
+  return lines.join("\n");
+}
+
+const MAX_ANSWERS_IN_CONTEXT = 40;
+
+function formatAnswerValue(value: unknown): string {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+/**
+ * VISION BOARD GENERATION CONTEXT (Phase 3: AI Blueprint Generator) —
+ * everything `assembleAiContext` already gives Blueprint AI chat, plus
+ * two blocks that are specific to drafting a Vision Board and too heavy
+ * to add to every ordinary chat turn: the member's actual raw assessment
+ * answers (not just the aggregate scores chat already sees) and their
+ * current Resources section (what they've said they Have/Need), so the
+ * model can draft grounded in the member's own words, not just numbers.
+ */
+export async function assembleVisionBoardGenerationContext(businessId: string): Promise<string> {
+  const baseContext = await assembleAiContext(businessId);
+
+  const [assessment, profile] = await Promise.all([
+    prisma.assessment.findFirst({
+      where: { businessId, status: "COMPLETED" },
+      orderBy: { completedAt: "desc" },
+      select: {
+        responses: {
+          include: { question: { select: { prompt: true, questionType: true, includeInScoring: true } } },
+          take: MAX_ANSWERS_IN_CONTEXT,
+        },
+      },
+    }),
+    prisma.visionBoardProfile.findUnique({ where: { businessId }, select: { resources: true } }),
+  ]);
+
+  const lines: string[] = [baseContext];
+
+  if (assessment?.responses.length) {
+    lines.push("Raw Assessment Answers (the member's own responses, not just the aggregate scores above):");
+    for (const r of assessment.responses) {
+      lines.push(`- ${r.question.prompt} → ${formatAnswerValue(r.value)}`);
+    }
+  }
+
+  const resources = parseSection(resourcesSectionSchema, profile?.resources, EMPTY_RESOURCES);
+  if (resources.have.length || resources.need.length) {
+    lines.push("Current Resources (from the member's Vision Board Profile):");
+    if (resources.have.length) lines.push(`- Has: ${resources.have.join(", ")}`);
+    if (resources.need.length) lines.push(`- Needs: ${resources.need.join(", ")}`);
   }
 
   return lines.join("\n");

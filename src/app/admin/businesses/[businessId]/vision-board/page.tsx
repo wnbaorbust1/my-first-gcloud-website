@@ -26,7 +26,7 @@ export default async function AdminVisionBoardPage({
   });
   if (!business) notFound();
 
-  const { initial, initialNext90Days } = toFormValues(business.visionBoardProfile);
+  const { initial, initialNext90Days, sectionSources } = toFormValues(business.visionBoardProfile);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -47,7 +47,12 @@ export default async function AdminVisionBoardPage({
       </p>
 
       <div className="mt-6">
-        <VisionBoardForm businessId={businessId} initial={initial} initialNext90Days={initialNext90Days} />
+        <VisionBoardForm
+          businessId={businessId}
+          initial={initial}
+          initialNext90Days={initialNext90Days}
+          initialSectionSources={sectionSources}
+        />
       </div>
     </div>
   );

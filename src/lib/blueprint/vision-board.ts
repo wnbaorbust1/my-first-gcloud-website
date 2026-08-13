@@ -19,7 +19,9 @@ import {
   myStorySectionSchema,
   myWhySectionSchema,
   parseSection,
+  parseSectionSources,
   resourcesSectionSchema,
+  type SectionSources,
   type VisionBoardData,
 } from "@/lib/validations/vision-board-data";
 import type { Stage } from "@/lib/utils";
@@ -110,6 +112,21 @@ export async function getVisionBoardData(businessId: string): Promise<VisionBoar
       progressPercent: g.progressPercent,
     })),
   };
+}
+
+/**
+ * PROVENANCE (Phase 3: AI Blueprint Generator) — which editable sections
+ * currently hold member-typed content vs. an accepted AI/rules-based
+ * draft. Kept out of `getVisionBoardExport`'s return (the GPT export a
+ * member's own Custom GPT Action reads) since provenance is an in-app
+ * editorial concern, not something an external image generator needs.
+ */
+export async function getVisionBoardSectionSources(businessId: string): Promise<SectionSources> {
+  const profile = await prisma.visionBoardProfile.findUnique({
+    where: { businessId },
+    select: { sectionSources: true },
+  });
+  return parseSectionSources(profile?.sectionSources);
 }
 
 /**
