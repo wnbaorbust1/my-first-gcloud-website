@@ -1,0 +1,1968 @@
+// Blueprint Business Growth OS — core database schema.
+//
+// This is the Phase 1 (foundation) schema: it establishes every core entity
+// named in /docs/BLUEPRINT_MASTER_SPEC.md so later phases (assessment,
+// sessions, roadmap, Business Builder, Blueprint AI, billing) can extend it
+// without a rewrite. Fields for those later phases are intentionally kept
+// minimal — this is not the final shape of any given module, only enough
+// structure to unblock navigation, auth, and the business-profile flow.
+//
+// NOTE on enums: Postgres enums are used for closed, code-referenced sets
+// (Role, business status, session status, etc.). Open-ended categorical
+// fields that product/content will likely extend (industry, business
+// stage, revenue range, etc.) are modeled as `String` with app-level (zod)
+// validation instead, so adding a new option never requires a migration.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth & Users
+// ---------------------------------------------------------------------------
+
+/// Platform-wide roles. See docs/BLUEPRINT_MASTER_SPEC.md Task 4 for the
+/// permission model. IMPLEMENTATION_SPECIALIST is reserved for a future
+/// phase — the authorization system (src/lib/rbac.ts) already accounts for
+/// it so adding it later is additive, not a rewrite.
+enum Role {
+  MEMBER
+  FACILITATOR
+  ADMIN
+  SUPER_ADMIN
+  // Reserved for a future phase — see src/lib/rbac.ts
+  IMPLEMENTATION_SPECIALIST
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  role          Role      @default(MEMBER)
+  image         String?
+  phone         String?
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+
+  businessMemberships UserBusinessMembership[]
+  organizationMembers OrganizationMembership[]
+
+  facilitatorAssignments  FacilitatorAssignment[] @relation("FacilitatorUser")
+  facilitatorNotesWritten FacilitatorNote[]       @relation("FacilitatorNoteAuthor")
+
+  sessionRegistrations        SessionRegistration[]
+  sessionsFacilitated         SessionOffering[]       @relation("SessionFacilitator")
+  postSessionSummariesWritten PostSessionSummary[]    @relation("PostSessionSummaryAuthor")
+  goals                       Goal[]
+  notifications               Notification[]
+  auditLogs                   AuditLog[]
+  aiConversations             AiConversation[]
+  membershipsGranted          Membership[]            @relation("MembershipGrantedBy")
+  weeklyCheckIns              WeeklyCheckIn[]
+  aiPromptTemplatesUpdated    AiPromptTemplate[]
+  supportRequests             SupportRequest[]
+  personalAccessTokens        PersonalAccessToken[]
+  visionBoardGenerations      VisionBoardGeneration[]
+  boardDownloads              BoardDownload[]
+  visionBoardProfileEdits     VisionBoardProfile[]    @relation("VisionBoardProfileLastEditedBy")
+  visionBoardVersionsSaved    VisionBoardVersion[]
+  assessmentStageOverrides    Assessment[]            @relation("AssessmentStageOverriddenBy")
+
+  @@index([role])
+}
+
+/// PERSONAL ACCESS TOKENS — lets a member authorize an external agent
+/// (a Custom GPT Action, a script) to call Blueprint's export API as
+/// themselves, without sharing their password/session cookie. Bearer-
+/// token auth is what ChatGPT's Custom GPT Action builder supports
+/// natively ("API Key" auth type), so this is the minimum viable server
+/// side of that — no OAuth flow, just an opaque token the member
+/// generates and pastes into their own GPT's Action config. Only the
+/// SHA-256 hash is stored; the raw token is shown once, at creation.
+model PersonalAccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  tokenHash  String    @unique
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
+}
+
+/// OAuth account link (e.g. Google). Architected now per Task 3 even
+/// though only the Credentials provider is enabled in this phase.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Organizations (facilitator / program-provider level grouping)
+// ---------------------------------------------------------------------------
+
+/// ORGANIZATION ACCOUNTS (spec Prompt 12): the closed set of program
+/// types the spec names explicitly, plus OTHER as a catch-all so a real
+/// org never has to be miscategorized while this list is still fixed.
+enum OrganizationType {
+  NONPROFIT
+  SCHOOL
+  COLLEGE
+  GOVERNMENT_PROGRAM
+  CHAMBER
+  INCUBATOR
+  VETERAN_PROGRAM
+  WOMENS_ENTREPRENEURSHIP_PROGRAM
+  CORPORATE_PROGRAM
+  OTHER
+}
+
+model Organization {
+  id     String            @id @default(cuid())
+  name   String
+  status String            @default("ACTIVE")
+  type   OrganizationType?
+
+  /// WHITE-LABEL READINESS (spec Prompt 12): "Architect for future:
+  /// Custom Logo, Colors, Custom Domain, Branded Emails. Do not fully
+  /// implement domain infrastructure unless practical." These fields are
+  /// stored and displayed (an org's logo/colors show on its own
+  /// dashboard) but `customDomain` is not wired to any routing/DNS —
+  /// there is no infrastructure here to serve a second hostname — and
+  /// `brandedFromName`/`brandedFromEmail` are not wired into the (still
+  /// unconfigured, Phase 1) email sender. See Important Decisions.
+  logoUrl          String?
+  primaryColor     String?
+  secondaryColor   String?
+  customDomain     String?
+  brandedFromName  String?
+  brandedFromEmail String?
+
+  /// PRIVACY (spec Prompt 12): "Organizations should see aggregate
+  /// information by default. Only expose individual participant
+  /// information when permissions/program agreements allow it." Default
+  /// false — an org dashboard shows only aggregate numbers until a
+  /// platform admin flips this on for that specific org.
+  allowIndividualParticipantData Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members              OrganizationMembership[]
+  sessions             SessionOffering[]
+  cohorts              Cohort[]
+  sponsoredMemberships Membership[]             @relation("MembershipSponsor")
+
+  @@index([status])
+}
+
+/// spec: "Organization can have: ... Users, Facilitators." One row per
+/// (user, org) pair; `role` is this app's usual open-string categorical
+/// field (see Business.accountabilityCadence for the same convention) —
+/// "ADMIN" (manages cohorts/sponsorship/reports for this org),
+/// "FACILITATOR" (org-affiliated facilitator), or "MEMBER" (read-only
+/// aggregate view) — validated in src/lib/organizations/access.ts, not
+/// a Postgres enum, since an org's own staff titles are exactly the kind
+/// of thing product may want to extend without a migration.
+model OrganizationMembership {
+  id             String @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String @default("MEMBER")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+enum CohortStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+/// COHORTS (spec Prompt 12): "Create cohorts... Fall 2026 Blueprint
+/// Cohort, Veteran Entrepreneur Cohort, Queens in Business, Ghana
+/// Entrepreneur Cohort." Tracked stats (Participants, Sessions,
+/// Completion, Scores, Engagement, Outcomes) are never stored here —
+/// see src/lib/organizations/cohort-analytics.ts — they're computed
+/// fresh from each member Business's real Assessment/Roadmap/
+/// SessionRegistration/BusinessMilestone data every time, the same "no
+/// fake analytics" rule this schema has followed since Phase 4.
+model Cohort {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?      @db.Text
+  status         CohortStatus @default(PLANNED)
+  startDate      DateTime?
+  endDate        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  CohortMembership[]
+
+  @@index([organizationId])
+}
+
+/// A Business's ("Participant's") membership in one Cohort. Deliberately
+/// business-scoped, not user-scoped — every other program-progress model
+/// in this schema (Assessment, Roadmap, Membership) hangs off Business,
+/// and a cohort's whole purpose is tracking *businesses* through a
+/// program.
+model CohortMembership {
+  id         String   @id @default(cuid())
+  cohortId   String
+  businessId String
+  joinedAt   DateTime @default(now())
+
+  cohort   Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortId, businessId])
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Businesses
+// ---------------------------------------------------------------------------
+
+/// A member-owned business profile. Task 6: one User may (eventually) own
+/// or collaborate on multiple Businesses via UserBusinessMembership; every
+/// stage-specific entity (assessment, roadmap, blueprint, goals) hangs off
+/// a single Business, not the User, so multi-business support requires no
+/// structural change later.
+model Business {
+  id     String @id @default(cuid())
+  name   String
+  status String @default("ACTIVE")
+
+  /// ADMIN TEST ACCOUNTS — an admin-created sandbox business used only
+  /// to preview what a member would see at a given membership stage
+  /// (e.g. "what does the free 30-day trial look like," "what does a
+  /// 1-year subscriber see"). Excluded from every real aggregate metric/
+  /// funnel query (src/lib/admin/metrics.ts, src/lib/admin/funnel.ts) —
+  /// this app's "no fake analytics" convention extends to "no test data
+  /// counted as real data" too.
+  isTestAccount Boolean @default(false)
+
+  industry                String?
+  description             String? @db.Text
+  website                 String?
+  location                String?
+  businessStage           String?
+  yearsInBusiness         String?
+  annualRevenueRange      String?
+  monthlyRevenueRange     String?
+  numberOfEmployees       String?
+  primaryProductOrService String? @db.Text
+  idealCustomer           String? @db.Text
+  primaryChallenge        String? @db.Text
+  primaryGoal             String? @db.Text
+  hoursAvailablePerWeek   String?
+  crmUsed                 String?
+  websiteStatus           String?
+  registrationStatus      String?
+
+  /// Blueprint Builder Dashboard unlock flags (spec Prompt 3: "Create
+  /// proper data logic such as builder_access_eligible,
+  /// session_completed_at, qualifying_session_id"). Set together, in one
+  /// place — see src/lib/sessions/qualification.ts — when a facilitator/
+  /// admin marks a registration ATTENDED or COMPLETED. Stays true forever
+  /// once earned (see Known Issue #6); Membership (below) is the separate,
+  /// billing-driven gate that can still lock Builder *functionality* even
+  /// while this stays true — see src/lib/billing/membership.ts.
+  builderAccessEligible           Boolean   @default(false)
+  sessionCompletedAt              DateTime?
+  qualifyingSessionRegistrationId String?
+
+  /// Explicit, timestamped "board-unlocked" record — set once, at the
+  /// same moment `builderAccessEligible` first flips true (see
+  /// unlockBuilderAccessIfQualifying in src/lib/sessions/qualification.ts).
+  /// `builderAccessEligible` is still the actual access-control flag
+  /// (checked on every request); this is a queryable "when" alongside it,
+  /// requested explicitly as its own tracked field rather than only being
+  /// inferable from `sessionCompletedAt`.
+  visionBoardUnlockedAt DateTime?
+
+  /// ACCOUNTABILITY (spec Prompt 9): the member's chosen check-in cadence
+  /// — open string ("2_DAYS_WEEK" | "3_DAYS_WEEK" | "5_DAYS_WEEK" |
+  /// "CUSTOM"), consistent with this schema's other open categorical
+  /// fields. `accountabilityCustomDays` only applies when CUSTOM.
+  /// `lastActiveAt` is what drives the non-shaming "Welcome back" message
+  /// — a gap, not a missed-day counter (spec: "Do not shame missed days").
+  accountabilityCadence    String?
+  accountabilityCustomDays Int?
+  lastActiveAt             DateTime?
+
+  /// IMPACT REPORT (spec Prompt 12): "Jobs Created." Nothing else in this
+  /// schema tracks headcount (the closest signals — First Contractor,
+  /// First Employee milestones — are booleans, not a count), so this is
+  /// a small, honestly-optional self-reported number, the same framing
+  /// the spec itself uses for "Revenue Growth if voluntarily reported."
+  /// Editable from Business Profile; null means "not reported," not zero.
+  jobsCreatedSelfReported Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships UserBusinessMembership[]
+
+  assessments Assessment[]
+  roadmaps    Roadmap[]
+  goals       Goal[]
+  documents   Document[]
+
+  sessionRegistrations   SessionRegistration[]
+  facilitatorAssignments FacilitatorAssignment[]
+  facilitatorNotes       FacilitatorNote[]
+  postSessionSummaries   PostSessionSummary[]
+  aiConversations        AiConversation[]
+  membership             Membership?
+  revenuePlans           RevenuePlan[]
+  pricingPlans           PricingPlan[]
+  weeklyCheckIns         WeeklyCheckIn[]
+  milestones             BusinessMilestone[]
+
+  leads            Lead[]
+  journeyStages    JourneyStage[]
+  sops             Sop[]
+  automationSteps  AutomationStep[]
+  offers           Offer[]
+  marketingPlans   MarketingPlan[]
+  salesScripts     SalesScript[]
+  contentPlanItems ContentPlanItem[]
+
+  cohortMemberships CohortMembership[]
+
+  qualifyingSessionRegistration SessionRegistration? @relation("QualifyingSessionRegistration", fields: [qualifyingSessionRegistrationId], references: [id])
+
+  visionBoardProfile     VisionBoardProfile?
+  visionBoardGenerations VisionBoardGeneration[]
+  boardDownloads         BoardDownload[]
+  visionBoardVersions    VisionBoardVersion[]
+
+  @@index([status])
+}
+
+/// VISION BOARD PROFILE — real, member-entered content for every editable
+/// pillar of the hand-drawn vision-board reference. Restructured (Vision
+/// Board & Blueprint Generator, structured-storage follow-up, audited
+/// 2026-08-13) from one-string-per-field to one **structured JSON object
+/// per section**, matching the shape in
+/// src/lib/validations/vision-board-data.ts exactly — "store the
+/// generated board information as structured data, not one large
+/// paragraph." The same shapes are used by VisionBoardGeneration.payload
+/// (AI drafts) and by getVisionBoardExport's computed sections
+/// (businessModelCanvas here is member-edited so it lives on this model;
+/// passionAssessment/ninetyDayGoalTracker/bigGoals are NOT stored here —
+/// they're computed fresh from Assessment/Goal every time, per this app's
+/// "never fabricate / never duplicate a source of truth" convention, but
+/// assembled into the *same* nested shape so the whole board is one
+/// consistent type end to end).
+///
+/// Every section is optional and simply empty/omitted until the member
+/// (or an accepted AI draft — see VisionBoardGeneration) fills it in —
+/// nothing here is ever invented on their behalf.
+model VisionBoardProfile {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// Short traits in the member's own words — e.g. ["Ambitious", "Passionate"].
+  vibes Json?
+
+  /// MyStorySection: { name, businesses[], passionStatement, superpowers[] }
+  myStory Json?
+  /// MyWhySection: { whyStatement, problemToSolve, peopleToHelp[] }
+  myWhy   Json?
+  /// LegacySection: { legacyStatement, impactGroups[] }
+  legacy  Json?
+
+  /// BlueprintSection: { priorities[], next90Days: { goal, actionSteps[] }[] }
+  blueprint Json?
+
+  /// ActionPlanSection: { thisWeek[], thisMonth[], firstStep }
+  actionPlan Json?
+
+  /// ResourcesSection: { have[], need[] }
+  resources Json?
+
+  /// BusinessModelCanvasSection: { keyPartners[], keyActivities[], value[],
+  /// customers[], channels[], revenueStreams[], costStructure[] }
+  businessModelCanvas Json?
+
+  /// One affirmation per array entry.
+  affirmations Json?
+
+  /// AccountabilitySection: { partnerName, partnerContact, frequency, method, commitment }
+  accountability Json?
+
+  /// BOARD VERSION — bumped by 1 on every successful save (PATCH
+  /// /api/my-blueprint/vision-board or a promoted AI generation). Not a
+  /// full revision history, just a monotonic counter a member/admin can
+  /// see has changed.
+  version Int @default(1)
+
+  /// USER EDITS (practical-minimum tracking, not a per-field audit log) —
+  /// who saved last and when. Set on every PATCH; a promote() call sets
+  /// lastEditedByUserId to the promoting user too, since accepting an AI
+  /// draft is itself an edit.
+  lastEditedAt       DateTime?
+  lastEditedByUserId String?
+  lastEditedBy       User?     @relation("VisionBoardProfileLastEditedBy", fields: [lastEditedByUserId], references: [id])
+
+  /// PROVENANCE (Phase 3: AI Blueprint Generator — "separate user answers
+  /// from AI suggestions" / "mark AI-generated recommendations clearly"):
+  /// `Record<section name, "user" | "ai">`, one entry per section that's
+  /// ever been written. A direct PATCH always marks that section "user"
+  /// — even if it started from an AI draft, the member typing over it is
+  /// direct authorship again. A promote() call marks the section "ai".
+  /// Sections with no entry yet have no content either. Rendered as a
+  /// small "AI Suggested" badge on the edit form and the board — never
+  /// hidden, per "mark AI-generated recommendations clearly."
+  sectionSources Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// DOWNLOAD HISTORY — one row per time a member (or admin, viewing on
+/// their behalf) actually downloads/prints the rendered Vision Board or
+/// Scorecard. Requested explicitly as its own tracked field; written by
+/// the print pages' client-side print action, not inferred from a page
+/// view (a page *view* isn't a *download*).
+model BoardDownload {
+  id         String  @id @default(cuid())
+  businessId String
+  userId     String?
+  /// What was downloaded — "vision_board" | "scorecard".
+  document   String
+  /// How — "print" (browser Print/Save-as-PDF), or (Phase 6: Downloads)
+  /// "pdf" / "png" (client-rendered from the completed HTML board via
+  /// html2canvas + jsPDF) / "email" (same PDF, sent as an attachment).
+  format     String  @default("print")
+
+  downloadedAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+  @@index([userId])
+}
+
+/// SAVE NEW VERSION (Phase 6: Downloads) — an explicit, member-triggered
+/// checkpoint of the whole assembled board (the same shape
+/// `getVisionBoardExport()` returns/renders), distinct from
+/// `VisionBoardProfile.version`'s silent per-edit counter. That counter
+/// answers "has this changed since I last looked"; this table answers
+/// "what did my board actually say on the day I saved it" — a real,
+/// inspectable snapshot rather than a number that can't be looked back
+/// at once overwritten by later edits.
+model VisionBoardVersion {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// 1, 2, 3... per business — the Nth snapshot ever saved for it.
+  version Int
+  /// The full getVisionBoardExport() shape at save time.
+  snapshot Json
+
+  createdByUserId String?
+  createdBy       User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([businessId, version])
+  @@index([businessId])
+}
+
+/// AI-GENERATED VISION BOARD CONTENT (Vision Board & Blueprint Generator,
+/// audited 2026-08-13): every AI generation attempt is stored — never
+/// just the winning one — as an audit trail and so a bad/rejected
+/// generation is diagnosable. `payload` is the *already zod-validated*
+/// structured JSON (never raw/unvalidated model output). `promotedAt`
+/// marks the one generation, if any, whose fields were actually copied
+/// into `VisionBoardProfile` — copied, not referenced live, so a member's
+/// later hand-edit is never silently overwritten by a stale generation.
+model VisionBoardGeneration {
+  id                String  @id @default(cuid())
+  businessId        String
+  assessmentId      String?
+  generatedByUserId String?
+
+  model   String
+  payload Json
+
+  promotedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assessment  Assessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  generatedBy User?       @relation(fields: [generatedByUserId], references: [id])
+
+  @@index([businessId])
+  @@index([assessmentId])
+}
+
+enum BusinessMembershipRole {
+  OWNER
+  COLLABORATOR
+}
+
+model UserBusinessMembership {
+  id         String                 @id @default(cuid())
+  userId     String
+  businessId String
+  role       BusinessMembershipRole @default(OWNER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Assessments (Passion / Power / Legacy)
+// ---------------------------------------------------------------------------
+
+enum BlueprintStage {
+  PASSION
+  POWER
+  LEGACY
+}
+
+enum AssessmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// What a completed assessment recommends the member attend next. A
+/// superset of BlueprintStage (adds GROWTH) because "all three scores are
+/// strong" isn't a stage — see src/lib/assessment/scoring.ts.
+enum RecommendedSessionType {
+  PASSION
+  POWER
+  LEGACY
+  GROWTH
+}
+
+model Assessment {
+  id         String           @id @default(cuid())
+  businessId String
+  status     AssessmentStatus @default(NOT_STARTED)
+
+  // Which AssessmentQuestion set was scored (see ASSESSMENT_VERSION in
+  // src/lib/assessment/questions.ts). Lets question content change later
+  // without corrupting how a historical assessment is interpreted.
+  assessmentVersion String @default("v1")
+
+  healthScorePercent     Int?
+  /// The *current, effective* recommendation — every real consumer
+  /// (Assessment Results, the Vision Board roadmap, session
+  /// recommendations, Blueprint AI's "Assigned Stage" context) reads
+  /// this field. Starts out equal to systemRecommendedSessionType below
+  /// and only ever changes via an explicit facilitator/admin correction
+  /// (Phase 7: Admin and Facilitator Controls).
+  recommendedSessionType RecommendedSessionType?
+  recommendationReason   String?                 @db.Text
+
+  /// STAGE ASSIGNMENT CORRECTION (Phase 7) — an immutable snapshot of
+  /// what the scoring engine itself computed at completion time, set
+  /// once and never touched again, so "what did the algorithm actually
+  /// say" stays honestly recoverable even after a human correction.
+  systemRecommendedSessionType RecommendedSessionType?
+  stageOverriddenByUserId      String?
+  stageOverriddenBy            User?                   @relation("AssessmentStageOverriddenBy", fields: [stageOverriddenByUserId], references: [id])
+  stageOverriddenAt            DateTime?
+  stageOverrideNote            String?                 @db.Text
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business               Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses              AssessmentResponse[]
+  scores                 AssessmentScore[]
+  categoryScores         AssessmentCategoryScore[]
+  visionBoardGenerations VisionBoardGeneration[]
+
+  @@index([businessId])
+}
+
+enum QuestionType {
+  SCALE_1_5
+  YES_NO
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+  NUMBER
+}
+
+model AssessmentQuestion {
+  id           String         @id @default(cuid())
+  stage        BlueprintStage
+  /// Sub-category within a stage, e.g. "Lead Generation" (spec's category
+  /// lists) — plain string per the schema-wide "open categorical sets
+  /// don't need a migration" convention.
+  category     String
+  questionType QuestionType   @default(SCALE_1_5)
+  order        Int
+  prompt       String         @db.Text
+  helperText   String?        @db.Text
+
+  /// [{ "value": "a", "label": "..." }] — SINGLE_CHOICE / MULTIPLE_CHOICE only.
+  options  Json?
+  minValue Int? // NUMBER type range, when used
+  maxValue Int?
+
+  /// Relative weight within its category average — configurable per
+  /// question so scoring can be tuned without a migration.
+  weight Float @default(1)
+
+  /// False for profile/context questions (e.g. open-ended "what do you
+  /// sell?") that shouldn't be averaged into a 0–100 score.
+  includeInScoring Boolean @default(true)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  responses AssessmentResponse[]
+
+  @@index([stage, category, order])
+}
+
+model AssessmentResponse {
+  id           String @id @default(cuid())
+  assessmentId String
+  questionId   String
+
+  /// Shape depends on the question's questionType: number (SCALE_1_5,
+  /// NUMBER), boolean (YES_NO), string (SHORT_ANSWER, SINGLE_CHOICE), or
+  /// string[] (MULTIPLE_CHOICE). One flexible column beats four sparse
+  /// nullable ones — see src/lib/assessment/scoring.ts for how each type
+  /// is normalized to a 0–100 contribution.
+  value Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question   AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, questionId])
+  @@index([questionId])
+}
+
+model AssessmentScore {
+  id           String         @id @default(cuid())
+  assessmentId String
+  stage        BlueprintStage
+  scorePercent Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, stage])
+  @@index([assessmentId])
+}
+
+/// Per-category breakdown backing the Score Detail page. Persisted
+/// (rather than recomputed from responses on every read) so a category's
+/// historical score stays accurate even if question content changes
+/// later.
+model AssessmentCategoryScore {
+  id           String         @id @default(cuid())
+  assessmentId String
+  stage        BlueprintStage
+  category     String
+  scorePercent Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, category])
+  @@index([assessmentId])
+}
+
+/// Single active row read by the scoring engine (src/lib/assessment/
+/// scoring.ts). Exists so an admin tool can retune thresholds/weights
+/// later without a code change or migration — spec Task: "scoring rules
+/// must be stored in a configurable way."
+model AssessmentScoringConfig {
+  id       String  @id @default(cuid())
+  isActive Boolean @default(true)
+  version  String  @default("v1")
+
+  /// { "PASSION": 65, "POWER": 65, "LEGACY": 65 } — a stage scoring below
+  /// its threshold is the next recommended session.
+  stageThresholds Json
+
+  /// A stage at/above this (default 85) is "excellent" — only when ALL
+  /// three clear it do we recommend a GROWTH session instead of the
+  /// weakest of the three.
+  excellenceThreshold Int @default(85)
+
+  /// Relative weight of each stage in the Business Health Score.
+  stageWeights Json
+
+  /// [{ "min":0, "max":39, "label":"Needs Development" }, ...] — drives
+  /// the status label on the Score Detail page.
+  statusBands Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Sessions (facilitator-led sessions members register/attend)
+// ---------------------------------------------------------------------------
+
+enum SessionOfferingStatus {
+  DRAFT
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum SessionFormat {
+  VIRTUAL
+  IN_PERSON
+}
+
+/// A bookable instance of a session. `sessionType` is the closed set the
+/// assessment's recommendation engine matches against
+/// (RecommendedSessionType); Blueprint Passion/Power/Legacy sessions are
+/// just SessionOffering rows with that type. "Architecture must support
+/// unlimited future session types" (spec) is handled by NOT restricting
+/// titles/content to those three — an admin can create any number of
+/// differently-titled sessions under the same sessionType, or (in a
+/// future phase) this field could grow beyond the enum without touching
+/// registration/attendance logic, which only cares about the offering id.
+model SessionOffering {
+  id                      String                 @id @default(cuid())
+  organizationId          String?
+  programId               String?
+  sessionType             RecommendedSessionType
+  title                   String
+  description             String?                @db.Text
+  whoShouldAttend         String?                @db.Text
+  topics                  Json? // string[]
+  learningOutcomes        Json? // string[]
+  whatYoullBuild          String?                @db.Text
+  whatToBring             String?                @db.Text
+  preparationInstructions String?                @db.Text
+  resources               Json? // [{ "title": "...", "url": "..." }]
+
+  status      SessionOfferingStatus @default(DRAFT)
+  format      SessionFormat         @default(VIRTUAL)
+  startsAt    DateTime
+  endsAt      DateTime?
+  timezone    String                @default("America/New_York")
+  location    String?
+  virtualLink String?
+
+  capacity             Int?
+  priceCents           Int?
+  registrationDeadline DateTime?
+  facilitatorId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization  Organization?         @relation(fields: [organizationId], references: [id])
+  program       Program?              @relation(fields: [programId], references: [id], onDelete: SetNull)
+  facilitator   User?                 @relation("SessionFacilitator", fields: [facilitatorId], references: [id])
+  registrations SessionRegistration[]
+  summaries     PostSessionSummary[]
+
+  @@index([status, startsAt])
+  @@index([sessionType])
+  @@index([programId])
+}
+
+/// One lifecycle status per registration (spec: "Track: Registered,
+/// Waitlisted, Cancelled, Attended, No-Show, Completed") rather than a
+/// separate Attendance model — avoids two overlapping status concepts
+/// that could drift out of sync.
+enum RegistrationStatus {
+  REGISTERED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+  COMPLETED
+}
+
+model SessionRegistration {
+  id         String             @id @default(cuid())
+  sessionId  String
+  userId     String
+  businessId String?
+  status     RegistrationStatus @default(REGISTERED)
+
+  /// Position in the waitlist queue at the time the member joined it
+  /// (null once REGISTERED). Not re-flowed when someone ahead cancels —
+  /// good enough for "You're #N on the waitlist" display in this phase.
+  waitlistPosition Int?
+
+  checkedInAt     DateTime?
+  attendanceNotes String?   @db.Text
+
+  /// SESSION PAYMENT (Vision Board & Blueprint Generator, audited
+  /// 2026-08-13): the $150 qualifying-session charge. Deliberately
+  /// separate from `Membership`/`MembershipInvoice` — this is a one-time
+  /// charge tied to one registration, not a subscription. `paidAt` null
+  /// means "not required or not yet paid"; see
+  /// SessionOffering.priceCents for whether it's actually required.
+  /// Written only by the checkout.session.completed webhook handler
+  /// (src/lib/billing/webhook-handlers.ts), never by client input.
+  paidAt                  DateTime?
+  amountPaidCents         Int?
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session              SessionOffering     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business             Business?           @relation(fields: [businessId], references: [id])
+  facilitatorNotes     FacilitatorNote[]
+  postSessionSummary   PostSessionSummary?
+  qualifiesForBusiness Business[]          @relation("QualifyingSessionRegistration")
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@index([sessionId, status])
+}
+
+/// Structured record generated after a qualifying session (spec POST-
+/// SESSION SUMMARY). Facilitator/admin-editable; not AI-generated yet.
+model PostSessionSummary {
+  id                    String  @id @default(cuid())
+  sessionRegistrationId String  @unique
+  sessionId             String
+  businessId            String
+  facilitatorId         String?
+
+  top3Priorities           Json // string[]
+  goal30Day                String?                 @db.Text
+  goal60Day                String?                 @db.Text
+  goal90Day                String?                 @db.Text
+  recommendedTasks         Json? // string[]
+  recommendedResources     Json? // string[]
+  nextSuggestedSessionType RecommendedSessionType?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  registration SessionRegistration @relation(fields: [sessionRegistrationId], references: [id], onDelete: Cascade)
+  session      SessionOffering     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  business     Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  facilitator  User?               @relation("PostSessionSummaryAuthor", fields: [facilitatorId], references: [id])
+
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Roadmap / Business Builder
+// ---------------------------------------------------------------------------
+
+enum RoadmapStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Roadmap {
+  id         String        @id @default(cuid())
+  businessId String
+  status     RoadmapStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tasks    RoadmapTask[]
+
+  @@index([businessId])
+}
+
+enum TaskStatus {
+  LOCKED
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  PAUSED
+}
+
+enum TaskDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum TaskImpact {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskPriority {
+  MUST_DO
+  SHOULD_DO
+  BONUS
+}
+
+/// The reusable definition behind every RoadmapTask (spec TASK METADATA +
+/// BUSINESS BUILDER TASK PAGE). `instructions` holds the BUILD step
+/// fields as structured data — [{ key, label, prompt, type }] — so a
+/// completed task's answers are always structured (spec: "Do not store
+/// everything only as unstructured notes"), not a paragraph of prose.
+model TaskTemplate {
+  id       String         @id @default(cuid())
+  stage    BlueprintStage
+  category String
+  title    String
+
+  /// LEARN — a short, beginner-friendly explanation of why this matters.
+  whyItMatters      String  @db.Text
+  /// THINK — a reflective prompt shown before the build steps.
+  thinkPrompt       String? @db.Text
+  /// BUILD — [{ key, label, prompt, type: "short_text"|"long_text" }].
+  instructions      Json
+  /// IMPLEMENT — shown after the task is marked complete.
+  implementGuidance String? @db.Text
+  /// MEASURE — a follow-up prompt for revisiting this later.
+  measurePrompt     String? @db.Text
+
+  difficulty           TaskDifficulty @default(BEGINNER)
+  impact               TaskImpact     @default(MEDIUM)
+  priority             TaskPriority   @default(SHOULD_DO)
+  estimatedMins        Int?
+  /// "structured_fields" today; room for e.g. "document" later without a migration.
+  outputType           String         @default("structured_fields")
+  /// Key identifying which My Blueprint section this task's answers populate.
+  blueprintDestination String?
+
+  order    Int
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmapTasks RoadmapTask[]
+
+  /// Self-relation: this task can't start until every "prerequisite" is
+  /// COMPLETED (spec TASK DEPENDENCIES). `prerequisites` = tasks this one
+  /// needs; `unlocks` = tasks that need this one.
+  prerequisites TaskTemplate[] @relation("TaskTemplatePrerequisites")
+  unlocks       TaskTemplate[] @relation("TaskTemplatePrerequisites")
+
+  @@index([stage, order])
+}
+
+model RoadmapTask {
+  id             String         @id @default(cuid())
+  roadmapId      String
+  taskTemplateId String?
+  stage          BlueprintStage
+  category       String?
+  title          String
+  description    String?        @db.Text
+  status         TaskStatus     @default(NOT_STARTED)
+  priority       TaskPriority   @default(SHOULD_DO)
+  estimatedMins  Int?
+  order          Int            @default(0)
+  completedAt    DateTime?
+
+  /// True once a facilitator has manually adjusted this task (priority,
+  /// pause, unlock override, reorder) — surfaced in the UI so a member
+  /// can see their facilitator was involved, and so regeneration logic
+  /// (future) knows not to silently overwrite it.
+  facilitatorAdjusted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmap      Roadmap       @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  taskTemplate TaskTemplate? @relation(fields: [taskTemplateId], references: [id])
+  response     TaskResponse?
+
+  aiConversations AiConversation[]
+
+  @@index([roadmapId, status])
+}
+
+/// One current structured response per task (upserted on every save —
+/// spec doesn't ask for answer history, only for task/blueprint activity
+/// history, which RoadmapTask.completedAt + DocumentSection.updatedAt
+/// already provide).
+model TaskResponse {
+  id                 String    @id @default(cuid())
+  roadmapTaskId      String    @unique
+  /// { [stepKey]: answer } — matches TaskTemplate.instructions' keys.
+  answers            Json
+  savedToBlueprintAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roadmapTask RoadmapTask @relation(fields: [roadmapTaskId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+/// spec Prompt 9 GOALS: "Allow: Annual, Quarterly, 90-Day, Monthly, Weekly."
+enum GoalCadence {
+  WEEKLY
+  MONTHLY
+  NINETY_DAY
+  QUARTERLY
+  ANNUAL
+}
+
+/// spec Prompt 9 GOALS: the 9 named goal types.
+enum GoalType {
+  REVENUE
+  PROFIT
+  LEADS
+  CUSTOMERS
+  LAUNCH
+  MARKETING
+  SYSTEMS
+  TEAM
+  PERSONAL_CEO
+}
+
+model Goal {
+  id          String      @id @default(cuid())
+  businessId  String
+  userId      String
+  title       String
+  description String?     @db.Text
+  targetDate  DateTime?
+  status      GoalStatus  @default(ACTIVE)
+  cadence     GoalCadence @default(NINETY_DAY)
+  goalType    GoalType    @default(PERSONAL_CEO)
+
+  /// Optional numeric target for measurable goal types (Revenue, Leads,
+  /// Customers, Profit) — e.g. 10000 for "$10,000" or 25 for "25 leads."
+  /// Free-text `unit` (not an enum) keeps it flexible across goal types
+  /// without a migration, matching this schema's open-categorical-field
+  /// convention elsewhere.
+  targetValue Float?
+  unit        String?
+
+  /// User-set, never derived — the Goal Snapshot shows real progress or
+  /// none at all (spec: "No fake analytics"), not a fabricated
+  /// time-elapsed percentage.
+  progressPercent Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Money tools (spec Prompt 9: Revenue Planner, Pricing Builder)
+// ---------------------------------------------------------------------------
+
+/// One saved run of the Revenue Planner calculator (spec Prompt 9). Every
+/// run is kept (not just the latest) so Monthly Review can reference "the
+/// plan you set" without it having been overwritten by a later what-if.
+/// All money fields are cents (this schema's existing convention — see
+/// Membership) for exact arithmetic; percentages are stored as entered
+/// (e.g. 2.5 for 2.5%), not pre-divided.
+model RevenuePlan {
+  id                    String @id @default(cuid())
+  businessId            String
+  revenueGoalCents      Int
+  offerPriceCents       Int
+  conversionRatePercent Float
+  workingWeeks          Int
+
+  /// Calculated, never re-derived after save — a later change to the
+  /// calculator's formula shouldn't silently rewrite historical plans.
+  salesNeeded        Int
+  leadsNeeded        Int
+  monthlyTargetCents Int
+  weeklyTargetCents  Int
+
+  createdAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+}
+
+/// One saved run of the Pricing Builder (spec Prompt 9). `considerations`
+/// is the honest, non-guaranteed framing text the spec requires ("Do not
+/// portray result as guaranteed market pricing") — generated alongside
+/// the range, not a separate disclaimer bolted on by the UI.
+model PricingPlan {
+  id                 String @id @default(cuid())
+  businessId         String
+  offerName          String
+  deliveryTimeHours  Float
+  directCostsCents   Int
+  desiredProfitCents Int
+  capacityPerMonth   Int
+
+  estimatedLowCents  Int
+  estimatedHighCents Int
+  considerations     String @db.Text
+
+  createdAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Progress & Accountability (spec Prompt 9)
+// ---------------------------------------------------------------------------
+
+/// WEEKLY CEO CHECK-IN (spec): the exact 8 questions as columns, plus 3
+/// structured numbers (Leads/Sales/Revenue) that Monthly Review and the
+/// revenue Milestones both roll up from — the only place this app
+/// collects self-reported revenue, since nothing else in the schema
+/// tracks actual money changing hands.
+model WeeklyCheckIn {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  /// The Monday of the week this check-in covers — one check-in per
+  /// business per week (spec doesn't ask for multiple check-ins in the
+  /// same week; a member revisiting theirs should edit it, not fork it).
+  weekOf     DateTime
+
+  completed        String? @db.Text
+  slowedDown       String? @db.Text
+  biggestWin       String? @db.Text
+  biggestChallenge String? @db.Text
+  leads            Int?
+  sales            Int?
+  revenueCents     Int?
+  nextWeekFocus    String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, weekOf])
+  @@index([businessId, weekOf])
+}
+
+/// The 15 spec MILESTONES, as a closed set (code-referenced, like every
+/// other enum in this schema) rather than a free-text catalog table —
+/// the list is fixed by the spec, not admin-editable content.
+enum MilestoneKey {
+  MISSION_DEFINED
+  IDEAL_CUSTOMER_DEFINED
+  FIRST_OFFER
+  PRICING_COMPLETE
+  FIRST_LEAD_SYSTEM
+  FIRST_CUSTOMER
+  FIRST_1K
+  FIRST_5K_MONTH
+  FIRST_10K_MONTH
+  FIRST_SOP
+  FIRST_AUTOMATION
+  FIRST_CONTRACTOR
+  FIRST_EMPLOYEE
+  CEO_MODE
+  LEGACY_BUILDER
+}
+
+/// One row per business per achieved milestone — never deleted, so
+/// "achieved" is permanent even if the underlying Blueprint content is
+/// later edited away. `source` distinguishes milestones detected from
+/// real data ("auto" — e.g. a Blueprint section being saved) from ones a
+/// member confirms themselves ("manual" — e.g. First Employee, which
+/// nothing in this schema tracks automatically) — both are equally real,
+/// neither is fabricated.
+model BusinessMilestone {
+  id         String       @id @default(cuid())
+  businessId String
+  milestone  MilestoneKey
+  achievedAt DateTime     @default(now())
+  source     String       @default("auto")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, milestone])
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint AI (spec Prompt 7)
+// ---------------------------------------------------------------------------
+
+/// The 8 spec AI MODES — each is a distinct system-prompt framing, not a
+/// separate feature. A conversation has one "current" mode (switchable
+/// mid-conversation, spec doesn't say a conversation is locked to one),
+/// stamped on each message so history shows which mode produced it.
+enum AiMode {
+  BUSINESS_COACH
+  STRATEGIST
+  COPYWRITER
+  MARKETING_ASSISTANT
+  SALES_COACH
+  SYSTEMS_BUILDER
+  FINANCE_GUIDE
+  IMPLEMENTATION_GUIDE
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+}
+
+/// AI HISTORY (spec): "Store conversations by Business, User, Topic,
+/// Related Task, Date." `topic` is a short free-text label (a Builder
+/// task's category when started from Builder, "General" otherwise) —
+/// open-ended like every other categorical field in this schema, not an
+/// enum, since it's meant to read naturally in a conversation list.
+model AiConversation {
+  id         String @id @default(cuid())
+  businessId String
+  userId     String
+  /// User-editable (spec: "Rename conversation"); defaults to a short
+  /// label derived from the first message on creation.
+  title      String
+  topic      String @default("General")
+  mode       AiMode @default(BUSINESS_COACH)
+
+  relatedTaskId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedTask RoadmapTask? @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  messages    AiMessage[]
+
+  @@index([businessId, userId, updatedAt])
+  @@index([relatedTaskId])
+}
+
+model AiMessage {
+  id             String        @id @default(cuid())
+  conversationId String
+  role           AiMessageRole
+  content        String        @db.Text
+  /// The mode active when this message was sent/generated — kept even if
+  /// the conversation's current mode later changes.
+  mode           AiMode?
+  /// Which of the 9 spec AI ACTIONS buttons produced this (USER
+  /// messages only) — e.g. "IMPROVE_THIS" — null for freely-typed
+  /// messages.
+  actionType     String?
+  /// spec: "Favorite response" — ASSISTANT messages only in practice.
+  isFavorite     Boolean       @default(false)
+
+  createdAt DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// My Blueprint (business binder) & Resources
+// ---------------------------------------------------------------------------
+
+model Document {
+  id         String @id @default(cuid())
+  businessId String
+  title      String
+  kind       String @default("BLUEPRINT")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sections DocumentSection[]
+
+  @@index([businessId])
+}
+
+model DocumentSection {
+  id         String          @id @default(cuid())
+  documentId String
+  stage      BlueprintStage?
+  title      String
+  content    String?         @db.Text
+  order      Int             @default(0)
+
+  /// The RoadmapTask whose "Save to Blueprint" last wrote this section,
+  /// if any — lets My Blueprint show "from: <task>" and link back, and
+  /// distinguishes auto-populated sections from ones a member typed
+  /// directly. A section stays independently editable either way.
+  sourceRoadmapTaskId String?
+  lastEditedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, title])
+  @@index([documentId, order])
+}
+
+model Resource {
+  id          String          @id @default(cuid())
+  title       String
+  description String?         @db.Text
+  url         String?
+  stage       BlueprintStage?
+  category    String?
+  isActive    Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stage])
+}
+
+// ---------------------------------------------------------------------------
+// Facilitator relationships
+// ---------------------------------------------------------------------------
+
+model FacilitatorAssignment {
+  id            String @id @default(cuid())
+  facilitatorId String
+  businessId    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  facilitator User     @relation("FacilitatorUser", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([facilitatorId, businessId])
+  @@index([businessId])
+}
+
+/// spec: "Allow facilitator to create: Private Notes, Participant-Visible
+/// Notes, Recommendations, Assigned Priority, Custom Task Recommendation."
+enum FacilitatorNoteType {
+  PRIVATE
+  PARTICIPANT_VISIBLE
+  RECOMMENDATION
+  TASK_RECOMMENDATION
+}
+
+model FacilitatorNote {
+  id                    String              @id @default(cuid())
+  authorId              String
+  businessId            String
+  sessionRegistrationId String?
+  noteType              FacilitatorNoteType @default(PRIVATE)
+  note                  String              @db.Text
+  assignedPriority      TaskPriority?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author       User                 @relation("FacilitatorNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  registration SessionRegistration? @relation(fields: [sessionRegistrationId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([sessionRegistrationId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id     String    @id @default(cuid())
+  userId String
+  title  String
+  body   String?   @db.Text
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// Membership & Billing (spec Prompt 8)
+// ---------------------------------------------------------------------------
+
+/// The 8 spec MEMBERSHIP STATES. Membership is scoped to the Business
+/// (not the User) — Builder access itself is already business-scoped
+/// (Business.builderAccessEligible), and the spec's EXISTING MEMBER RULE
+/// ("a paid member attending another session gets no new trial") only
+/// makes sense if there's one membership per business to check against,
+/// not one per user who happens to attend.
+enum MembershipStatus {
+  COMPLIMENTARY
+  ACTIVE_MONTHLY
+  ACTIVE_ANNUAL
+  PAYMENT_ISSUE
+  CANCELLED
+  EXPIRED
+  SPONSORED
+  ADMIN_GRANTED
+}
+
+/// Only meaningful once a business has actually converted to paid —
+/// null while COMPLIMENTARY / SPONSORED / ADMIN_GRANTED.
+enum MembershipPlan {
+  MONTHLY
+  ANNUAL
+}
+
+/// One row per Business, created the moment their qualifying session
+/// attendance activates Builder access — never at registration (spec:
+/// "The complimentary period... does NOT begin at registration"). See
+/// src/lib/billing/membership.ts `ensureMembershipActivated`, called
+/// from the same markAttendance transaction that flips
+/// Business.builderAccessEligible.
+model Membership {
+  id         String           @id @default(cuid())
+  businessId String           @unique
+  status     MembershipStatus @default(COMPLIMENTARY)
+  plan       MembershipPlan?
+
+  /// TRIAL / COMPLIMENTARY LOGIC — the exact fields the spec calls out:
+  /// "qualifying_session_id, attendance confirmation, activation date,
+  /// trial start, trial end, conversion status."
+  qualifyingSessionRegistrationId String?
+  attendanceConfirmedAt           DateTime?
+  activatedAt                     DateTime?
+  trialStartsAt                   DateTime?
+  trialEndsAt                     DateTime?
+  /// Conversion status: null = still complimentary/unconverted; set the
+  /// moment a paid subscription first becomes active.
+  convertedAt                     DateTime?
+
+  /// Stripe linkage. Never store raw card data — these are the display-
+  /// only fields Stripe's API returns about the attached payment method.
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?
+  paymentMethodBrand    String?
+  paymentMethodLast4    String?
+  paymentMethodExpMonth Int?
+  paymentMethodExpYear  Int?
+
+  /// Doubles as "Next Billing Date" (ACTIVE_*) and the access-through
+  /// date after a cancellation (spec: "Allow access through current paid
+  /// billing period").
+  currentPeriodEndsAt DateTime?
+  cancelAtPeriodEnd   Boolean   @default(false)
+  cancelledAt         DateTime?
+
+  /// Provenance for SPONSORED / ADMIN_GRANTED (spec: "Admin may manually
+  /// grant promotional credit later") — who granted it and why, not just
+  /// that it happened.
+  grantedByUserId String?
+  grantedReason   String? @db.Text
+
+  /// SPONSORED ACCESS (spec Prompt 12): "Allow organization to sponsor
+  /// Blueprint access... Track sponsor and expiration." Additive to the
+  /// Phase 8 SPONSORED status, not a replacement for it — an
+  /// admin-granted SPONSORED membership (no organization behind it)
+  /// leaves both fields null and never expires automatically, exactly as
+  /// before this phase; `resolveEffectiveStatus` only checks
+  /// `sponsoredUntil` when it's actually set. See Important Decisions.
+  sponsorOrganizationId String?
+  sponsoredUntil        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business            Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  grantedBy           User?               @relation("MembershipGrantedBy", fields: [grantedByUserId], references: [id])
+  sponsorOrganization Organization?       @relation("MembershipSponsor", fields: [sponsorOrganizationId], references: [id], onDelete: SetNull)
+  invoices            MembershipInvoice[]
+
+  @@index([status])
+  @@index([stripeCustomerId])
+  @@index([sponsorOrganizationId])
+}
+
+enum InvoiceStatus {
+  PAID
+  FAILED
+  REFUNDED
+}
+
+/// Payment History (spec BILLING PAGE). Populated from real Stripe
+/// invoice webhooks — never fabricated. Empty when Stripe isn't
+/// configured or nothing has been charged yet.
+model MembershipInvoice {
+  id              String        @id @default(cuid())
+  membershipId    String
+  stripeInvoiceId String        @unique
+  amountCents     Int
+  currency        String        @default("usd")
+  status          InvoiceStatus
+  description     String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  receiptUrl      String?
+
+  createdAt DateTime @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, createdAt])
+}
+
+/// Idempotency guard for the Stripe webhook (spec ACCEPTANCE CHECKLIST:
+/// "Webhook events are validated") — `id` is the Stripe event id itself,
+/// so a redelivered event is a harmless no-op instead of double-applying
+/// a state change.
+model StripeWebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------------------------
+// Advanced Business Tools (spec Prompt 10)
+// ---------------------------------------------------------------------------
+
+/// LIGHTWEIGHT CRM (spec Prompt 10): the 7 pipeline stages.
+enum LeadStage {
+  NEW_LEAD
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  FOLLOW_UP
+  WON
+  LOST
+}
+
+/// One row per lead/prospect. `company` is the *lead's* business — kept
+/// distinct from the owning Blueprint `Business` this row belongs to.
+model Lead {
+  id         String    @id @default(cuid())
+  businessId String
+  name       String
+  company    String?
+  email      String?
+  phone      String?
+  offer      String?
+  valueCents Int?
+  stage      LeadStage @default(NEW_LEAD)
+  nextAction String?
+  notes      String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, stage])
+}
+
+/// CUSTOMER JOURNEY BUILDER (spec Prompt 10): default 9 stages
+/// (Awareness → Referral), seeded lazily per business — see
+/// src/lib/tools/journey.ts — and fully customizable afterward: rename,
+/// reorder, add, remove.
+model JourneyStage {
+  id          String  @id @default(cuid())
+  businessId  String
+  name        String
+  description String? @db.Text
+  order       Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, order])
+}
+
+/// SOP BUILDER (spec Prompt 10) — the exact 9 spec fields. `steps` is
+/// free text (one step per line), not a structured Json array — an SOP is
+/// read/printed as a document, not driven by app logic the way
+/// RoadmapTask instructions are.
+model Sop {
+  id                 String    @id @default(cuid())
+  businessId         String
+  name               String
+  purpose            String?   @db.Text
+  trigger            String?   @db.Text
+  owner              String?
+  tools              String?   @db.Text
+  steps              String?   @db.Text
+  completionCriteria String?   @db.Text
+  exceptions         String?   @db.Text
+  reviewDate         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// AUTOMATION MAPPER (spec Prompt 10). Each row is one step of a
+/// business's automation flow, rendered connected in `order` — "Allow
+/// visual sequence" is met by chaining these rows visually (mirrors the
+/// Roadmap's own chain visual) rather than adding a separate flow/step
+/// model, since the spec's fields already describe exactly one step.
+model AutomationStep {
+  id         String  @id @default(cuid())
+  businessId String
+  order      Int
+  trigger    String  @db.Text
+  action     String  @db.Text
+  tool       String?
+  timing     String?
+  owner      String?
+  message    String? @db.Text
+  nextStep   String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, order])
+}
+
+/// OFFER BUILDER (spec Prompt 10) — the only Phase 10 tool the spec
+/// explicitly requires to also save into My Blueprint (the "Products &
+/// Services" section, matching the existing Phase 5 task's
+/// `blueprintDestination`) — see src/lib/tools/offers.ts.
+model Offer {
+  id           String  @id @default(cuid())
+  businessId   String
+  name         String
+  audience     String? @db.Text
+  problem      String? @db.Text
+  outcome      String? @db.Text
+  features     String? @db.Text
+  benefits     String? @db.Text
+  deliverables String? @db.Text
+  priceCents   Int?
+  cta          String?
+
+  savedToBlueprintAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// MARKETING PLAN BUILDER (spec Prompt 10) — the exact 8 spec fields.
+model MarketingPlan {
+  id             String  @id @default(cuid())
+  businessId     String
+  goal           String? @db.Text
+  audience       String? @db.Text
+  channels       String? @db.Text
+  contentPillars String? @db.Text
+  leadMagnet     String? @db.Text
+  campaign       String? @db.Text
+  cta            String?
+  metrics        String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// SALES SCRIPT BUILDER (spec Prompt 10): the 6 spec script types, each
+/// generated from a structured starter template (same template-not-AI
+/// approach as Phase 6's Document Generator) and then freely
+/// editable/saveable per business.
+enum SalesScriptType {
+  DISCOVERY_CALL
+  SALES_CALL
+  DM_RESPONSE
+  FOLLOW_UP
+  OBJECTION_HANDLING
+  CLOSING
+}
+
+model SalesScript {
+  id         String          @id @default(cuid())
+  businessId String
+  type       SalesScriptType
+  title      String
+  content    String          @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, type])
+}
+
+/// CONTENT PLANNER (spec Prompt 10).
+enum ContentCadence {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ContentStatus {
+  IDEA
+  DRAFTED
+  SCHEDULED
+  POSTED
+}
+
+model ContentPlanItem {
+  id          String         @id @default(cuid())
+  businessId  String
+  cadence     ContentCadence @default(WEEKLY)
+  idea        String         @db.Text
+  platform    String?
+  status      ContentStatus  @default(IDEA)
+  cta         String?
+  plannedDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, cadence, status])
+}
+
+// ---------------------------------------------------------------------------
+// Facilitator + Admin Command Center (spec Prompt 11)
+// ---------------------------------------------------------------------------
+
+/// AI PROMPT TEMPLATES (spec Prompt 11 CONTENT MANAGEMENT): an admin-editable
+/// override of one AiMode's system-prompt fragment. Not required to exist
+/// for a mode — `buildSystemPrompt()` falls back to the hardcoded
+/// `AI_MODE_BY_KEY` fragment (Phase 7) whenever no active row exists here,
+/// so this is purely an override layer, never a second source of truth.
+model AiPromptTemplate {
+  id                   String  @id @default(cuid())
+  mode                 AiMode  @unique
+  systemPromptFragment String  @db.Text
+  isActive             Boolean @default(true)
+  updatedByUserId      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updatedByUser User? @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
+}
+
+/// PROGRAMS (spec Prompt 11 CONTENT MANAGEMENT): a named catalog a
+/// SessionOffering can optionally belong to (e.g. "Blueprint Foundations,"
+/// "Veteran Entrepreneur Track") — admin-managed now, and the natural
+/// attachment point for Prompt 12's Organization-level Programs later
+/// without a schema change to SessionOffering itself.
+model Program {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions SessionOffering[]
+}
+
+// ---------------------------------------------------------------------------
+// Launch Hardening (post-Prompt-12 audit fixes)
+// ---------------------------------------------------------------------------
+
+/// RATE LIMITING: one row per attempt against a rate-limited action —
+/// `key` is the scope being throttled (e.g. "signup:203.0.113.4",
+/// "login:name@example.com", "ai-message:<userId>"). Checking a limit is
+/// "count rows for this key newer than the window start"; a request that
+/// passes inserts its own row. Deliberately DB-backed rather than
+/// in-memory or a new Redis dependency — works correctly across multiple
+/// app instances without any new infrastructure, matching this app's
+/// "don't add a dependency the DB can already do" pattern (see: PDF
+/// export via browser print, not a rendering library). Not purged on a
+/// schedule yet — see Known Issues.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+/// ERROR LOGGING: a self-hosted, no-third-party-account alternative to
+/// Sentry/Datadog — real for this app's actual scale, and consistent
+/// with the "no new external dependency unless the DB genuinely can't do
+/// it" pattern already used throughout this schema. `context` carries
+/// whatever structured detail the call site has (route, userId, status
+/// code) as JSON, never raw request bodies (no payment data, no
+/// passwords — see src/lib/observability/log-error.ts).
+model ErrorLog {
+  id        String   @id @default(cuid())
+  message   String   @db.Text
+  stack     String?  @db.Text
+  context   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+enum SupportRequestStatus {
+  OPEN
+  RESOLVED
+}
+
+/// SUPPORT (spec audit finding: "no way to reach a human"). Always tied
+/// to a signed-in user (this app has no logged-out support surface yet —
+/// see Known Issues) so an admin always has an account to look up
+/// without asking the requester to re-identify themselves.
+model SupportRequest {
+  id        String               @id @default(cuid())
+  userId    String
+  subject   String
+  message   String               @db.Text
+  status    SupportRequestStatus @default(OPEN)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId])
+}
