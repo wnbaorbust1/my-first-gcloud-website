@@ -12,6 +12,7 @@ const ADMIN_NAV = [
   { label: "Users", href: "/admin/users" },
   { label: "Organizations", href: "/admin/organizations" },
   { label: "Sessions", href: "/admin/sessions" },
+  { label: "Test Accounts", href: "/admin/test-accounts" },
   { label: "Content", href: "/admin/content" },
   { label: "Assessments", href: "/admin/assessments" },
   { label: "Analytics", href: "/admin/analytics" },

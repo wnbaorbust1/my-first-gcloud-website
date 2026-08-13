@@ -3174,3 +3174,86 @@ unlocked the locked business and confirmed via direct DB queries that
 `ADMIN_GRANTED` membership was created, and an `AuditLog` row exists;
 and the version history list and read-only detail page both rendered
 the real saved snapshot correctly.
+
+## PHASE 7 continued — Full Session Control and Test Accounts (complete)
+
+A follow-up directive asked for three more admin capabilities: "go thru
+all stages of the app," "create sessions and change sessions,"
+"manually add clients to sessions or delete them," and "a test account
+to see what the clients would see for their free 30 days and what they
+will see for their 1yr subscription." "Create sessions" and "go thru
+all stages" were already real (Phase 3/11's `CreateSessionForm`, and
+every member-facing page an admin can already open). Three were gaps,
+closed here:
+
+**1. Change sessions** — the `PATCH /api/admin/sessions/[id]` schema
+only ever accepted `status`/`facilitatorId`/`capacity`. It now accepts
+every real `SessionOffering` field an admin would need to correct:
+`title`, `sessionType`, `description`, `format`, `startsAt`, `endsAt`,
+`location`, `virtualLink`, `priceCents`, `programId`, `organizationId`
+— each independently optional so a partial PATCH only touches what
+changed, with `null` explicitly clearing an optional field versus
+`undefined` leaving it alone. A new `/admin/sessions/[sessionId]`
+detail page (linked from each row's new "Edit" link) makes this
+actually reachable rather than API-only.
+
+**2. Manually add or remove clients from a session** — new
+`POST`/`DELETE /api/admin/sessions/[id]/registrations[/registrationId]`
+(`can.manageSessionRegistrations`, ADMIN-only), thin wrappers around the
+same `registerForSession`/`cancelRegistration` functions the real
+member signup/cancel flow already uses — so an admin add gets the exact
+same capacity check, serializable-transaction race protection, and
+waitlist placement a real signup would, and a removal promotes the next
+waitlisted registrant exactly as a real cancellation does. Takes the
+business owner's account email (the same lookup convention already
+used by `/api/admin/facilitator-assignments`) rather than an internal
+id. Both actions leave an `AuditLog` entry. Built into the same session
+detail page as a "Registrants" card.
+
+**3. Test Accounts** — new `Business.isTestAccount` flag and a
+dedicated `/admin/test-accounts` admin page: real, separate sandbox
+logins (never a session-impersonation trick) an admin can create, then
+open in a second browser to see exactly what a member sees at a given
+membership stage. `POST /api/admin/test-accounts` creates a genuine
+`User` (random 12-byte password, shown once, same as the reset-password
+flow) plus a `Business` flagged `isTestAccount: true`.
+`POST .../[businessId]/preview` flips its real `Membership` row between
+COMPLIMENTARY with a 30-day `trialEndsAt` ("free 30 days"),
+ACTIVE_ANNUAL with a 365-day `currentPeriodEndsAt` ("1-year
+subscription"), or a lapsed COMPLIMENTARY (Phase 5's expired/read-only
+state) — and **404s on any business that isn't flagged
+`isTestAccount`**, so this can never fabricate a paid status on a real
+customer. Every real aggregate metric and funnel query
+(`src/lib/admin/metrics.ts`, `src/lib/admin/funnel.ts`) now excludes
+`isTestAccount` businesses, extending this app's existing "no fake
+analytics" convention to "no test data counted as real data" too —
+except `User.count()`, left unfiltered as a documented, accepted scope
+limitation (a test account's dedicated login user isn't otherwise
+distinguishable from a real one without a join the metrics query
+doesn't otherwise need).
+
+**Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (93 — 27 new across 7 files: session
+full-field PATCH auth/role/update/404; registration add
+auth/role/404-no-business/success-with-audit-log; registration remove
+auth/role/404-cross-session/success-with-waitlist-promotion-and-audit-
+log; test-account create auth/role/create-with-shown-once-password/
+list; preview auth/404-on-real-business/trial/annual/expired; reset-
+password auth/404-on-real-business/regenerates-and-invalidates-old;
+delete auth/404-on-real-business/deletes-business-and-login-user), and
+a production build (`next build --webpack`) all pass. Live-verified
+end-to-end with Playwright: created a real test account from the admin
+UI, captured its shown-once credentials, set it to "Free Trial" and
+logged into it in a separate browser context — the Billing page showed
+a real "Complimentary (Free Trial)" status with a real 30-day
+`trialEndsAt` date; set it to "Annual Subscriber" and logged in again —
+Billing showed real "Active — Annual, $100/year, Next Billing Date"
+fields, confirming the two membership stages genuinely render
+differently for the same account. Separately, edited a session's full
+fields (title, description, location, price, capacity) via the new
+detail page and confirmed the "Session updated" values persisted;
+added a registrant by owner email and confirmed "1 active registrant"
+with the real business/user showing in the roster, then removed it and
+confirmed the roster returned to "No registrants yet." All verification
+accounts, sessions, and audit log rows were deleted from the dev
+database afterward.

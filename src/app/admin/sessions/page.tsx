@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -58,7 +59,12 @@ export default async function AdminSessionsPage() {
             <Card key={s.id} className="p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-navy-900">{s.title}</p>
+                  <Link
+                    href={`/admin/sessions/${s.id}`}
+                    className="text-sm font-semibold text-navy-900 hover:underline"
+                  >
+                    {s.title}
+                  </Link>
                   <p className="text-xs text-foreground-muted">
                     {s.sessionType} · {s.format} · {s.startsAt.toLocaleString()} ·{" "}
                     {s._count.registrations}
@@ -66,7 +72,15 @@ export default async function AdminSessionsPage() {
                     {s.facilitator && ` · ${s.facilitator.firstName} ${s.facilitator.lastName}`}
                   </p>
                 </div>
-                <SessionStatusControl sessionId={s.id} status={s.status} />
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/admin/sessions/${s.id}`}
+                    className="text-xs font-medium text-navy-600 hover:underline"
+                  >
+                    Edit
+                  </Link>
+                  <SessionStatusControl sessionId={s.id} status={s.status} />
+                </div>
               </div>
             </Card>
           ))}

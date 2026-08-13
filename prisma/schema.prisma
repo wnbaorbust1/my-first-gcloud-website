@@ -308,6 +308,15 @@ model Business {
   name   String
   status String @default("ACTIVE")
 
+  /// ADMIN TEST ACCOUNTS — an admin-created sandbox business used only
+  /// to preview what a member would see at a given membership stage
+  /// (e.g. "what does the free 30-day trial look like," "what does a
+  /// 1-year subscriber see"). Excluded from every real aggregate metric/
+  /// funnel query (src/lib/admin/metrics.ts, src/lib/admin/funnel.ts) —
+  /// this app's "no fake analytics" convention extends to "no test data
+  /// counted as real data" too.
+  isTestAccount Boolean @default(false)
+
   industry                String?
   description             String? @db.Text
   website                 String?

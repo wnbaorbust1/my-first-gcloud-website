@@ -62,6 +62,10 @@ export const can = {
   unlockVisionBoard: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
   /** Phase 7: Admin and Facilitator Controls — a facilitator's real-world judgment call, same level as recommending a session. */
   correctStageAssignment: (role?: Role) => hasAnyRole(role, STAFF_ROLES),
+  /** Phase 7 continued — admin sandbox accounts for previewing what a member sees at a given membership stage. */
+  manageTestAccounts: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
+  /** Phase 7 continued — admin manually adding/removing a business from a session roster. */
+  manageSessionRegistrations: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
   /** spec Prompt 12: platform-level Organization creation and org-membership assignment. */
   manageOrganizations: (role?: Role) => hasAnyRole(role, ADMIN_ROLES),
 };

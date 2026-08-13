@@ -5,10 +5,28 @@ import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 import { getCurrentUser } from "@/lib/session";
 
+/**
+ * "Change sessions" (Phase 7 continued) — full-field editing beyond the
+ * original status/facilitator/capacity-only control. Every field is
+ * optional so the admin session-edit form can PATCH just what changed;
+ * `undefined` (omitted) means "leave as-is," `null` explicitly clears an
+ * optional field.
+ */
 const updateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  sessionType: z.enum(["PASSION", "POWER", "LEGACY", "GROWTH"]).optional(),
+  description: z.string().trim().max(4000).nullable().optional(),
   status: z.enum(["DRAFT", "SCHEDULED", "CANCELLED", "COMPLETED"]).optional(),
+  format: z.enum(["VIRTUAL", "IN_PERSON"]).optional(),
+  startsAt: z.string().min(1).optional(),
+  endsAt: z.string().min(1).nullable().optional(),
+  location: z.string().trim().max(300).nullable().optional(),
+  virtualLink: z.string().trim().max(500).nullable().optional(),
+  priceCents: z.number().int().nonnegative().nullable().optional(),
   facilitatorId: z.string().min(1).nullable().optional(),
   capacity: z.number().int().positive().nullable().optional(),
+  programId: z.string().min(1).nullable().optional(),
+  organizationId: z.string().min(1).nullable().optional(),
 });
 
 export async function PATCH(
@@ -41,7 +59,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const updated = await prisma.sessionOffering.update({ where: { id: sessionId }, data: input });
+  const { startsAt, endsAt, ...rest } = input;
+
+  const updated = await prisma.sessionOffering.update({
+    where: { id: sessionId },
+    data: {
+      ...rest,
+      ...(startsAt !== undefined ? { startsAt: new Date(startsAt) } : {}),
+      ...(endsAt !== undefined ? { endsAt: endsAt === null ? null : new Date(endsAt) } : {}),
+    },
+  });
 
   return NextResponse.json({ session: updated });
 }

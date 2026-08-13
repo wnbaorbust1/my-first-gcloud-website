@@ -133,3 +133,15 @@ export function getBuilderAccessState(
   if (!membershipGrantsAccess(membership)) return { locked: true, reason: "membership-expired" };
   return { locked: false };
 }
+
+/** Human-readable labels — shared by the facilitator participant page and the admin test-accounts page. */
+export const MEMBERSHIP_STATUS_LABELS: Record<MembershipStatus, string> = {
+  COMPLIMENTARY: "Complimentary Trial",
+  ACTIVE_MONTHLY: "Active — Monthly",
+  ACTIVE_ANNUAL: "Active — Annual",
+  PAYMENT_ISSUE: "Payment Issue (grace period)",
+  CANCELLED: "Cancelled (access through period end)",
+  EXPIRED: "Expired",
+  SPONSORED: "Sponsored",
+  ADMIN_GRANTED: "Admin Granted",
+};

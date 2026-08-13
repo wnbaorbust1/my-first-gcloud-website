@@ -32,16 +32,40 @@ export async function getSignupFunnel(): Promise<FunnelStage[]> {
     firstTaskCompleted,
     paidConversion,
   ] = await Promise.all([
+    // NO FAKE ANALYTICS (Phase 7 continued: admin test accounts) — every
+    // business-scoped count excludes isTestAccount businesses, so an
+    // admin preview account never skews a real funnel number.
     prisma.user.count(),
-    prisma.assessment.count({ where: { status: { in: ["IN_PROGRESS", "COMPLETED"] } } }),
-    prisma.assessment.count({ where: { status: "COMPLETED" } }),
-    prisma.sessionRegistration.count({ where: { status: { not: "CANCELLED" } } }),
-    prisma.sessionRegistration.count({ where: { status: { in: ["ATTENDED", "COMPLETED"] } } }),
-    prisma.business.findMany({ where: { builderAccessEligible: true }, select: { id: true } }),
+    prisma.assessment.count({
+      where: { status: { in: ["IN_PROGRESS", "COMPLETED"] }, business: { isTestAccount: false } },
+    }),
+    prisma.assessment.count({ where: { status: "COMPLETED", business: { isTestAccount: false } } }),
+    prisma.sessionRegistration.count({
+      where: {
+        status: { not: "CANCELLED" },
+        OR: [{ businessId: null }, { business: { isTestAccount: false } }],
+      },
+    }),
+    prisma.sessionRegistration.count({
+      where: {
+        status: { in: ["ATTENDED", "COMPLETED"] },
+        OR: [{ businessId: null }, { business: { isTestAccount: false } }],
+      },
+    }),
+    prisma.business.findMany({
+      where: { builderAccessEligible: true, isTestAccount: false },
+      select: { id: true },
+    }),
     prisma.roadmapTask
-      .findMany({ where: { status: "COMPLETED" }, select: { roadmap: { select: { businessId: true } } }, distinct: ["roadmapId"] })
+      .findMany({
+        where: { status: "COMPLETED", roadmap: { business: { isTestAccount: false } } },
+        select: { roadmap: { select: { businessId: true } } },
+        distinct: ["roadmapId"],
+      })
       .then((rows) => new Set(rows.map((r) => r.roadmap.businessId)).size),
-    prisma.membership.count({ where: { status: { in: ["ACTIVE_MONTHLY", "ACTIVE_ANNUAL"] } } }),
+    prisma.membership.count({
+      where: { status: { in: ["ACTIVE_MONTHLY", "ACTIVE_ANNUAL"] }, business: { isTestAccount: false } },
+    }),
   ]);
 
   // 30-Day Active uses the same richer activity signal as the

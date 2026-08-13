@@ -24,21 +24,46 @@ export async function getAdminDashboardMetrics() {
     latestHealthScores,
   ] = await Promise.all([
     prisma.user.count(),
-    prisma.assessment.count({ where: { status: { in: ["IN_PROGRESS", "COMPLETED"] } } }),
-    prisma.assessment.count({ where: { status: "COMPLETED" } }),
-    prisma.sessionRegistration.count({ where: { status: { not: "CANCELLED" } } }),
-    prisma.sessionRegistration.count({ where: { status: { in: ["ATTENDED", "COMPLETED"] } } }),
-    prisma.business.count({ where: { builderAccessEligible: true } }),
-    prisma.membership.findMany({ select: { status: true, plan: true } }),
-    prisma.roadmapTask.groupBy({ by: ["status"], _count: { _all: true } }),
+    // NO FAKE ANALYTICS (Phase 7 continued: admin test accounts) — every
+    // business-scoped count here excludes isTestAccount businesses, so
+    // an admin previewing "what does a trial/annual member see" never
+    // skews a real platform metric.
+    prisma.assessment.count({
+      where: { status: { in: ["IN_PROGRESS", "COMPLETED"] }, business: { isTestAccount: false } },
+    }),
+    prisma.assessment.count({ where: { status: "COMPLETED", business: { isTestAccount: false } } }),
+    // OR businessId: null preserves counting registrations that predate a
+    // business profile — a relation filter alone would silently drop them.
+    prisma.sessionRegistration.count({
+      where: {
+        status: { not: "CANCELLED" },
+        OR: [{ businessId: null }, { business: { isTestAccount: false } }],
+      },
+    }),
+    prisma.sessionRegistration.count({
+      where: {
+        status: { in: ["ATTENDED", "COMPLETED"] },
+        OR: [{ businessId: null }, { business: { isTestAccount: false } }],
+      },
+    }),
+    prisma.business.count({ where: { builderAccessEligible: true, isTestAccount: false } }),
+    prisma.membership.findMany({
+      where: { business: { isTestAccount: false } },
+      select: { status: true, plan: true },
+    }),
+    prisma.roadmapTask.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+      where: { roadmap: { business: { isTestAccount: false } } },
+    }),
     // One row per business's most recent completed assessment's stage scores.
     prisma.assessmentScore.findMany({
-      where: { assessment: { status: "COMPLETED" } },
+      where: { assessment: { status: "COMPLETED", business: { isTestAccount: false } } },
       select: { stage: true, scorePercent: true, assessment: { select: { businessId: true, completedAt: true } } },
       orderBy: { assessment: { completedAt: "desc" } },
     }),
     prisma.assessment.findMany({
-      where: { status: "COMPLETED", healthScorePercent: { not: null } },
+      where: { status: "COMPLETED", healthScorePercent: { not: null }, business: { isTestAccount: false } },
       select: { businessId: true, healthScorePercent: true, completedAt: true },
       orderBy: { completedAt: "desc" },
     }),
@@ -56,6 +81,7 @@ export async function getAdminDashboardMetrics() {
   // with at least one task (an empty roadmap contributes 0%, not "N/A" —
   // matches every other "no fake analytics" average in this app).
   const roadmapsWithTasks = await prisma.roadmap.findMany({
+    where: { business: { isTestAccount: false } },
     include: { tasks: { select: { status: true } } },
   });
   const roadmapPercents = roadmapsWithTasks

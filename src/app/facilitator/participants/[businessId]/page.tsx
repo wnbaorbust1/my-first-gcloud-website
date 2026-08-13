@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScoreCard } from "@/components/ui/score-card";
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
 import { formatAnswerValue } from "@/lib/ai/context";
-import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { getBuilderAccessState, getSyncedMembership, MEMBERSHIP_STATUS_LABELS } from "@/lib/billing/membership";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { prisma } from "@/lib/prisma";
 import { can, STAFF_ROLES } from "@/lib/rbac";
@@ -30,17 +30,6 @@ const NOTE_TYPE_LABELS: Record<string, string> = {
   PARTICIPANT_VISIBLE: "Participant-Visible",
   RECOMMENDATION: "Recommendation",
   TASK_RECOMMENDATION: "Task Recommendation",
-};
-
-const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
-  COMPLIMENTARY: "Complimentary Trial",
-  ACTIVE_MONTHLY: "Active — Monthly",
-  ACTIVE_ANNUAL: "Active — Annual",
-  PAYMENT_ISSUE: "Payment Issue (grace period)",
-  CANCELLED: "Cancelled (access through period end)",
-  EXPIRED: "Expired",
-  SPONSORED: "Sponsored",
-  ADMIN_GRANTED: "Admin Granted",
 };
 
 export default async function ParticipantDetailPage({
