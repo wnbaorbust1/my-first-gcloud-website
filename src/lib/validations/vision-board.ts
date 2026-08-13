@@ -1,33 +1,38 @@
 import { z } from "zod";
 
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .optional()
-    .transform((v) => (v ? v : undefined));
+import {
+  accountabilitySectionSchema,
+  actionPlanSectionSchema,
+  blueprintSectionSchema,
+  businessModelCanvasSectionSchema,
+  legacySectionSchema,
+  myStorySectionSchema,
+  myWhySectionSchema,
+  resourcesSectionSchema,
+} from "@/lib/validations/vision-board-data";
 
-/** VISION BOARD PROFILE — every field optional, one PATCH updates whichever the member filled in. */
+const stringArray = (max: number, itemMax: number) =>
+  z.array(z.string().trim().min(1).max(itemMax)).max(max).optional();
+
+/**
+ * VISION BOARD PROFILE — PATCH input. One PATCH updates whichever
+ * *sections* are present (each a whole structured object/array, not a
+ * per-leaf-field partial) — a section omitted entirely is left exactly
+ * as it was; a section present replaces that section's stored JSON in
+ * full, since the form always submits a section as one complete object.
+ */
 export const visionBoardProfileSchema = z.object({
   businessId: z.string().min(1),
-  myStory: optionalText(1200),
-  myWhy: optionalText(1200),
-  legacyImpact: optionalText(1200),
-  actionPlanThisWeek: optionalText(800),
-  actionPlanThisMonth: optionalText(800),
-  vibes: optionalText(500),
-  resourcesHave: optionalText(1000),
-  resourcesNeed: optionalText(1000),
-  bmcKeyPartners: optionalText(500),
-  bmcKeyActivities: optionalText(500),
-  bmcValue: optionalText(500),
-  bmcCustomers: optionalText(500),
-  bmcChannels: optionalText(500),
-  bmcRevenueStreams: optionalText(500),
-  bmcCostStructure: optionalText(500),
-  dailyAffirmations: optionalText(2000),
-  accountabilityPartnerName: optionalText(200),
-  accountabilityPartnerContact: optionalText(200),
-  accountabilityCommitment: optionalText(1000),
+  myStory: myStorySectionSchema.optional(),
+  myWhy: myWhySectionSchema.optional(),
+  legacy: legacySectionSchema.optional(),
+  blueprint: blueprintSectionSchema.optional(),
+  actionPlan: actionPlanSectionSchema.optional(),
+  resources: resourcesSectionSchema.optional(),
+  businessModelCanvas: businessModelCanvasSectionSchema.optional(),
+  vibes: stringArray(15, 60),
+  affirmations: stringArray(10, 200),
+  accountability: accountabilitySectionSchema.optional(),
 });
+
+export type VisionBoardProfileInput = z.infer<typeof visionBoardProfileSchema>;

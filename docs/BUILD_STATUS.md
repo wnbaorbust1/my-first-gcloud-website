@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-13 — Personalized Vision Board & Blueprint Generator: implementation complete_
+_Last updated: 2026-08-13 — Vision Board & Blueprint Generator: structured-storage follow-up complete_
 
 ## COMPLETE
 
@@ -2652,3 +2652,87 @@ computing that list from the response directly, before calling
   `/admin/businesses/[businessId]/vision-board`, just not a read-only
   rendered board) — not required by the spec, which only mandates the
   member-facing board.
+
+---
+
+## STRUCTURED-STORAGE FOLLOW-UP — Vision Board & Blueprint Generator (complete)
+
+**Date:** 2026-08-13. User asked for explicit database fields covering
+eleven specific tracking concerns, and for the generated/edited board
+content itself to be stored as structured JSON — nested objects and
+arrays per section — rather than one free-text paragraph per field.
+Clarified scope via three questions before starting (all 12 sections in
+one unified shape; both the editable profile and the AI-drafted payload
+use that same shape; "practical minimum" tracking depth), then
+implemented and verified in one pass.
+
+**What already existed vs. what was genuinely new**, of the eleven
+requested items:
+- Assessment responses, calculated scores, assigned stage, session
+  completion, facilitator recommendations, and goal progress all already
+  had real tables/fields (`AssessmentResponse`, `AssessmentScore`/
+  `AssessmentCategoryScore`, `Assessment.recommendedSessionType`,
+  `SessionRegistration.status`/`checkedInAt`/`paidAt`, `FacilitatorNote`,
+  `Goal.progressPercent`) — no schema change needed for those.
+- Genuinely new: **board version**, **user-edit tracking**, **download
+  history**, an **explicit board-unlocked timestamp**, and the
+  **structured-JSON storage shape** itself.
+
+**1. Schema** (`prisma migrate dev` — `vision_board_structured_storage`):
+- `VisionBoardProfile` rebuilt from flat `String? @db.Text` fields to
+  one `Json?` column per section (`myStory`, `myWhy`, `legacy`,
+  `blueprint`, `actionPlan`, `resources`, `businessModelCanvas`,
+  `vibes`, `affirmations`, `accountability`), plus `version Int
+  @default(1)` and `lastEditedAt`/`lastEditedByUserId` — the "practical
+  minimum" edit-tracking requested (who saved last and when, not a
+  per-field audit log).
+- New `BoardDownload` model (businessId, userId, document, format,
+  downloadedAt) — download history, written only when a member actually
+  clicks Print/Save-as-PDF, never on a page view.
+- `Business.visionBoardUnlockedAt DateTime?` — an explicit, queryable
+  timestamp set at the exact same moment `builderAccessEligible` first
+  flips true, alongside the existing boolean.
+
+**2. The unified shape** (`src/lib/validations/vision-board-data.ts`):
+one zod schema per section (MyStory, MyWhy, Legacy, Blueprint —
+priorities + a Next-90-Days goal/action-steps repeater, ActionPlan,
+Resources, BusinessModelCanvas, Accountability), shared by three call
+sites so "the board" is one consistent type everywhere: the profile's
+Json columns (editable), `VisionBoardGeneration.payload` (AI-drafted —
+a narrower subset, since fields like `myStory.name`/`businesses` are
+member-authored facts an AI should never invent), and the assembled
+board `getVisionBoardExport()`/`getVisionBoardData()` return for
+rendering and the GPT export. `passionAssessment`, `bigGoals`, and
+`ninetyDayGoalTracker` are shaped into the same nested types but are
+**never stored** — computed fresh from Assessment/Goal on every read,
+per this app's "never duplicate a source of truth" convention, even
+though the user's scoping answer chose to fold all twelve sections into
+one shape (the shape is unified; the storage stays normalized).
+
+**3. Every consumer rewritten to match:** the generation prompt/output
+schema, the PATCH route (now section-level upserts that bump `version`
+and stamp the saving user), the promote route (leaf-level merge — an
+AI-drafted section can be "half-grounded," so only non-empty leaves ever
+overwrite what a member already had, never the whole section at once),
+the Vision Board Profile form (still simple "one per line" textareas
+while editing — arrays are only assembled/split at the network
+boundary, specifically to avoid a real bug: deriving a textarea's value
+from a live `string[]` state on every keystroke eats the Enter key the
+instant a blank line appears), a real repeater for the Next-90-Days
+goal/action-steps pairs, and the rendered board page (bullet lists,
+chips, and a goal/steps table instead of paragraphs).
+
+**4. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (41 — six new tests: the PATCH route's
+section-save + version-bump behavior, and download-history logging),
+and a production `next build` all pass. Live-verified with Playwright
+against a freshly seeded account (full reference-image dataset —
+My Story with superpowers, My Why, My Blueprint with priorities and a
+two-goal Next-90-Days table, Resources, Action Plan with a First Step
+callout, Legacy with impact-group chips, Accountability, two real
+`Goal` rows feeding My Big Goals and the 90-Day Tracker, a full
+Business Model Canvas, and Daily Affirmations): the rendered board, the
+edit form, a real Save round-trip (confirmed `version` incremented and
+`lastEditedByUserId` stamped in Postgres), and the Print button's
+download-logging (confirmed a real `BoardDownload` row) all worked
+end to end.

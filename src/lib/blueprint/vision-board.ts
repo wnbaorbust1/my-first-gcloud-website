@@ -2,22 +2,43 @@ import "server-only";
 
 import { sessionLabelFor, topStrengthsAndPriorities } from "@/lib/assessment/scoring";
 import { prisma } from "@/lib/prisma";
+import {
+  EMPTY_ACCOUNTABILITY,
+  EMPTY_ACTION_PLAN,
+  EMPTY_BLUEPRINT,
+  EMPTY_BUSINESS_MODEL_CANVAS,
+  EMPTY_LEGACY,
+  EMPTY_MY_STORY,
+  EMPTY_MY_WHY,
+  EMPTY_RESOURCES,
+  accountabilitySectionSchema,
+  actionPlanSectionSchema,
+  blueprintSectionSchema,
+  businessModelCanvasSectionSchema,
+  legacySectionSchema,
+  myStorySectionSchema,
+  myWhySectionSchema,
+  parseSection,
+  resourcesSectionSchema,
+  type VisionBoardData,
+} from "@/lib/validations/vision-board-data";
 import type { Stage } from "@/lib/utils";
 
 /**
- * Assembles every real field the vision-board export (see
- * src/app/api/gpt/vision-board/route.ts) can hand to an external image
- * generator: the same pillars as the reference the business owner
- * supplied, sourced entirely from Business, Assessment, Goal, Roadmap,
- * and VisionBoardProfile — nothing invented. A pillar with no data
- * behind it (member hasn't filled in Vision Board Profile, hasn't
- * completed an assessment, etc.) is simply omitted, same convention as
- * getScorecardData / getMyBlueprintData.
+ * Assembles the whole Vision Board — the same `VisionBoardData` shape
+ * used everywhere (the board render page, the GPT export, the AI draft
+ * schema) — sourced entirely from Business, Assessment, Goal, and
+ * `VisionBoardProfile`, nothing invented. The member-editable sections
+ * (myStory, myWhy, legacy, blueprint, actionPlan, resources,
+ * businessModelCanvas, vibes, affirmations, accountability) are parsed
+ * straight from `VisionBoardProfile`'s Json columns; `passionAssessment`,
+ * `bigGoals`, and `ninetyDayGoalTracker` are computed fresh from
+ * Assessment/Goal every call — never stored, so they can never go stale
+ * (this app's "never fabricate / never duplicate a source of truth"
+ * convention).
  */
-export async function getVisionBoardExport(businessId: string) {
-  const business = await prisma.business.findUniqueOrThrow({ where: { id: businessId } });
-
-  const [assessment, goals, ninetyDayGoals, roadmap, profile] = await Promise.all([
+export async function getVisionBoardData(businessId: string): Promise<VisionBoardData> {
+  const [assessment, activeGoals, ninetyDayGoals, profile] = await Promise.all([
     prisma.assessment.findFirst({
       where: { businessId, status: "COMPLETED" },
       orderBy: { completedAt: "desc" },
@@ -28,17 +49,12 @@ export async function getVisionBoardExport(businessId: string) {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    // 90-DAY GOAL TRACKER (Vision Board & Blueprint Generator, audited
-    // 2026-08-13): a real, filtered view over the member's own Goals —
-    // GoalCadence already has a NINETY_DAY value (see spec Prompt 9), so
-    // this section never needed a new field, just this query.
+    // 90-DAY GOAL TRACKER: a real, filtered view over the member's own
+    // Goals — GoalCadence already has a NINETY_DAY value (spec Prompt 9),
+    // so this section never needed a new field, just this query.
     prisma.goal.findMany({
       where: { businessId, status: "ACTIVE", cadence: "NINETY_DAY" },
       orderBy: { targetDate: "asc" },
-    }),
-    prisma.roadmap.findFirst({
-      where: { businessId },
-      include: { tasks: { where: { status: "NOT_STARTED" }, orderBy: { order: "asc" }, take: 5 } },
     }),
     prisma.visionBoardProfile.findUnique({ where: { businessId } }),
   ]);
@@ -58,34 +74,26 @@ export async function getVisionBoardExport(businessId: string) {
     : { strengths: [], priorities: [] };
 
   return {
-    myStory: {
-      businessName: business.name,
-      industry: business.industry,
-      businessStage: business.businessStage,
-      whatIOffer: business.primaryProductOrService,
-      description: business.description,
-      narrative: profile?.myStory ?? null,
-    },
-    myWhy: {
-      idealCustomer: business.idealCustomer,
-      problemISolve: business.primaryChallenge,
-      myGoal: business.primaryGoal,
-      narrative: profile?.myWhy ?? null,
-    },
-    legacyImpact: profile?.legacyImpact ?? null,
-    actionPlan: {
-      thisWeek: profile?.actionPlanThisWeek ?? null,
-      thisMonth: profile?.actionPlanThisMonth ?? null,
-    },
-    ninetyDayGoalTracker: ninetyDayGoals.map((g) => ({
+    myStory: parseSection(myStorySectionSchema, profile?.myStory, EMPTY_MY_STORY),
+    myWhy: parseSection(myWhySectionSchema, profile?.myWhy, EMPTY_MY_WHY),
+    legacy: parseSection(legacySectionSchema, profile?.legacy, EMPTY_LEGACY),
+    blueprint: parseSection(blueprintSectionSchema, profile?.blueprint, EMPTY_BLUEPRINT),
+    actionPlan: parseSection(actionPlanSectionSchema, profile?.actionPlan, EMPTY_ACTION_PLAN),
+    resources: parseSection(resourcesSectionSchema, profile?.resources, EMPTY_RESOURCES),
+    businessModelCanvas: parseSection(
+      businessModelCanvasSectionSchema,
+      profile?.businessModelCanvas,
+      EMPTY_BUSINESS_MODEL_CANVAS,
+    ),
+    vibes: Array.isArray(profile?.vibes) ? (profile.vibes as string[]) : [],
+    affirmations: Array.isArray(profile?.affirmations) ? (profile.affirmations as string[]) : [],
+    accountability: parseSection(accountabilitySectionSchema, profile?.accountability, EMPTY_ACCOUNTABILITY),
+    bigGoals: activeGoals.map((g) => ({
       title: g.title,
-      goalType: g.goalType,
-      targetDate: g.targetDate,
-      targetValue: g.targetValue,
-      unit: g.unit,
       progressPercent: g.progressPercent,
+      targetDate: g.targetDate ? g.targetDate.toISOString() : null,
     })),
-    myScores: assessment
+    passionAssessment: assessment
       ? {
           passionPercent: scoreByStage.PASSION ?? null,
           powerPercent: scoreByStage.POWER ?? null,
@@ -93,47 +101,56 @@ export async function getVisionBoardExport(businessId: string) {
           businessHealthPercent: assessment.healthScorePercent,
           strengths: strengths.map((s) => `${s.category} (${s.scorePercent}%)`),
           priorities: priorities.map((p) => `${p.category} (${p.scorePercent}%)`),
-          recommendedSession: assessment.recommendedSessionType
-            ? sessionLabelFor(assessment.recommendedSessionType)
-            : null,
-          recommendationReason: assessment.recommendationReason,
         }
       : null,
-    myBigGoals: goals.map((g) => ({
+    ninetyDayGoalTracker: ninetyDayGoals.map((g) => ({
       title: g.title,
-      cadence: g.cadence,
-      targetDate: g.targetDate,
-      targetValue: g.targetValue,
-      unit: g.unit,
+      goalType: g.goalType,
+      targetDate: g.targetDate ? g.targetDate.toISOString() : null,
       progressPercent: g.progressPercent,
     })),
-    myNextActions: (roadmap?.tasks ?? []).map((t) => t.title),
-    accountability: {
-      cadence: business.accountabilityCadence,
-      customDays: business.accountabilityCustomDays,
-      partnerName: profile?.accountabilityPartnerName ?? null,
-      partnerContact: profile?.accountabilityPartnerContact ?? null,
-      commitment: profile?.accountabilityCommitment ?? null,
+  };
+}
+
+/**
+ * The Custom-GPT-Action export additionally includes a few real,
+ * read-only business/assessment facts the structured board itself
+ * doesn't carry (business name/industry/stage, the recommended session,
+ * next roadmap actions) — kept separate from `VisionBoardData` because
+ * those fields are recommendation/factual context for an external image
+ * generator, not member-editable board content.
+ */
+export async function getVisionBoardExport(businessId: string) {
+  const [business, board, assessment, roadmap] = await Promise.all([
+    prisma.business.findUniqueOrThrow({ where: { id: businessId } }),
+    getVisionBoardData(businessId),
+    prisma.assessment.findFirst({
+      where: { businessId, status: "COMPLETED" },
+      orderBy: { completedAt: "desc" },
+    }),
+    prisma.roadmap.findFirst({
+      where: { businessId },
+      include: { tasks: { where: { status: "NOT_STARTED" }, orderBy: { order: "asc" }, take: 5 } },
+    }),
+  ]);
+
+  return {
+    business: {
+      name: business.name,
+      industry: business.industry,
+      businessStage: business.businessStage,
+      whatIOffer: business.primaryProductOrService,
+      description: business.description,
+      idealCustomer: business.idealCustomer,
+      problemISolve: business.primaryChallenge,
+      myGoal: business.primaryGoal,
     },
-    myVibes: profile?.vibes ?? null,
-    resources: {
-      have: profile?.resourcesHave ?? null,
-      need: profile?.resourcesNeed ?? null,
-    },
-    businessModelCanvas: profile
-      ? {
-          keyPartners: profile.bmcKeyPartners,
-          keyActivities: profile.bmcKeyActivities,
-          value: profile.bmcValue,
-          customers: profile.bmcCustomers,
-          channels: profile.bmcChannels,
-          revenueStreams: profile.bmcRevenueStreams,
-          costStructure: profile.bmcCostStructure,
-        }
+    recommendedSession: assessment?.recommendedSessionType
+      ? sessionLabelFor(assessment.recommendedSessionType)
       : null,
-    dailyAffirmations: profile?.dailyAffirmations
-      ? profile.dailyAffirmations.split("\n").map((s) => s.trim()).filter(Boolean)
-      : [],
+    recommendationReason: assessment?.recommendationReason ?? null,
+    myNextActions: (roadmap?.tasks ?? []).map((t) => t.title),
+    board,
   };
 }
 

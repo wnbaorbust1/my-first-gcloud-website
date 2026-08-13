@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -10,13 +10,32 @@ import { Input } from "@/components/ui/form-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+/**
+ * FORM STATE — kept as flat strings (mostly "one per line" for list
+ * fields), the same simple text-editing UX as before restructuring.
+ * Only `handleSubmit` reshapes this into the structured JSON
+ * `VisionBoardData` sections the API stores — see
+ * src/lib/validations/vision-board-data.ts. Keeping arrays as plain
+ * multi-line text while editing (rather than a real `string[]` state
+ * split/joined on every keystroke) avoids a real bug class: splitting
+ * on every change and re-deriving the textarea's value from that array
+ * "eats" the Enter key the instant a new blank line is typed, since the
+ * freshly-split array immediately drops trailing empty lines.
+ */
 export interface VisionBoardProfileValues {
-  myStory: string;
-  myWhy: string;
-  legacyImpact: string;
+  myStoryName: string;
+  myStoryBusinesses: string;
+  myStoryPassionStatement: string;
+  myStorySuperpowers: string;
+  myWhyStatement: string;
+  myWhyProblemToSolve: string;
+  myWhyPeopleToHelp: string;
+  legacyStatement: string;
+  legacyImpactGroups: string;
+  blueprintPriorities: string;
   actionPlanThisWeek: string;
   actionPlanThisMonth: string;
-  vibes: string;
+  actionPlanFirstStep: string;
   resourcesHave: string;
   resourcesNeed: string;
   bmcKeyPartners: string;
@@ -26,19 +45,42 @@ export interface VisionBoardProfileValues {
   bmcChannels: string;
   bmcRevenueStreams: string;
   bmcCostStructure: string;
-  dailyAffirmations: string;
+  vibes: string;
+  affirmations: string;
   accountabilityPartnerName: string;
   accountabilityPartnerContact: string;
+  accountabilityFrequency: string;
+  accountabilityMethod: string;
   accountabilityCommitment: string;
 }
 
+/** One "My Blueprint" 90-day goal row — a real repeater, since goal + its steps are a pair, not flattenable into one textarea. */
+export interface Next90DaysRow {
+  goal: string;
+  actionSteps: string;
+}
+
 interface GeneratedDraft {
-  myStory: string | null;
-  myWhy: string | null;
-  legacyImpact: string | null;
-  actionPlanThisWeek: string | null;
-  actionPlanThisMonth: string | null;
-  dailyAffirmations: string[] | null;
+  myStory: { passionStatement: string | null; superpowers: string[] };
+  myWhy: { whyStatement: string | null; problemToSolve: string | null; peopleToHelp: string[] };
+  legacy: { legacyStatement: string | null; impactGroups: string[] };
+  actionPlan: { thisWeek: string[]; thisMonth: string[]; firstStep: string | null };
+  affirmations: string[];
+}
+
+/** Splits "one per line" text into a trimmed, non-empty, length-capped array — the inverse of `.join("\n")`. */
+function toLines(text: string, max: number): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+/** Empty string -> null, matching the nullable-string convention every section schema uses. */
+function toNullable(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed ? trimmed : null;
 }
 
 function Field({
@@ -74,12 +116,17 @@ function Field({
 export function VisionBoardForm({
   businessId,
   initial,
+  initialNext90Days,
 }: {
   businessId: string;
   initial: VisionBoardProfileValues;
+  initialNext90Days: Next90DaysRow[];
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
+  const [next90Days, setNext90Days] = useState<Next90DaysRow[]>(
+    initialNext90Days.length ? initialNext90Days : [{ goal: "", actionSteps: "" }],
+  );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,14 +138,19 @@ export function VisionBoardForm({
     setSaved(false);
   }
 
-  // AI DRAFT ASSIST (Vision Board & Blueprint Generator, audited
-  // 2026-08-13): calls the structured-JSON generation endpoint
-  // (src/app/api/blueprint/vision-board/generate) and drops any drafted
-  // field straight into this form's *unsaved* local state — nothing
-  // reaches VisionBoardProfile until the member reviews it here and
-  // hits Save, same as typing it themselves. A field the model
-  // returned null for (no grounded content to draft) is left untouched
-  // rather than overwriting whatever the member already had.
+  function setNext90DaysRow(index: number, field: keyof Next90DaysRow, v: string) {
+    setNext90Days((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: v } : row)));
+    setSaved(false);
+  }
+
+  // AI DRAFT ASSIST (Vision Board & Blueprint Generator, structured-storage
+  // follow-up, audited 2026-08-13): calls the structured-JSON generation
+  // endpoint and drops any drafted leaf field straight into this form's
+  // *unsaved* local state — nothing reaches VisionBoardProfile until the
+  // member reviews it here and hits Save, same as typing it themselves.
+  // A leaf the model returned null/empty for (no grounded content to
+  // draft) is left untouched rather than overwriting whatever the member
+  // already had.
   async function handleGenerate() {
     setError(null);
     setDraftNotice(null);
@@ -120,30 +172,29 @@ export function VisionBoardForm({
     const data = (await res.json()) as { generation: { payload: GeneratedDraft } };
     const draft = data.generation.payload;
 
-    // Computed from `draft` directly, not as a side effect inside the
-    // setValues updater below — React doesn't guarantee that updater runs
-    // synchronously, so mutating an outer array from inside it and reading
-    // that array right after is a real bug (the fields still applied
-    // correctly; only the "what got drafted" notice text read stale/empty
-    // state before the updater had actually run).
     const filled: string[] = [];
-    if (draft.myStory) filled.push("My Story");
-    if (draft.myWhy) filled.push("My Why");
-    if (draft.legacyImpact) filled.push("Legacy");
-    if (draft.actionPlanThisWeek) filled.push("Action Plan (this week)");
-    if (draft.actionPlanThisMonth) filled.push("Action Plan (this month)");
-    if (draft.dailyAffirmations?.length) filled.push("Daily Affirmations");
+    if (draft.myStory.passionStatement) filled.push("My Story");
+    if (draft.myStory.superpowers.length) filled.push("Superpowers");
+    if (draft.myWhy.whyStatement || draft.myWhy.problemToSolve || draft.myWhy.peopleToHelp.length)
+      filled.push("My Why");
+    if (draft.legacy.legacyStatement || draft.legacy.impactGroups.length) filled.push("Legacy");
+    if (draft.actionPlan.thisWeek.length || draft.actionPlan.thisMonth.length || draft.actionPlan.firstStep)
+      filled.push("Action Plan");
+    if (draft.affirmations.length) filled.push("Daily Affirmations");
 
     setValues((prev) => ({
       ...prev,
-      ...(draft.myStory ? { myStory: draft.myStory } : {}),
-      ...(draft.myWhy ? { myWhy: draft.myWhy } : {}),
-      ...(draft.legacyImpact ? { legacyImpact: draft.legacyImpact } : {}),
-      ...(draft.actionPlanThisWeek ? { actionPlanThisWeek: draft.actionPlanThisWeek } : {}),
-      ...(draft.actionPlanThisMonth ? { actionPlanThisMonth: draft.actionPlanThisMonth } : {}),
-      ...(draft.dailyAffirmations?.length
-        ? { dailyAffirmations: draft.dailyAffirmations.join("\n") }
-        : {}),
+      ...(draft.myStory.passionStatement ? { myStoryPassionStatement: draft.myStory.passionStatement } : {}),
+      ...(draft.myStory.superpowers.length ? { myStorySuperpowers: draft.myStory.superpowers.join("\n") } : {}),
+      ...(draft.myWhy.whyStatement ? { myWhyStatement: draft.myWhy.whyStatement } : {}),
+      ...(draft.myWhy.problemToSolve ? { myWhyProblemToSolve: draft.myWhy.problemToSolve } : {}),
+      ...(draft.myWhy.peopleToHelp.length ? { myWhyPeopleToHelp: draft.myWhy.peopleToHelp.join("\n") } : {}),
+      ...(draft.legacy.legacyStatement ? { legacyStatement: draft.legacy.legacyStatement } : {}),
+      ...(draft.legacy.impactGroups.length ? { legacyImpactGroups: draft.legacy.impactGroups.join("\n") } : {}),
+      ...(draft.actionPlan.thisWeek.length ? { actionPlanThisWeek: draft.actionPlan.thisWeek.join("\n") } : {}),
+      ...(draft.actionPlan.thisMonth.length ? { actionPlanThisMonth: draft.actionPlan.thisMonth.join("\n") } : {}),
+      ...(draft.actionPlan.firstStep ? { actionPlanFirstStep: draft.actionPlan.firstStep } : {}),
+      ...(draft.affirmations.length ? { affirmations: draft.affirmations.join("\n") } : {}),
     }));
     setSaved(false);
     setDraftNotice(
@@ -158,10 +209,63 @@ export function VisionBoardForm({
     setError(null);
     setIsSubmitting(true);
 
+    const body = {
+      businessId,
+      myStory: {
+        name: toNullable(values.myStoryName),
+        businesses: toLines(values.myStoryBusinesses, 10),
+        passionStatement: toNullable(values.myStoryPassionStatement),
+        superpowers: toLines(values.myStorySuperpowers, 10),
+      },
+      myWhy: {
+        whyStatement: toNullable(values.myWhyStatement),
+        problemToSolve: toNullable(values.myWhyProblemToSolve),
+        peopleToHelp: toLines(values.myWhyPeopleToHelp, 10),
+      },
+      legacy: {
+        legacyStatement: toNullable(values.legacyStatement),
+        impactGroups: toLines(values.legacyImpactGroups, 10),
+      },
+      blueprint: {
+        priorities: toLines(values.blueprintPriorities, 10),
+        next90Days: next90Days
+          .filter((row) => row.goal.trim())
+          .slice(0, 10)
+          .map((row) => ({ goal: row.goal.trim(), actionSteps: toLines(row.actionSteps, 10) })),
+      },
+      actionPlan: {
+        thisWeek: toLines(values.actionPlanThisWeek, 10),
+        thisMonth: toLines(values.actionPlanThisMonth, 10),
+        firstStep: toNullable(values.actionPlanFirstStep),
+      },
+      resources: {
+        have: toLines(values.resourcesHave, 15),
+        need: toLines(values.resourcesNeed, 15),
+      },
+      businessModelCanvas: {
+        keyPartners: toLines(values.bmcKeyPartners, 10),
+        keyActivities: toLines(values.bmcKeyActivities, 10),
+        value: toLines(values.bmcValue, 10),
+        customers: toLines(values.bmcCustomers, 10),
+        channels: toLines(values.bmcChannels, 10),
+        revenueStreams: toLines(values.bmcRevenueStreams, 10),
+        costStructure: toLines(values.bmcCostStructure, 10),
+      },
+      vibes: toLines(values.vibes, 15),
+      affirmations: toLines(values.affirmations, 10),
+      accountability: {
+        partnerName: toNullable(values.accountabilityPartnerName),
+        partnerContact: toNullable(values.accountabilityPartnerContact),
+        frequency: toNullable(values.accountabilityFrequency),
+        method: toNullable(values.accountabilityMethod),
+        commitment: toNullable(values.accountabilityCommitment),
+      },
+    };
+
     const res = await fetch("/api/my-blueprint/vision-board", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessId, ...values }),
+      body: JSON.stringify(body),
     });
 
     setIsSubmitting(false);
@@ -198,38 +302,122 @@ export function VisionBoardForm({
 
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-semibold text-navy-900">My Story</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field id="myStoryName" label="Name" value={values.myStoryName} onChange={(v) => set("myStoryName", v)} />
+          <Field
+            id="myStoryBusinesses"
+            label="Business / Idea"
+            hint="One per line"
+            multiline
+            value={values.myStoryBusinesses}
+            onChange={(v) => set("myStoryBusinesses", v)}
+          />
+        </div>
         <Field
-          id="myStory"
+          id="myStoryPassionStatement"
           label="How did your business come to be?"
           multiline
-          rows={4}
-          value={values.myStory}
-          onChange={(v) => set("myStory", v)}
+          rows={3}
+          value={values.myStoryPassionStatement}
+          onChange={(v) => set("myStoryPassionStatement", v)}
+        />
+        <Field
+          id="myStorySuperpowers"
+          label="My Superpowers"
+          hint="What you're naturally good at — one per line"
+          multiline
+          value={values.myStorySuperpowers}
+          onChange={(v) => set("myStorySuperpowers", v)}
         />
       </section>
 
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-semibold text-navy-900">My Why</h2>
         <Field
-          id="myWhy"
-          label="What's the deeper motivation behind your business?"
+          id="myWhyStatement"
+          label="Why does this matter to you?"
           multiline
-          rows={4}
-          value={values.myWhy}
-          onChange={(v) => set("myWhy", v)}
+          rows={3}
+          value={values.myWhyStatement}
+          onChange={(v) => set("myWhyStatement", v)}
+        />
+        <Field
+          id="myWhyProblemToSolve"
+          label="The problem I want to solve"
+          multiline
+          rows={2}
+          value={values.myWhyProblemToSolve}
+          onChange={(v) => set("myWhyProblemToSolve", v)}
+        />
+        <Field
+          id="myWhyPeopleToHelp"
+          label="Who I want to help"
+          hint="One per line"
+          multiline
+          value={values.myWhyPeopleToHelp}
+          onChange={(v) => set("myWhyPeopleToHelp", v)}
         />
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-semibold text-navy-900">Legacy</h2>
+        <h2 className="font-display text-lg font-semibold text-navy-900">My Blueprint</h2>
         <Field
-          id="legacyImpact"
-          label="What lasting impact do you want this business to leave?"
+          id="blueprintPriorities"
+          label="My Priorities"
+          hint="One per line"
           multiline
-          rows={4}
-          value={values.legacyImpact}
-          onChange={(v) => set("legacyImpact", v)}
+          value={values.blueprintPriorities}
+          onChange={(v) => set("blueprintPriorities", v)}
         />
+        <div>
+          <Label>My Next 90 Days</Label>
+          <p className="mb-2 text-xs text-foreground-muted">A goal and its action steps, one row per goal.</p>
+          <div className="flex flex-col gap-3">
+            {next90Days.map((row, i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-lg border border-navy-100 p-3 sm:flex-row">
+                <div className="flex-1">
+                  <Input
+                    aria-label="Goal"
+                    placeholder="Goal"
+                    value={row.goal}
+                    onChange={(e) => setNext90DaysRow(i, "goal", e.target.value)}
+                  />
+                </div>
+                <div className="flex-1">
+                  <Textarea
+                    aria-label="Action steps"
+                    placeholder="Action steps — one per line"
+                    rows={2}
+                    value={row.actionSteps}
+                    onChange={(e) => setNext90DaysRow(i, "actionSteps", e.target.value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Remove goal"
+                  onClick={() => {
+                    setNext90Days((prev) => prev.filter((_, idx) => idx !== i));
+                    setSaved(false);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => setNext90Days((prev) => [...prev, { goal: "", actionSteps: "" }])}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add Goal
+          </Button>
+        </div>
       </section>
 
       <section className="flex flex-col gap-4">
@@ -237,7 +425,7 @@ export function VisionBoardForm({
         <Field
           id="actionPlanThisWeek"
           label="This Week"
-          hint="Concrete actions for the next 7 days"
+          hint="Concrete actions for the next 7 days — one per line"
           multiline
           rows={3}
           value={values.actionPlanThisWeek}
@@ -246,11 +434,38 @@ export function VisionBoardForm({
         <Field
           id="actionPlanThisMonth"
           label="This Month"
-          hint="Concrete actions for the next 30 days"
+          hint="Concrete actions for the next 30 days — one per line"
           multiline
           rows={3}
           value={values.actionPlanThisMonth}
           onChange={(v) => set("actionPlanThisMonth", v)}
+        />
+        <Field
+          id="actionPlanFirstStep"
+          label="My First Step"
+          hint="The one thing to do first"
+          value={values.actionPlanFirstStep}
+          onChange={(v) => set("actionPlanFirstStep", v)}
+        />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-semibold text-navy-900">Legacy</h2>
+        <Field
+          id="legacyStatement"
+          label="What lasting impact do you want this business to leave?"
+          multiline
+          rows={3}
+          value={values.legacyStatement}
+          onChange={(v) => set("legacyStatement", v)}
+        />
+        <Field
+          id="legacyImpactGroups"
+          label="Who will feel that impact?"
+          hint="One per line — e.g. My Family, My Community, Future Generations"
+          multiline
+          value={values.legacyImpactGroups}
+          onChange={(v) => set("legacyImpactGroups", v)}
         />
       </section>
 
@@ -259,7 +474,8 @@ export function VisionBoardForm({
         <Field
           id="vibes"
           label="How would you describe yourself?"
-          hint="Short traits, comma-separated — e.g. Ambitious, Passionate, Creative"
+          hint="Short traits, one per line — e.g. Ambitious, Passionate, Creative"
+          multiline
           value={values.vibes}
           onChange={(v) => set("vibes", v)}
         />
@@ -287,6 +503,7 @@ export function VisionBoardForm({
 
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-semibold text-navy-900">Business Model Canvas</h2>
+        <p className="text-xs text-foreground-muted">One item per line in each block.</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="bmcKeyPartners" label="Key Partners" multiline value={values.bmcKeyPartners} onChange={(v) => set("bmcKeyPartners", v)} />
           <Field id="bmcKeyActivities" label="Key Activities" multiline value={values.bmcKeyActivities} onChange={(v) => set("bmcKeyActivities", v)} />
@@ -303,6 +520,8 @@ export function VisionBoardForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="accountabilityPartnerName" label="Name" value={values.accountabilityPartnerName} onChange={(v) => set("accountabilityPartnerName", v)} />
           <Field id="accountabilityPartnerContact" label="Phone or Email" value={values.accountabilityPartnerContact} onChange={(v) => set("accountabilityPartnerContact", v)} />
+          <Field id="accountabilityFrequency" label="How Often" hint="e.g. Weekly" value={values.accountabilityFrequency} onChange={(v) => set("accountabilityFrequency", v)} />
+          <Field id="accountabilityMethod" label="How We'll Connect" hint="e.g. Zoom, Phone Call" value={values.accountabilityMethod} onChange={(v) => set("accountabilityMethod", v)} />
         </div>
         <Field
           id="accountabilityCommitment"
@@ -317,13 +536,13 @@ export function VisionBoardForm({
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-semibold text-navy-900">Daily Affirmations</h2>
         <Field
-          id="dailyAffirmations"
+          id="affirmations"
           label="Your affirmations"
           hint="One per line — e.g. I am capable. I am building my legacy."
           multiline
           rows={5}
-          value={values.dailyAffirmations}
-          onChange={(v) => set("dailyAffirmations", v)}
+          value={values.affirmations}
+          onChange={(v) => set("affirmations", v)}
         />
       </section>
 

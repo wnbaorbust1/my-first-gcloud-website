@@ -77,6 +77,8 @@ model User {
   supportRequests             SupportRequest[]
   personalAccessTokens        PersonalAccessToken[]
   visionBoardGenerations      VisionBoardGeneration[]
+  boardDownloads              BoardDownload[]
+  visionBoardProfileEdits     VisionBoardProfile[]    @relation("VisionBoardProfileLastEditedBy")
 
   @@index([role])
 }
@@ -334,6 +336,15 @@ model Business {
   sessionCompletedAt              DateTime?
   qualifyingSessionRegistrationId String?
 
+  /// Explicit, timestamped "board-unlocked" record — set once, at the
+  /// same moment `builderAccessEligible` first flips true (see
+  /// unlockBuilderAccessIfQualifying in src/lib/sessions/qualification.ts).
+  /// `builderAccessEligible` is still the actual access-control flag
+  /// (checked on every request); this is a queryable "when" alongside it,
+  /// requested explicitly as its own tracked field rather than only being
+  /// inferable from `sessionCompletedAt`.
+  visionBoardUnlockedAt DateTime?
+
   /// ACCOUNTABILITY (spec Prompt 9): the member's chosen check-in cadence
   /// — open string ("2_DAYS_WEEK" | "3_DAYS_WEEK" | "5_DAYS_WEEK" |
   /// "CUSTOM"), consistent with this schema's other open categorical
@@ -388,67 +399,105 @@ model Business {
 
   visionBoardProfile     VisionBoardProfile?
   visionBoardGenerations VisionBoardGeneration[]
+  boardDownloads         BoardDownload[]
 
   @@index([status])
 }
 
-/// VISION BOARD PROFILE — real, member-entered content for the pillars
-/// of the hand-drawn vision-board reference that nothing else in this
-/// schema tracks: My Vibes, Resources (have/need), a lightweight
-/// Business Model Canvas, Daily Affirmations, and the accountability
-/// partner's actual name/contact (Business.accountabilityCadence only
-/// ever stored the check-in frequency, never who the partner is). This
-/// exists specifically so the vision-board export (see
-/// src/app/api/gpt/vision-board/route.ts) never fabricates these
-/// fields — every one is optional and simply omitted until the member
-/// fills it in themselves.
+/// VISION BOARD PROFILE — real, member-entered content for every editable
+/// pillar of the hand-drawn vision-board reference. Restructured (Vision
+/// Board & Blueprint Generator, structured-storage follow-up, audited
+/// 2026-08-13) from one-string-per-field to one **structured JSON object
+/// per section**, matching the shape in
+/// src/lib/validations/vision-board-data.ts exactly — "store the
+/// generated board information as structured data, not one large
+/// paragraph." The same shapes are used by VisionBoardGeneration.payload
+/// (AI drafts) and by getVisionBoardExport's computed sections
+/// (businessModelCanvas here is member-edited so it lives on this model;
+/// passionAssessment/ninetyDayGoalTracker/bigGoals are NOT stored here —
+/// they're computed fresh from Assessment/Goal every time, per this app's
+/// "never fabricate / never duplicate a source of truth" convention, but
+/// assembled into the *same* nested shape so the whole board is one
+/// consistent type end to end).
+///
+/// Every section is optional and simply empty/omitted until the member
+/// (or an accepted AI draft — see VisionBoardGeneration) fills it in —
+/// nothing here is ever invented on their behalf.
 model VisionBoardProfile {
   id         String   @id @default(cuid())
   businessId String   @unique
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  /// Free-form, comma- or newline-separated traits in the member's own words.
-  vibes String? @db.Text
+  /// Short traits in the member's own words — e.g. ["Ambitious", "Passionate"].
+  vibes Json?
 
-  /// NARRATIVE SECTIONS (Vision Board & Blueprint Generator, audited
-  /// 2026-08-13) — "My Story," "My Why," and "Legacy" from the board's
-  /// fixed 12-section layout. Member-editable free text; can also be
-  /// pre-filled from a validated AI-generated VisionBoardGeneration, but
-  /// always stored here as the one live, editable copy.
-  myStory      String? @db.Text
-  myWhy        String? @db.Text
-  legacyImpact String? @db.Text
+  /// MyStorySection: { name, businesses[], passionStatement, superpowers[] }
+  myStory Json?
+  /// MyWhySection: { whyStatement, problemToSolve, peopleToHelp[] }
+  myWhy   Json?
+  /// LegacySection: { legacyStatement, impactGroups[] }
+  legacy  Json?
 
-  /// "Action Plan" section, split into the two cadences the reference
-  /// board shows ("This Week" / "This Month") — free text, not derived
-  /// from RoadmapTask, since a member's stated plan and their actual
-  /// task queue are related but not identical.
-  actionPlanThisWeek  String? @db.Text
-  actionPlanThisMonth String? @db.Text
+  /// BlueprintSection: { priorities[], next90Days: { goal, actionSteps[] }[] }
+  blueprint Json?
 
-  resourcesHave String? @db.Text
-  resourcesNeed String? @db.Text
+  /// ActionPlanSection: { thisWeek[], thisMonth[], firstStep }
+  actionPlan Json?
 
-  /// Classic Business Model Canvas blocks, each a short free-text note —
-  /// not a full canvas editor, just enough for the export to have real
-  /// content instead of an empty section.
-  bmcKeyPartners    String? @db.Text
-  bmcKeyActivities  String? @db.Text
-  bmcValue          String? @db.Text
-  bmcCustomers      String? @db.Text
-  bmcChannels       String? @db.Text
-  bmcRevenueStreams String? @db.Text
-  bmcCostStructure  String? @db.Text
+  /// ResourcesSection: { have[], need[] }
+  resources Json?
 
-  /// One affirmation per line.
-  dailyAffirmations String? @db.Text
+  /// BusinessModelCanvasSection: { keyPartners[], keyActivities[], value[],
+  /// customers[], channels[], revenueStreams[], costStructure[] }
+  businessModelCanvas Json?
 
-  accountabilityPartnerName    String?
-  accountabilityPartnerContact String?
-  accountabilityCommitment     String? @db.Text
+  /// One affirmation per array entry.
+  affirmations Json?
+
+  /// AccountabilitySection: { partnerName, partnerContact, frequency, method, commitment }
+  accountability Json?
+
+  /// BOARD VERSION — bumped by 1 on every successful save (PATCH
+  /// /api/my-blueprint/vision-board or a promoted AI generation). Not a
+  /// full revision history, just a monotonic counter a member/admin can
+  /// see has changed.
+  version Int @default(1)
+
+  /// USER EDITS (practical-minimum tracking, not a per-field audit log) —
+  /// who saved last and when. Set on every PATCH; a promote() call sets
+  /// lastEditedByUserId to the promoting user too, since accepting an AI
+  /// draft is itself an edit.
+  lastEditedAt       DateTime?
+  lastEditedByUserId String?
+  lastEditedBy       User?     @relation("VisionBoardProfileLastEditedBy", fields: [lastEditedByUserId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// DOWNLOAD HISTORY — one row per time a member (or admin, viewing on
+/// their behalf) actually downloads/prints the rendered Vision Board or
+/// Scorecard. Requested explicitly as its own tracked field; written by
+/// the print pages' client-side print action, not inferred from a page
+/// view (a page *view* isn't a *download*).
+model BoardDownload {
+  id         String  @id @default(cuid())
+  businessId String
+  userId     String?
+  /// What was downloaded — "vision_board" | "scorecard" — and how —
+  /// "print" (browser print/Save-as-PDF, the only mechanism this app
+  /// actually offers today, per the "no PDF library" decision in
+  /// BUILD_STATUS.md's Important Decisions).
+  document   String
+  format     String  @default("print")
+
+  downloadedAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+  @@index([userId])
 }
 
 /// AI-GENERATED VISION BOARD CONTENT (Vision Board & Blueprint Generator,

@@ -70,7 +70,7 @@ export default async function ScorecardPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to My Blueprint
         </Link>
-        <PrintButton />
+        <PrintButton logDownload={{ businessId: membership.businessId, document: "scorecard" }} />
       </div>
 
       <div className="print-page print:rounded-none print:border-0 print:p-0 print:shadow-none">

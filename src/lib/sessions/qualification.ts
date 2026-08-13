@@ -95,12 +95,17 @@ export async function unlockBuilderAccessIfQualifying(registrationId: string): P
   });
   if (!business || business.builderAccessEligible) return;
 
+  const unlockedAt = new Date();
   await prisma.business.update({
     where: { id: registration.businessId },
     data: {
       builderAccessEligible: true,
-      sessionCompletedAt: new Date(),
+      sessionCompletedAt: unlockedAt,
       qualifyingSessionRegistrationId: registrationId,
+      // Explicit, timestamped "board-unlocked" record (structured-storage
+      // follow-up, audited 2026-08-13) — same moment as the flag above,
+      // requested as its own queryable field alongside it.
+      visionBoardUnlockedAt: unlockedAt,
     },
   });
 

@@ -52,7 +52,11 @@ describe("GET /api/gpt/vision-board (real DB)", () => {
     await prisma.userBusinessMembership.create({ data: { userId, businessId } });
     await prisma.userBusinessMembership.create({ data: { userId: lockedUserId, businessId: lockedBusinessId } });
     await prisma.visionBoardProfile.create({
-      data: { businessId, vibes: "Ambitious, Passionate", accountabilityPartnerName: "Test Partner" },
+      data: {
+        businessId,
+        vibes: ["Ambitious", "Passionate"],
+        accountability: { partnerName: "Test Partner", partnerContact: null, frequency: null, method: null, commitment: null },
+      },
     });
     // FULL-TIER GATE: this route now also requires an active Membership
     // (see the audited access-tiering change) — ADMIN_GRANTED needs no
@@ -107,12 +111,12 @@ describe("GET /api/gpt/vision-board (real DB)", () => {
     const res = await callWithToken(rawToken);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.myStory.businessName).toBe("Vision Board Export Co");
-    expect(body.myVibes).toBe("Ambitious, Passionate");
-    expect(body.accountability.partnerName).toBe("Test Partner");
+    expect(body.business.name).toBe("Vision Board Export Co");
+    expect(body.board.vibes).toEqual(["Ambitious", "Passionate"]);
+    expect(body.board.accountability.partnerName).toBe("Test Partner");
     // Never fabricated — no assessment was ever completed for this business.
-    expect(body.myScores).toBeNull();
-    expect(body.myWhy.myGoal).toBeNull();
+    expect(body.board.passionAssessment).toBeNull();
+    expect(body.board.myWhy.whyStatement).toBeNull();
   });
 
   it("404s when the token's account has no business profile", async () => {

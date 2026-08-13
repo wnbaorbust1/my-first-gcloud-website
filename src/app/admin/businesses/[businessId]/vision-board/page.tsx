@@ -3,10 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import {
-  VisionBoardForm,
-  type VisionBoardProfileValues,
-} from "@/app/(app)/my-blueprint/vision-board/vision-board-form";
+import { toFormValues } from "@/app/(app)/my-blueprint/vision-board/form-values";
+import { VisionBoardForm } from "@/app/(app)/my-blueprint/vision-board/vision-board-form";
 import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES } from "@/lib/rbac";
 import { requireRole } from "@/lib/session";
@@ -28,28 +26,7 @@ export default async function AdminVisionBoardPage({
   });
   if (!business) notFound();
 
-  const profile = business.visionBoardProfile;
-  const initial: VisionBoardProfileValues = {
-    myStory: profile?.myStory ?? "",
-    myWhy: profile?.myWhy ?? "",
-    legacyImpact: profile?.legacyImpact ?? "",
-    actionPlanThisWeek: profile?.actionPlanThisWeek ?? "",
-    actionPlanThisMonth: profile?.actionPlanThisMonth ?? "",
-    vibes: profile?.vibes ?? "",
-    resourcesHave: profile?.resourcesHave ?? "",
-    resourcesNeed: profile?.resourcesNeed ?? "",
-    bmcKeyPartners: profile?.bmcKeyPartners ?? "",
-    bmcKeyActivities: profile?.bmcKeyActivities ?? "",
-    bmcValue: profile?.bmcValue ?? "",
-    bmcCustomers: profile?.bmcCustomers ?? "",
-    bmcChannels: profile?.bmcChannels ?? "",
-    bmcRevenueStreams: profile?.bmcRevenueStreams ?? "",
-    bmcCostStructure: profile?.bmcCostStructure ?? "",
-    dailyAffirmations: profile?.dailyAffirmations ?? "",
-    accountabilityPartnerName: profile?.accountabilityPartnerName ?? "",
-    accountabilityPartnerContact: profile?.accountabilityPartnerContact ?? "",
-    accountabilityCommitment: profile?.accountabilityCommitment ?? "",
-  };
+  const { initial, initialNext90Days } = toFormValues(business.visionBoardProfile);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -70,7 +47,7 @@ export default async function AdminVisionBoardPage({
       </p>
 
       <div className="mt-6">
-        <VisionBoardForm businessId={businessId} initial={initial} />
+        <VisionBoardForm businessId={businessId} initial={initial} initialNext90Days={initialNext90Days} />
       </div>
     </div>
   );

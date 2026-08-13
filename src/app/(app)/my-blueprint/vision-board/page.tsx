@@ -9,7 +9,8 @@ import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/member
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
-import { VisionBoardForm, type VisionBoardProfileValues } from "./vision-board-form";
+import { toFormValues } from "./form-values";
+import { VisionBoardForm } from "./vision-board-form";
 
 export const metadata: Metadata = { title: "Vision Board Profile — My Blueprint" };
 export const dynamic = "force-dynamic";
@@ -64,28 +65,7 @@ export default async function VisionBoardProfilePage() {
   const access = getBuilderAccessState(membership.business.builderAccessEligible, billingMembership);
   if (access.locked) return <MembershipLockedNotice />;
 
-  const profile = membership.business.visionBoardProfile;
-  const initial: VisionBoardProfileValues = {
-    myStory: profile?.myStory ?? "",
-    myWhy: profile?.myWhy ?? "",
-    legacyImpact: profile?.legacyImpact ?? "",
-    actionPlanThisWeek: profile?.actionPlanThisWeek ?? "",
-    actionPlanThisMonth: profile?.actionPlanThisMonth ?? "",
-    vibes: profile?.vibes ?? "",
-    resourcesHave: profile?.resourcesHave ?? "",
-    resourcesNeed: profile?.resourcesNeed ?? "",
-    bmcKeyPartners: profile?.bmcKeyPartners ?? "",
-    bmcKeyActivities: profile?.bmcKeyActivities ?? "",
-    bmcValue: profile?.bmcValue ?? "",
-    bmcCustomers: profile?.bmcCustomers ?? "",
-    bmcChannels: profile?.bmcChannels ?? "",
-    bmcRevenueStreams: profile?.bmcRevenueStreams ?? "",
-    bmcCostStructure: profile?.bmcCostStructure ?? "",
-    dailyAffirmations: profile?.dailyAffirmations ?? "",
-    accountabilityPartnerName: profile?.accountabilityPartnerName ?? "",
-    accountabilityPartnerContact: profile?.accountabilityPartnerContact ?? "",
-    accountabilityCommitment: profile?.accountabilityCommitment ?? "",
-  };
+  const { initial, initialNext90Days } = toFormValues(membership.business.visionBoardProfile);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -105,7 +85,11 @@ export default async function VisionBoardProfilePage() {
       </p>
 
       <div className="mt-8">
-        <VisionBoardForm businessId={membership.businessId} initial={initial} />
+        <VisionBoardForm
+          businessId={membership.businessId}
+          initial={initial}
+          initialNext90Days={initialNext90Days}
+        />
       </div>
     </div>
   );

@@ -6,12 +6,19 @@ import { assertBusinessAccess, getCurrentUser } from "@/lib/session";
 import { visionBoardProfileSchema } from "@/lib/validations/vision-board";
 
 /**
- * Upserts the Vision Board Profile fields the schema has no other home
- * for (My Vibes, Resources, Business Model Canvas, Daily Affirmations,
- * accountability partner) — see prisma/schema.prisma VisionBoardProfile
- * doc comment. One PATCH, whichever fields are present get written;
- * omitted fields are left as-is (not cleared), same partial-update
- * convention as the other tools' edit routes.
+ * Upserts whichever structured board *sections* the member submitted
+ * (myStory, myWhy, legacy, blueprint, actionPlan, resources,
+ * businessModelCanvas, vibes, affirmations, accountability) — see
+ * prisma/schema.prisma VisionBoardProfile doc comment and
+ * src/lib/validations/vision-board-data.ts for the shared shape. A
+ * section omitted entirely is left exactly as it was; a section present
+ * replaces that section's JSON in full, since the form always submits a
+ * whole section object at once.
+ *
+ * BOARD VERSION / LAST-EDITED (structured-storage follow-up, audited
+ * 2026-08-13): every successful save bumps `version` and stamps
+ * `lastEditedAt`/`lastEditedByUserId` with *this* request's user — the
+ * "practical minimum" tracking requested, not a per-field audit log.
  */
 export async function PATCH(request: Request) {
   const user = await getCurrentUser();
@@ -35,12 +42,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { businessId, ...fields } = input;
+  const { businessId, ...sections } = input;
 
   const profile = await prisma.visionBoardProfile.upsert({
     where: { businessId },
-    create: { businessId, ...fields },
-    update: fields,
+    create: { businessId, ...sections, lastEditedAt: new Date(), lastEditedByUserId: user.id },
+    update: { ...sections, version: { increment: 1 }, lastEditedAt: new Date(), lastEditedByUserId: user.id },
   });
 
   return NextResponse.json({ profile });

@@ -19,12 +19,11 @@ const INVALID_RESPONSE_MESSAGE =
   "Blueprint AI didn't return a usable draft that time — nothing was saved. Try generating again in a moment.";
 
 const OUTPUT_SHAPE = `{
-  "myStory": string | null,
-  "myWhy": string | null,
-  "legacyImpact": string | null,
-  "actionPlanThisWeek": string | null,
-  "actionPlanThisMonth": string | null,
-  "dailyAffirmations": string[] | null
+  "myStory": { "passionStatement": string | null, "superpowers": string[] },
+  "myWhy": { "whyStatement": string | null, "problemToSolve": string | null, "peopleToHelp": string[] },
+  "legacy": { "legacyStatement": string | null, "impactGroups": string[] },
+  "actionPlan": { "thisWeek": string[], "thisMonth": string[], "firstStep": string | null },
+  "affirmations": string[]
 }`;
 
 /**
@@ -40,17 +39,22 @@ const OUTPUT_SHAPE = `{
 function buildPrompt(businessContext: string): string {
   return `You are Blueprint AI, drafting suggested narrative content for one member's Vision Board inside the Blueprint Business Growth OS. This is a DRAFTING task, not a conversation — the member will review, edit, and choose to accept or discard each field themselves before anything is saved to their real profile.
 
-Ground every sentence in the real business context below. Never invent specific facts — numbers, dates, names, past events — that are not present in that context. If the context genuinely doesn't give you enough to draft something specific and non-generic for a field, return null for that field rather than writing generic filler.
+Ground every sentence in the real business context below. Never invent specific facts — numbers, dates, names, past events — that are not present in that context. If the context genuinely doesn't give you enough to draft something specific and non-generic for a field, use null (for a single string) or an empty array (for a list) rather than writing generic filler.
 
-Write each field in the business owner's own first-person voice ("I..."), warm and grounded, never generic motivational filler ("You've got this!", "Believe in your dreams") with no substance behind it.
+Write every string in the business owner's own first-person voice ("I..."), warm and grounded, never generic motivational filler ("You've got this!", "Believe in your dreams") with no substance behind it. Every array is a list of short, distinct items — not one long sentence split across entries.
 
-Field guide:
-- myStory: 2-4 sentences on how this business came to be and what it does, grounded in the business profile below.
-- myWhy: 2-4 sentences on the deeper motivation/purpose behind the business — the "why," not just the "what."
-- legacyImpact: 2-4 sentences on the lasting impact or legacy this business owner wants this business to leave.
-- actionPlanThisWeek: 1-3 concrete, specific actions for the next 7 days, grounded in the actual current/upcoming roadmap tasks and priority gaps below (not generic advice).
-- actionPlanThisMonth: 1-3 concrete, specific actions for the next 30 days, same grounding.
-- dailyAffirmations: 3-5 short, first-person affirmation statements that reflect this specific business's real strengths and goals from the context below, not generic self-help lines.
+Field guide (structured, not paragraphs — each list is its own array of short items):
+- myStory.passionStatement: 1-3 sentences on how this business came to be and what it does.
+- myStory.superpowers: 2-5 short phrases naming what this person is genuinely good at, grounded in the context (e.g. "Bringing people together," "Turning ideas into action").
+- myWhy.whyStatement: 1-3 sentences on the deeper motivation/purpose behind the business.
+- myWhy.problemToSolve: 1-2 sentences naming the real problem this business exists to solve.
+- myWhy.peopleToHelp: 2-5 short phrases naming who this business serves.
+- legacy.legacyStatement: 1-3 sentences on the lasting impact this business owner wants to leave.
+- legacy.impactGroups: 2-6 short phrases naming who/what that impact reaches (e.g. "My Family," "My Community," "Future Generations").
+- actionPlan.thisWeek: 1-3 concrete, specific actions for the next 7 days, grounded in the actual current/upcoming roadmap tasks and priority gaps below (not generic advice).
+- actionPlan.thisMonth: 1-3 concrete, specific actions for the next 30 days, same grounding.
+- actionPlan.firstStep: the single most important one of the above to do first, or null if nothing was grounded enough to draft.
+- affirmations: 3-5 short, first-person affirmation statements that reflect this specific business's real strengths and goals from the context below, not generic self-help lines.
 
 Respond with ONLY a single JSON object, no markdown code fences, no commentary before or after it, matching exactly this shape:
 ${OUTPUT_SHAPE}

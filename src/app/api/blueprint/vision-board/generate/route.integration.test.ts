@@ -48,12 +48,22 @@ function callPromote(generationId: string, fields: string[]) {
 }
 
 const VALID_JSON = JSON.stringify({
-  myStory: "I started this business to help local families eat better.",
-  myWhy: "I want my work to outlast me and mean something to my community.",
-  legacyImpact: null,
-  actionPlanThisWeek: "Follow up with the three leads from last week's session.",
-  actionPlanThisMonth: null,
-  dailyAffirmations: ["I show up for my customers every day.", "My business grows because I do."],
+  myStory: {
+    passionStatement: "I started this business to help local families eat better.",
+    superpowers: ["Bringing people together"],
+  },
+  myWhy: {
+    whyStatement: "I want my work to outlast me and mean something to my community.",
+    problemToSolve: null,
+    peopleToHelp: [],
+  },
+  legacy: { legacyStatement: null, impactGroups: [] },
+  actionPlan: {
+    thisWeek: ["Follow up with the three leads from last week's session."],
+    thisMonth: [],
+    firstStep: null,
+  },
+  affirmations: ["I show up for my customers every day.", "My business grows because I do."],
 });
 
 describe("POST /api/blueprint/vision-board/generate (real DB)", () => {
@@ -122,27 +132,23 @@ describe("POST /api/blueprint/vision-board/generate (real DB)", () => {
     expect(count).toBe(0);
   });
 
-  it("generates, validates, and stores a real draft — then promotes selected fields", async () => {
+  it("generates, validates, and stores a real draft — then promotes selected sections", async () => {
     mockAi.response = VALID_JSON;
     const res = await callGenerate(unlockedBusinessId);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.generation.payload.myStory).toContain("local families");
-    expect(body.generation.payload.legacyImpact).toBeNull();
+    expect(body.generation.payload.myStory.passionStatement).toContain("local families");
+    expect(body.generation.payload.legacy.legacyStatement).toBeNull();
     expect(body.generation.promotedAt).toBeNull();
 
-    // Promoting a null field is a no-op, not an overwrite with nothing.
-    const promoteRes = await callPromote(body.generation.id, [
-      "myStory",
-      "legacyImpact",
-      "dailyAffirmations",
-    ]);
+    // Promoting a section with every leaf null is a no-op, not an overwrite with nothing.
+    const promoteRes = await callPromote(body.generation.id, ["myStory", "legacy", "affirmations"]);
     expect(promoteRes.status).toBe(200);
     const promoteBody = await promoteRes.json();
-    expect(promoteBody.applied.sort()).toEqual(["dailyAffirmations", "myStory"]);
-    expect(promoteBody.skipped).toEqual(["legacyImpact"]);
-    expect(promoteBody.profile.myStory).toContain("local families");
-    expect(promoteBody.profile.dailyAffirmations).toContain("I show up for my customers every day.");
+    expect(promoteBody.applied.sort()).toEqual(["affirmations", "myStory"]);
+    expect(promoteBody.skipped).toEqual(["legacy"]);
+    expect(promoteBody.profile.myStory.passionStatement).toContain("local families");
+    expect(promoteBody.profile.affirmations).toContain("I show up for my customers every day.");
 
     const generation = await prisma.visionBoardGeneration.findUniqueOrThrow({
       where: { id: body.generation.id },
