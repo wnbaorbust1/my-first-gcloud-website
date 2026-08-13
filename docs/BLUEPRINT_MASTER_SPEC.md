@@ -429,3 +429,71 @@ Blueprint should visually communicate:
 The product should feel beautiful enough to inspire users to return, but
 simple enough that the visual design never becomes more important than
 taking action.
+
+---
+
+## Personalized Vision Board & Blueprint Generator
+
+**Status:** Approved feature requirements — audited 2026-08-13, not yet
+implemented. See `BUILD_STATUS.md` for the audit and phased plan. This
+section is **mandatory acceptance criteria** for that build, same standing
+as the Visual Experience Directive above.
+
+### Board Sections
+
+The board must present exactly these twelve sections, populated from real
+member data — never fabricated placeholder content:
+
+1. My Story
+2. My Why
+3. My Blueprint
+4. My Resources
+5. Action Plan
+6. Legacy
+7. Accountability
+8. My Big Goals
+9. Passion Assessment
+10. Business Model Canvas
+11. 90-Day Goal Tracker
+12. Daily Affirmations
+
+A section with no real data behind it yet must render an honest empty
+state (consistent with the rest of this app's convention — see `BUILD_STATUS.md`'s
+"never fabricate" pattern), never invented text.
+
+### Rendering Constraint
+
+The board **must** use a fixed, responsive HTML/CSS template — not an
+AI-generated image. The template owns layout, typography, and branding.
+The AI's role is limited to generating **structured recommendations
+returned as validated JSON**; the application places that JSON into the
+branded template. AI output that fails schema validation must never reach
+the template unmodified.
+
+### Access Rules
+
+- **Assessment completion** unlocks a limited results page and a
+  vision-board **preview** only.
+- The **full** vision board — editing, downloads, the roadmap, and the
+  dashboard — remains locked until a qualifying **$150 Blueprint Session**
+  is marked completed.
+- Session completion includes the first dashboard month free.
+- Continued access after that is **$9.99/month or $100/year** (unchanged
+  from the existing Membership pricing — see `src/lib/billing/pricing.ts`).
+
+### Scoring Rules (existing behavior, ratified — no change)
+
+- Passion, Power, and Legacy scores: 0–100%.
+- Overall Business Health Score: 0–100%.
+- Passion below its threshold (default 65%) → recommend **Passion**.
+- Passion at/above threshold and Power below its threshold → recommend
+  **Power**.
+- Passion and Power at/above threshold and Legacy below its threshold →
+  recommend **Legacy**.
+- All three at/above threshold → **Strategic Growth/Legacy** (existing
+  "GROWTH" recommendation type), unless the weakest of the three is still
+  below the excellence threshold (default 85%), in which case recommend
+  that weakest stage instead.
+- Thresholds **must remain configurable** (already true — stored in the
+  `AssessmentScoringConfig` database row, not code, editable via the
+  existing admin scoring-thresholds UI).

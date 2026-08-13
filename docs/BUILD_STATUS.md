@@ -1,6 +1,6 @@
 # BLUEPRINT BUILD STATUS
 
-_Last updated: 2026-08-11 — Launch Hardening (Ultra Pre-Publish Audit fixes)_
+_Last updated: 2026-08-13 — Personalized Vision Board & Blueprint Generator: pre-implementation audit_
 
 ## COMPLETE
 
@@ -2444,10 +2444,12 @@ next numbered phase:
   "Second Follow-Up Pass" section.** All 8 tools now support editing
   every field of an existing record in place via a shared modal, not
   just Create/Read/Delete plus a quick status control.
-- **A dedicated `FacilitatorAssignment` admin UI outside an organization
-  context** (Known Issue #28, narrowed) — Phase 12 gave organizations a
-  real admin UI; a facilitator-to-business pairing that isn't part of
-  any organization is still a direct DB write.
+- ~~A dedicated `FacilitatorAssignment` admin UI outside an organization
+  context~~ **RESOLVED** — `/admin/sessions` now has a Facilitator
+  Assignments card (create by owner email, list, revoke), not a direct
+  DB write. (This fix, the org-picker fix below, and the "Prior Art"
+  section above were built in a session that predates this doc entry
+  being written — see the correction note there.)
 - **Full editing of `stageWeights`/`statusBands`** on the admin Scoring
   Thresholds form (Known Issue #29) — only the two primary threshold
   fields are editable this phase.
@@ -2455,11 +2457,99 @@ next numbered phase:
   members — Phase 11 gave Resources real admin-managed content for the
   first time, but the member-facing `/resources` page itself is still a
   `ComingSoon` placeholder that doesn't yet read from it.
-- **A way to attach a `SessionOffering` to an `Organization` from the
-  admin session-create form** (Known Issue #37) — the field and the org
-  dashboard's reader both exist; the picker on the create form doesn't
-  yet.
+- ~~A way to attach a `SessionOffering` to an `Organization` from the
+  admin session-create form~~ **RESOLVED** — the create-session form now
+  has an Organization picker.
 - **Real custom-domain routing and branded-email delivery** behind Phase
   12's White-Label fields (Known Issue — see Phase 12 summary) — stored
   and displayed only, by explicit spec instruction not to build domain
   infrastructure this phase.
+
+---
+
+### Correction — undocumented work that landed between the last entry above and this audit
+
+Three real, shipped pieces of work happened in the gap after "Second
+Follow-Up Pass" above and were never logged here (a process gap, not a
+code gap — all were lint/typecheck/test/build-verified and live-verified
+at the time):
+
+1. **Facilitator Assignments admin UI** and **Organization picker on
+   admin session-create** — the two "RESOLVED" corrections just above.
+2. **`VisionBoardProfile` model + Worksheet HTML/CSS template system** —
+   `src/components/blueprint/worksheet.tsx` (numbered panels, script
+   header, Passion/Power/Legacy-branded, print-safe) now renders the
+   Assessment Results page and the Blueprint Scorecard. `VisionBoardProfile`
+   holds My Vibes, Resources (have/need), a 7-field Business Model
+   Canvas, Daily Affirmations, and accountability-partner name/contact —
+   editable at `/my-blueprint/vision-board`.
+3. **`PersonalAccessToken` model + Custom GPT Action export** —
+   `GET /api/gpt/vision-board` (Bearer-token authenticated) and
+   `GET /api/gpt/openapi.json` let a member's own ChatGPT Custom GPT pull
+   their real Blueprint data. Token lifecycle (generate/list/revoke) at
+   Settings → Connect ChatGPT.
+4. **Admin "Businesses" directory** (`/admin/businesses`) — search any
+   business, view an overview, and reach full edit access to that
+   business's My Blueprint and Vision Board Profile (same components/
+   routes the member uses, addressed at an admin-chosen `businessId`),
+   plus a read view of their Scorecard.
+
+This is directly relevant prior art for the Vision Board & Blueprint
+Generator audit immediately below — see its §1 and §8.
+
+---
+
+## AUDIT — Personalized Vision Board & Blueprint Generator (pre-implementation)
+
+**Date:** 2026-08-13. **Scope:** read-only audit per explicit instruction
+— no application code, packages, or database changes made. Full 14-point
+audit (architecture, files/routes, database, answer structure, scoring
+flow, auth/access-control flow, session-completion/subscription logic,
+missing fields, recommended DB changes, proposed routes, proposed
+component tree, risks, phased plan, acceptance criteria) was delivered in
+chat and is not duplicated here in full; this entry records the
+process-required summary.
+
+**Files inspected:** `docs/BLUEPRINT_MASTER_SPEC.md` (full, 431 lines —
+confirmed it is a *visual* directive only; no numbered functional "spec
+Prompt N" list exists anywhere as a canonical document — those only exist
+as scattered references inside this file's own phase narratives and code
+comments); this file in full; `prisma/schema.prisma` (all 55 models);
+`src/lib/assessment/scoring.ts`, `scoring-config.ts`; `src/lib/session.ts`,
+`src/lib/rbac.ts`; `src/lib/sessions/qualification.ts`
+(`registerForSession`, `markAttendance` — confirmed no payment step
+anywhere in either); `src/lib/billing/membership.ts`, `pricing.ts`;
+`src/app/(app)/dashboard/page.tsx`; `SessionOffering`/`SessionRegistration`
+fields directly (confirmed `priceCents` exists but is `null` in every
+seeded template, and `SessionRegistration` has no payment fields at all);
+`src/lib/blueprint/vision-board.ts`, `src/components/blueprint/worksheet.tsx`,
+`src/app/admin/businesses/*` (confirmed all still present and correct).
+
+**Key finding:** most of the requested board content already has a real
+data source or a real fixed-template renderer (see §8 in chat and the
+"Correction" section above) — this is a *tiering and payment* feature
+layered on existing content, not a from-scratch build. The genuinely
+missing piece is the $150 qualifying-session payment: `SessionOffering.priceCents`
+is unpopulated and `SessionRegistration` has zero payment fields or
+Stripe linkage today.
+
+**Current blockers (all pre-implementation, by design — none require
+action before starting):**
+- No payment/qualification fields exist on `SessionRegistration`; the
+  $150 charge has no schema, no Checkout flow, no webhook handling.
+- No preview-vs-full access tier exists for the vision board today —
+  Assessment Results, Vision Board Profile, and the Scorecard all render
+  fully for any signed-in member with a business, with no gate.
+- Four of the twelve requested board sections (My Story, My Why, Action
+  Plan cadence view, Legacy impact, 90-Day Goal Tracker) have partial or
+  no dedicated real-data field yet — see §8/§9 in chat.
+- No AI-JSON-generation endpoint or validation schema exists yet for
+  vision-board recommendations (Blueprint AI's existing chat endpoint is
+  conversational, not structured-JSON-out).
+
+**Recommended next phase:** the 7-step phased plan delivered in chat
+(§13) — schema/seed, session payment + webhook, access tiering, AI JSON
+generation + validation, template completion for the 4 partial sections,
+gated downloads, then the standard verify-and-document pass. Per explicit
+instruction, **implementation has not started** and should not begin
+until separately approved.
