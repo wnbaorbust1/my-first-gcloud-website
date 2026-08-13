@@ -15,6 +15,7 @@ import {
   WorksheetPage,
   WorksheetPanel,
   WorksheetRatingRow,
+  WorksheetRoadmap,
   WorksheetStat,
 } from "@/components/blueprint/worksheet";
 import { PrintButton } from "@/components/shared/print-button";
@@ -25,6 +26,7 @@ import { getVisionBoardExport, getVisionBoardSectionSources } from "@/lib/bluepr
 import { GOAL_TYPE_LABELS } from "@/lib/goals/meta";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import type { Stage } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My Vision Board — My Blueprint" };
 
@@ -79,8 +81,21 @@ export default async function VisionBoardPage() {
   ]);
   const { board } = data;
 
+  // FOCUS STAGE (Phase 4: Board Template) — the scoring engine's own real
+  // recommendation, not a guess: RecommendedSessionType maps 1:1 onto a
+  // Stage except "GROWTH" (all three stages already clear threshold —
+  // see determineRecommendation in src/lib/assessment/scoring.ts), which
+  // the roadmap treats as "every node on track" rather than picking one.
+  const focusStage: Stage | "GROWTH" | null = data.recommendedSessionType;
+
   return (
     <div>
+      {/* PRINT-FRIENDLY LANDSCAPE LAYOUT (Phase 4: Board Template) — scoped
+          to this route only via an inline <style>, not globals.css, since
+          other (print) pages (Scorecard, Documents, Impact Report) are
+          fine as portrait. */}
+      <style>{"@media print { @page { size: landscape; margin: 0.4in; } }"}</style>
+
       <div className="no-print mb-6 flex items-center justify-between">
         <Link
           href="/my-blueprint"
@@ -100,6 +115,15 @@ export default async function VisionBoardPage() {
             subtitle="My Vision Board"
           />
 
+          <WorksheetRoadmap
+            scores={{
+              PASSION: board.passionAssessment?.passionPercent ?? null,
+              POWER: board.passionAssessment?.powerPercent ?? null,
+              LEGACY: board.passionAssessment?.legacyPercent ?? null,
+            }}
+            focusStage={focusStage}
+          />
+
           <WorksheetGrid>
             <WorksheetPanel
               number={1}
@@ -112,7 +136,7 @@ export default async function VisionBoardPage() {
               ) : data.business.description || data.business.whatIOffer ? (
                 <p>{data.business.description || data.business.whatIOffer}</p>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               {board.myStory.superpowers.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -134,7 +158,7 @@ export default async function VisionBoardPage() {
               ) : data.business.myGoal ? (
                 <p>{data.business.myGoal}</p>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               {board.myWhy.problemToSolve && (
                 <p className="mt-2 text-sm">
@@ -157,7 +181,7 @@ export default async function VisionBoardPage() {
                   {data.recommendationReason && <p className="mt-2 text-sm">{data.recommendationReason}</p>}
                 </>
               ) : (
-                <p className="text-navy-400">Complete an assessment to see this.</p>
+                <p className="text-navy-500">Complete an assessment to see this.</p>
               )}
               {board.blueprint.priorities.length > 0 && (
                 <div className="mt-3">
@@ -184,7 +208,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </WorksheetChecklist>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               <p className="mt-3 text-xs font-bold uppercase tracking-wide text-gold-700">Need</p>
               {board.resources.need.length ? (
@@ -196,7 +220,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </WorksheetChecklist>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
             </WorksheetPanel>
 
@@ -216,7 +240,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </WorksheetChecklist>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               <p className="mt-3 text-xs font-bold uppercase tracking-wide text-gold-700">This Month</p>
               {board.actionPlan.thisMonth.length ? (
@@ -228,7 +252,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </WorksheetChecklist>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               {board.actionPlan.firstStep && (
                 <p className="mt-3 rounded-lg border-2 border-dashed border-gold-300 bg-gold-50 p-2 text-sm">
@@ -247,7 +271,7 @@ export default async function VisionBoardPage() {
               {board.legacy.legacyStatement ? (
                 <p>{board.legacy.legacyStatement}</p>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
               {board.legacy.impactGroups.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -273,7 +297,7 @@ export default async function VisionBoardPage() {
                   {board.accountability.commitment && <p className="mt-2">{board.accountability.commitment}</p>}
                 </>
               ) : (
-                <p className="text-navy-400">No accountability partner set yet.</p>
+                <p className="text-navy-500">No accountability partner set yet.</p>
               )}
             </WorksheetPanel>
 
@@ -290,7 +314,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </WorksheetChecklist>
               ) : (
-                <p className="text-navy-400">No active goals yet.</p>
+                <p className="text-navy-500">No active goals yet.</p>
               )}
             </WorksheetPanel>
 
@@ -326,7 +350,7 @@ export default async function VisionBoardPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-navy-400">Complete an assessment to see this.</p>
+                <p className="text-navy-500">Complete an assessment to see this.</p>
               )}
             </WorksheetPanel>
 
@@ -346,7 +370,7 @@ export default async function VisionBoardPage() {
                   <div key={label}>
                     <p className="text-xs font-bold uppercase tracking-wide text-gold-700">{label}</p>
                     <p className="text-sm">
-                      {values.length ? values.join(", ") : <span className="text-navy-400">—</span>}
+                      {values.length ? values.join(", ") : <span className="text-navy-500">—</span>}
                     </p>
                   </div>
                 ))}
@@ -370,7 +394,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-navy-400">No 90-day goals set yet.</p>
+                <p className="text-navy-500">No 90-day goals set yet.</p>
               )}
             </WorksheetPanel>
 
@@ -388,7 +412,7 @@ export default async function VisionBoardPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-navy-400">Not filled in yet.</p>
+                <p className="text-navy-500">Not filled in yet.</p>
               )}
             </WorksheetPanel>
           </WorksheetGrid>

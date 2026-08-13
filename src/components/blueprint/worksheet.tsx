@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
+import { cn, STAGE_META, STAGES, type Stage } from "@/lib/utils";
 
 /**
  * "WORKSHEET" VISUAL SYSTEM — the hand-drawn vision-board treatment for
@@ -72,6 +72,90 @@ export function WorksheetHeader({
         <p className="mt-1 font-hand text-sm text-navy-500">{subtitle}</p>
       )}
     </header>
+  );
+}
+
+const ROADMAP_NODE_CLASSES: Record<Stage, { border: string; bg: string; text: string; ring: string }> = {
+  PASSION: { border: "border-passion-300", bg: "bg-passion-50", text: "text-passion-700", ring: "ring-passion-400" },
+  POWER: { border: "border-power-300", bg: "bg-power-50", text: "text-power-700", ring: "ring-power-400" },
+  LEGACY: { border: "border-legacy-300", bg: "bg-legacy-50", text: "text-legacy-700", ring: "ring-legacy-400" },
+};
+
+/**
+ * PASSION → POWER → LEGACY ROADMAP — the board's centerpiece (Phase 4:
+ * Board Template directive — "no portrait or human images... Passion →
+ * Power → Legacy roadmap in the center"). Real webpage text/HTML the
+ * whole way down, driven entirely by the member's own assessment scores
+ * and the scoring engine's actual recommendation
+ * (src/lib/assessment/scoring.ts) — never a generated image, never a
+ * decorative or invented score. The node matching the business's real
+ * next-recommended stage gets a gold "Current Focus" crown; when the
+ * scoring engine finds all three stages already strong
+ * (RecommendedSessionType "GROWTH" — see determineRecommendation), every
+ * node is marked on track instead of guessing which single one to
+ * spotlight.
+ */
+export function WorksheetRoadmap({
+  scores,
+  focusStage,
+}: {
+  /** 0-100, or null when no completed assessment exists yet — real scores only, never invented. */
+  scores: Record<Stage, number | null>;
+  /** The scoring engine's actual next-recommended stage, "GROWTH" when all three already clear threshold, or null pre-assessment. */
+  focusStage: Stage | "GROWTH" | null;
+}) {
+  return (
+    <div className="rounded-3xl border-2 border-legacy-300 bg-surface px-5 py-6 text-center sm:px-8">
+      <p className="font-hand text-xs font-bold uppercase tracking-[0.2em] text-gold-700 sm:text-sm">
+        My Roadmap
+      </p>
+      <h2 className="mt-1 font-script text-3xl leading-tight text-legacy-700 sm:text-4xl">
+        &ldquo;I Build What Outlives Me&rdquo;
+      </h2>
+
+      <div className="mt-6 flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
+        {STAGES.map((stage, i) => {
+          const meta = STAGE_META[stage];
+          const classes = ROADMAP_NODE_CLASSES[stage];
+          const isCurrent = focusStage === stage || focusStage === "GROWTH";
+          const score = scores[stage];
+          return (
+            <div key={stage} className="flex flex-col items-center gap-2 sm:flex-row sm:gap-3">
+              <div
+                className={cn(
+                  "relative flex w-40 flex-col items-center gap-1 rounded-2xl border-2 px-4 py-3",
+                  classes.border,
+                  classes.bg,
+                  isCurrent && "ring-4 ring-offset-2 ring-offset-cream-50",
+                  isCurrent && classes.ring,
+                )}
+              >
+                {isCurrent && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-gold-400 bg-gold-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gold-700">
+                    👑 {focusStage === "GROWTH" ? "On Track" : "Current Focus"}
+                  </span>
+                )}
+                <span aria-hidden="true" className="text-2xl">
+                  {meta.icon}
+                </span>
+                <span className={cn("font-hand text-base font-bold uppercase tracking-wide", classes.text)}>
+                  {meta.label}
+                </span>
+                <span className="font-display text-xl font-semibold tabular-nums text-navy-900">
+                  {score !== null ? `${score}%` : "—"}
+                </span>
+              </div>
+              {i < STAGES.length - 1 && (
+                <span aria-hidden="true" className="font-hand text-2xl font-bold text-gold-500">
+                  <span className="sm:hidden">↓</span>
+                  <span className="hidden sm:inline">→</span>
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

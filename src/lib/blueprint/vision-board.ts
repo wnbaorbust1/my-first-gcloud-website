@@ -165,6 +165,10 @@ export async function getVisionBoardExport(businessId: string) {
     recommendedSession: assessment?.recommendedSessionType
       ? sessionLabelFor(assessment.recommendedSessionType)
       : null,
+    // The raw enum too (Phase 4: Board Template) — so the Passion → Power →
+    // Legacy roadmap centerpiece can highlight the real recommended stage
+    // without re-deriving the scoring engine's own decision.
+    recommendedSessionType: assessment?.recommendedSessionType ?? null,
     recommendationReason: assessment?.recommendationReason ?? null,
     myNextActions: (roadmap?.tasks ?? []).map((t) => t.title),
     board,

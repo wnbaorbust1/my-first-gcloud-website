@@ -2822,3 +2822,88 @@ notice; saving through the form correctly left sections marked `"user"`
 (no badge); and calling `generate` + `promote` directly showed the
 "✨ AI Suggested" badge on the rendered board's My Why panel exactly
 as designed.
+
+## PHASE 4 — Board Template: purple/gold/black/white webpage centerpiece (complete)
+
+The directive: recreate the reference board as actual webpage
+components — no portrait/human images, handwritten headings, purple
+outlined panels, gold crowns/hearts/checkmarks, a Passion → Power →
+Legacy roadmap "in the center," the tagline "I Build What Outlives Me,"
+responsive desktop/mobile, print-friendly landscape, accessible
+contrast, and editable content after unlocking — "the words should be
+real webpage text, not text baked into an AI image."
+
+Gap analysis first: the existing Worksheet system
+(`src/components/blueprint/worksheet.tsx`, built in earlier phases for
+Assessment Results/Scorecard and reused for the Vision Board) already
+satisfied most of this — no images anywhere (`font-hand`/`font-script`
+handwritten headings, `border-legacy-200` purple-outlined panels, 👑💗
+gold/emoji icons and SVG checkmarks, responsive
+`grid-cols-1 sm:grid-cols-2`, and full edit access post-unlock via the
+existing `VisionBoardForm`). Three things were genuinely new:
+
+**1. The Passion → Power → Legacy roadmap centerpiece** — new
+`WorksheetRoadmap` component in `worksheet.tsx`, inserted between the
+board header and the panel grid on
+`src/app/(print)/my-blueprint/vision-board/view/page.tsx` so it reads
+as the page's visual and narrative center (replacing the reference
+image's central-portrait slot with real HTML/CSS, never a generated
+image). Renders the member's three actual stage scores
+(`board.passionAssessment.passionPercent/powerPercent/legacyPercent` —
+never fabricated, "—" when no assessment exists yet) as three linked
+nodes (💗 Passion → ⚡ Power → 👑 Legacy, gold arrows between them,
+vertical on mobile via a responsive ↓/→ swap) using the same
+stage-color tokens (`passion`/`power`/`legacy`) every other stage
+surface in the app already uses. The node matching the business's real
+next-recommended stage — the scoring engine's own
+`Assessment.recommendedSessionType`, newly exposed as a raw enum field
+on `getVisionBoardExport()` alongside the existing human-readable
+`recommendedSession` label — gets a gold ring and a "👑 Current Focus"
+pill; when the scoring waterfall finds all three stages already strong
+(`RecommendedSessionType.GROWTH` — see `determineRecommendation` in
+`src/lib/assessment/scoring.ts`), every node is marked "👑 On Track"
+instead of guessing which single one to spotlight. Nothing here is
+decorative or invented — every score and every highlighted node traces
+back to a real assessment row.
+
+**2. "I Build What Outlives Me"** — set as the roadmap centerpiece's
+own handwritten headline (`font-script`, matching the board name's
+treatment), so it sits literally at the visual center of the page
+alongside the roadmap it introduces, without touching the shared
+`WorksheetBanner` tagline used by the (unrelated) Assessment
+Results/Scorecard pages.
+
+**3. Print-friendly landscape layout** — an inline
+`<style>{"@media print { @page { size: landscape; margin: 0.4in; } }"}</style>`
+scoped to the Vision Board view page's own JSX, not `globals.css`,
+since the other `(print)` routes (Scorecard, Documents, Impact Report)
+are fine as portrait and shouldn't change. Verified with a real
+headless Chromium PDF render (`page.pdf({ preferCSSPageSize: true })`,
+no explicit landscape override): the output `MediaBox` is `792×612pt`
+(11×8.5in landscape), confirming the CSS rule — not a Playwright
+option — is what drives the orientation.
+
+**4. Accessible text contrast fix** — an actual WCAG audit (relative
+luminance formula) against the color pairs this page uses found
+`text-navy-400` on the board's `cream-50` panel background (the "Not
+filled in yet." placeholder text used across ~14 empty-section states)
+computed to 4.48:1, just under the 4.5:1 AA threshold for normal text.
+Swapped to `text-navy-500` on the same background (7.52:1, comfortably
+passing) — scoped to this one page's placeholder text only, since
+`text-navy-400` is also a separate, pre-existing "eyebrow label"
+convention used in 70+ other places across the app that were already
+fine as a small-caps/bold treatment and out of scope here.
+
+**5. Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (31),
+`npm run test:integration` (43 — all still green; no schema/route
+behavior changed this phase, only additive fields and presentation),
+and a production `next build` all pass. Live-verified with Playwright
+against a freshly seeded business (real scores: Passion 88%, Power
+52%, Legacy 40%, `recommendedSessionType: POWER`): desktop (1280px)
+and mobile (390px) screenshots confirm the roadmap renders the real
+scores with the Power node correctly gold-ringed and labeled "Current
+Focus," the layout reflows correctly between grid and stacked
+orientations, and print-media emulation confirms the app chrome
+(`no-print`) is stripped while panel colors/borders survive
+`print-color-adjust: exact`. The generated landscape PDF's `MediaBox`
+was inspected directly to confirm the `@page` rule takes effect.
