@@ -200,3 +200,17 @@ export const generatedAssessmentSchema = z.object({
   answer_key: z.string().min(1).max(8000),
 });
 export type GeneratedAssessment = z.infer<typeof generatedAssessmentSchema>;
+
+// ── Bell ringer generation ──────────────────────────────────────────────
+
+export const generatedBellRingerSchema = z.object({
+  // A short, specific label for the history list — not the prompt text
+  // itself (e.g. "Slope from a Table — Spiral Review", not the question).
+  title: z.string().min(1).max(200),
+  prompt_text: z.string().min(1).max(2000),
+  answer_key: z.string().min(1).max(2000),
+  // TEKS codes chosen from the candidate list given in the prompt — may
+  // be empty (e.g. a pure skills-warmup with no clean TEKS match).
+  teks_codes: z.array(z.string()).max(10),
+});
+export type GeneratedBellRinger = z.infer<typeof generatedBellRingerSchema>;

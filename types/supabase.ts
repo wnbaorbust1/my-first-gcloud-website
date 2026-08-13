@@ -886,6 +886,60 @@ export type Database = {
           },
         ];
       };
+      bell_ringers: {
+        Row: {
+          id: string;
+          profile_id: string;
+          course_id: string;
+          lesson_id: string | null;
+          title: string;
+          topic: string | null;
+          prompt_text: string;
+          answer_key: string;
+          teks_ids: string[];
+          is_favorite: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          course_id: string;
+          lesson_id?: string | null;
+          title: string;
+          topic?: string | null;
+          prompt_text: string;
+          answer_key: string;
+          teks_ids?: string[];
+          is_favorite?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["bell_ringers"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "bell_ringers_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bell_ringers_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bell_ringers_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "lessons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

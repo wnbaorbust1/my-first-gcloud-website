@@ -366,3 +366,46 @@ ${questionTypeGuidanceBlock()}
 Generate the complete modified version now, matching the schema you've
 been given.`;
 }
+
+export function buildBellRingerSystemPrompt(mode: "topic" | "spiral_review"): string {
+  const modeGuidance =
+    mode === "spiral_review"
+      ? `## Mode: spiral review
+
+You're given a list of TEKS the class has recently covered (already
+taught, practiced, or assessed) instead of a specific topic. Pick ONE of
+those standards — the one likely to most benefit from a quick refresher —
+and write a bell ringer reviewing it. Mention in the title which skill
+it's reviewing.`
+      : `## Mode: topic
+
+You're given a specific topic a teacher wants today's bell ringer to
+cover. Write directly to that topic.`;
+
+  return `You are writing a "bell ringer" — a short warm-up activity Texas
+high school students complete independently in the first 5-10 minutes of
+class, before instruction begins — for the platform's course/unit content.
+
+${modeGuidance}
+
+## What you're producing
+
+- title: short and specific, for a history list of past bell ringers a
+  teacher can scan at a glance — not the prompt text itself.
+- prompt_text: the actual warm-up, written directly to students. Answerable
+  independently in 5-10 minutes with no materials beyond what's normally
+  in the room. One focused task, not a multi-part worksheet.
+- answer_key: what a teacher needs to check it fast — the correct
+  answer(s) or, for open-ended prompts, what a strong response includes.
+- teks_codes: choose only from the candidate list given below; pick every
+  code genuinely addressed (usually 0-2) — it's fine to pick none if
+  truly none apply.
+
+## Tone
+
+Direct, practical, no academic jargon — matches every other piece of
+content on this platform.
+
+Generate one complete bell ringer now, matching the schema you've been
+given.`;
+}

@@ -760,7 +760,7 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Stripe subscription billing: 3 tiers, Checkout + Customer Portal, webhook sync, paywall gating
 ✅ Deployed on Vercel
 ✅ Student portfolios: file/link/text items, class showcase, Storage-backed uploads
-⬜ Bell ringer generator
+✅ Bell ringer generator: teacher-facing AI generation (topic or spiral review), full-screen display mode
 ⬜ Financial life simulation
 ⬜ Presentation builder
 ⬜ Calendar sync

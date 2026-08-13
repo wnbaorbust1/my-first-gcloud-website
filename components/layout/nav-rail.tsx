@@ -22,6 +22,7 @@ const NAV_SECTIONS: NavSection[] = [
   { label: "Gradebook", href: "/gradebook" },
   { label: "TEKS Mastery", href: "/teks-mastery" },
   { label: "Portfolios", href: "/portfolio" },
+  { label: "Bell Ringers", href: "/bell-ringers" },
   { label: "Prep Checklist", href: "/prep-checklist" },
   { label: "Reflections", href: "/reflections" },
   { label: "Billing", href: "/account/billing" },
