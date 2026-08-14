@@ -497,3 +497,45 @@ the template unmodified.
 - Thresholds **must remain configurable** (already true — stored in the
   `AssessmentScoringConfig` database row, not code, editable via the
   existing admin scoring-thresholds UI).
+
+---
+
+## ADHD-Friendly Design Requirement
+
+**Status:** Ratified 2026-08-14, owner-requested. **Scope:** every
+member-facing screen, current and future — not a one-time feature, a
+standing bar every phase gets checked against (Visual Quality Check
+above should ask this too, going forward).
+
+The owner explicitly asked for the product to work for an ADHD brain.
+Concretely, every task-facing surface (Builder activities, the future
+weekly curriculum, affirmations/check-ins, tools) must give:
+
+- **Why** — one plain sentence on why this specific thing matters, not
+  buried in a paragraph.
+- **How** — a short numbered list, not a wall of text. Prefer 3–6 steps.
+- **A quick-start** — something the member can act on in the first 10
+  seconds without having to think of where to begin (a fill-in-the-blank
+  sentence, a pre-filled example, a single obvious first click) — the
+  point is killing blank-page paralysis specifically.
+- **A visible time estimate** and a sense that the task is *finite* —
+  nothing should read as open-ended.
+- **Low working-memory load** — one primary action visible at a time
+  (this is already `BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` §16's "Next
+  Best Move" principle and its Quick/Standard/Power step sizing — ADHD
+  support isn't a separate feature to bolt on, it's the same discipline
+  that spec already asks for, just named explicitly as a requirement
+  now); a sticky/always-visible way to jump between sections instead of
+  requiring the member to scroll and hold their place in memory.
+- **A real "stuck" path**, not a dead end — `BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md`
+  §6's eight stuck options (explain simpler, show an example, break into
+  smaller steps, help me start, review what I wrote, reschedule, ask the
+  coach, add to session agenda) satisfy this once built — do not ship a
+  Builder/curriculum screen without at least "break this into smaller
+  steps" and "help me start" wired to something real.
+
+This does not replace `BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md`'s existing
+mood/check-in/adaptive-response requirements (§6–§7) — it's the same
+intent, ratified here so it survives independently of which phase is
+currently in progress, and applies retroactively as a review lens on
+already-shipped screens, not just new ones.
