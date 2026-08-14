@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
+import { awardPoints, recordActivity } from "@/lib/gamification/points";
 import { loadAuthorizedTask } from "@/lib/roadmap/auth";
 import { saveTaskResponseToBlueprint } from "@/lib/roadmap/blueprint";
 import { recomputeUnlocks } from "@/lib/roadmap/generate";
@@ -74,12 +75,24 @@ export async function POST(
     await saveTaskResponseToBlueprint(taskId);
   }
 
+  // Idempotency: re-submitting an already-completed task (e.g. a
+  // duplicate request) must not award points twice.
+  const wasAlreadyComplete = task.status === "COMPLETED";
+
   await prisma.roadmapTask.update({
     where: { id: taskId },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
 
   await recomputeUnlocks(task.roadmapId);
+
+  if (!wasAlreadyComplete) {
+    const businessId = task.roadmap.businessId;
+    await Promise.all([
+      awardPoints(businessId, "DAILY_ACTION", task.title),
+      recordActivity(businessId),
+    ]);
+  }
 
   return NextResponse.json({ ok: true });
 }

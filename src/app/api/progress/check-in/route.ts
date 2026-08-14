@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
+import { awardPoints, recordActivity } from "@/lib/gamification/points";
 import { checkForNewMilestones } from "@/lib/progress/milestones";
 import { getWeekStart } from "@/lib/progress/week";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,13 @@ export async function POST(request: Request) {
   }
 
   const weekOf = getWeekStart();
+
+  // Checked before the upsert so a resubmit of the same week's check-in
+  // (editing it later) doesn't award WEEKLY_REVIEW points twice.
+  const existingThisWeek = await prisma.weeklyCheckIn.findUnique({
+    where: { businessId_weekOf: { businessId: input.businessId, weekOf } },
+    select: { id: true },
+  });
 
   const checkIn = await prisma.weeklyCheckIn.upsert({
     where: { businessId_weekOf: { businessId: input.businessId, weekOf } },
@@ -63,6 +71,11 @@ export async function POST(request: Request) {
   // threshold (First Customer, First $1K, First $5K/$10K Month) —
   // re-check right away so the member sees it the moment it's true.
   await checkForNewMilestones(input.businessId);
+
+  if (!existingThisWeek) {
+    await awardPoints(input.businessId, "WEEKLY_REVIEW", `Week of ${weekOf.toISOString().slice(0, 10)}`);
+  }
+  await recordActivity(input.businessId);
 
   // ACCOUNTABILITY (spec): "Welcome back" is driven by a gap in
   // lastActiveAt, not a missed-day counter — a real check-in is exactly

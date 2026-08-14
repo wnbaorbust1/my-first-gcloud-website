@@ -3337,4 +3337,64 @@ per the owner's decisions above.
 **Per explicit instruction, implementation has not started.** Approval
 to begin Phase A was requested and given in chat immediately following
 these decisions.
-database afterward.
+
+---
+
+## PHASE A — Gamification (points, levels, streaks, badges)
+
+Pilot-scoped per the audit above. New schema: `PointsLedger` (append-
+only, one row per event — same audit-trail convention as `AuditLog`/
+`StripeWebhookEvent`), `Badge`/`BusinessBadge`, and `Streak` (one row
+per business, with grace-day tracking). `src/lib/gamification/points.ts`
+holds the spec §9 points table, a pure `getLevel()` over the 10 spec
+level names (thresholds are a first-pass tunable constant — the spec
+gives level *names* but no point cutoffs — not yet promoted to an
+admin-configurable table like `AssessmentScoringConfig`, since nothing
+in the pilot needs live tuning yet), and a pure `computeStreakTransition()`
+implementing "two grace days per month" / "missed days do not erase
+lifetime progress" without ever touching the database, so the logic is
+directly unit-testable.
+
+**Wired into three real, already-existing actions** (not fabricated
+triggers): completing a Business Builder task (`DAILY_ACTION`, 10pts),
+a Weekly CEO Check-in (`WEEKLY_REVIEW`, 25pts), and any real Milestone
+achievement — both auto-detected and self-reported (`MILESTONE`,
+100pts). `LESSON`, `MONTHLY_CHALLENGE`, and `SPRINT_90_DAY` stay in the
+points table but unused until the 52-week curriculum (Phase C) exists to
+trigger them — not wired to anything fake in the meantime. All three
+wiring points are idempotent against a duplicate/resubmit request
+(checked explicitly, not assumed) — verified live, not just by
+inspection.
+
+**Badges**: all 24 spec badges are seeded via `ensureBadgesSeeded()`
+(same idempotent-seed pattern as `ensureTaskTemplatesSeeded()`), but
+only 9 have a real award trigger this phase — mapped 1:1 to existing
+auto-detected Milestones (`MILESTONE_BADGE_MAP` in
+`src/lib/gamification/badges.ts`) where the two lists genuinely
+correspond. The other 15 (mostly curriculum-linked — "Idea Selected,"
+"Launch Ready," "Team Ready," etc.) are seeded and visible but earned by
+no one yet — never fabricated as achieved.
+
+**Surfaced** on `/dashboard` as a new "Your Progress" card (level name,
+points, points-to-next-level, current/longest streak, badge count) —
+`getDashboardData()` extended with a `gamificationSnapshot`, not a
+separate query round-trip.
+
+**Verified:** `npx tsc --noEmit`, `npm run lint`, `npm test` (41 — 10
+new: `getLevel` threshold boundaries + top-level plateau;
+`computeStreakTransition` first-activity, same-day idempotency,
+consecutive-day increment, single-grace-day survival, grace-budget
+exhaustion, longest-streak preservation through a reset), and
+`npm run test:integration` (95 — 2 new: a real RoadmapTask completion
+awards exactly 10 `DAILY_ACTION` points and starts a real 1-day streak;
+a duplicate completion request on the same task awards nothing further)
+all pass against a real Postgres database. `next dev` serves `/login`
+and `/signup` cleanly post-migration (`next build` hits the same
+pre-existing sandbox turbopack/Google-Fonts limitation noted in the
+security-headers phase — confirmed unrelated to this change, and not
+present on Vercel's build servers). Migration
+`20260814024613_gamification_phase_a` applied and committed. All test
+rows deleted from the dev database afterward.
+
+**Next**: Phase B (Daily Affirmations & adaptive check-ins), per the
+pilot-scoped plan above.

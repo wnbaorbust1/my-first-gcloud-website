@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { getLevel, getTotalPoints } from "@/lib/gamification/points";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
@@ -107,6 +108,9 @@ export async function getDashboardData(userId: string) {
     recommendedUpcoming,
     milestones,
     openLeads,
+    totalPoints,
+    streak,
+    earnedBadgeCount,
   ] = await Promise.all([
     prisma.goal.findFirst({
       where: { businessId: business.id, status: "ACTIVE" },
@@ -137,7 +141,17 @@ export async function getDashboardData(userId: string) {
       where: { businessId: business.id, stage: { notIn: ["WON", "LOST"] } },
       select: { valueCents: true },
     }),
+    getTotalPoints(business.id),
+    prisma.streak.findUnique({ where: { businessId: business.id } }),
+    prisma.businessBadge.count({ where: { businessId: business.id } }),
   ]);
+
+  const gamificationSnapshot = {
+    ...getLevel(totalPoints),
+    currentStreak: streak?.currentStreak ?? 0,
+    longestStreak: streak?.longestStreak ?? 0,
+    earnedBadgeCount,
+  };
 
   const milestoneSnapshot = {
     achievedCount: milestones.length,
@@ -174,6 +188,7 @@ export async function getDashboardData(userId: string) {
     recentWins,
     milestoneSnapshot,
     toolsSnapshot,
+    gamificationSnapshot,
   };
 }
 

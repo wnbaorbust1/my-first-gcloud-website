@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { MilestoneKey } from "@/generated/prisma/enums";
+import { awardBadgesForMilestones } from "@/lib/gamification/badges";
+import { awardPoints } from "@/lib/gamification/points";
 import { prisma } from "@/lib/prisma";
 
 export interface MilestoneMeta {
@@ -88,6 +90,13 @@ export async function checkForNewMilestones(businessId: string): Promise<Milesto
     skipDuplicates: true,
   });
 
+  // Gamification (spec §9): every real milestone is worth 100 points,
+  // plus whichever of the 24 badges has a real trigger wired to it.
+  await Promise.all([
+    ...toAchieve.map((milestone) => awardPoints(businessId, "MILESTONE", milestone)),
+    awardBadgesForMilestones(businessId, toAchieve),
+  ]);
+
   return toAchieve;
 }
 
@@ -97,9 +106,24 @@ export async function markMilestoneManually(businessId: string, milestone: Miles
   if (!meta || meta.autoDetectable) {
     throw new Error(`${milestone} is auto-detected, not self-reported.`);
   }
-  return prisma.businessMilestone.upsert({
+
+  const existing = await prisma.businessMilestone.findUnique({
+    where: { businessId_milestone: { businessId, milestone } },
+  });
+
+  const result = await prisma.businessMilestone.upsert({
     where: { businessId_milestone: { businessId, milestone } },
     create: { businessId, milestone, source: "manual" },
     update: {},
   });
+
+  // Only award once — re-confirming an already-marked milestone is a no-op, not a second 100 points.
+  if (!existing) {
+    await Promise.all([
+      awardPoints(businessId, "MILESTONE", milestone),
+      awardBadgesForMilestones(businessId, [milestone]),
+    ]);
+  }
+
+  return result;
 }

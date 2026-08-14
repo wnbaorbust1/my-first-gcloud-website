@@ -413,6 +413,10 @@ model Business {
   boardDownloads         BoardDownload[]
   visionBoardVersions    VisionBoardVersion[]
 
+  pointsLedger PointsLedger[]
+  badges       BusinessBadge[]
+  streak       Streak?
+
   @@index([status])
 }
 
@@ -1294,6 +1298,91 @@ model BusinessMilestone {
 
   @@unique([businessId, milestone])
   @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Gamification (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md §9, Phase A —
+// pilot-scoped: points/streaks/badges only, wired into real existing
+// actions — daily curriculum, affirmation points, and the 90-day-sprint
+// award land in later phases once those systems themselves exist).
+// ---------------------------------------------------------------------------
+
+/// The spec §9 points table. Kept as an enum (not a free-form string) so
+/// every award traces back to one canonical, typo-proof reason.
+enum PointsAction {
+  DAILY_ACTION
+  PROOF_UPLOADED
+  ASSET_SAVED
+  WEEKLY_REVIEW
+  LESSON
+  WEEKLY_MODULE
+  MONTHLY_CHALLENGE
+  MILESTONE
+  REASSESSMENT_30_DAY
+  SPRINT_90_DAY
+}
+
+/// Append-only — never updated or deleted, so "total points" is always a
+/// sum over real, individually-attributable events (this app's existing
+/// audit-trail convention, same as AuditLog/StripeWebhookEvent).
+model PointsLedger {
+  id         String       @id @default(cuid())
+  businessId String
+  action     PointsAction
+  points     Int
+  /// Optional context, e.g. the RoadmapTask title or WeeklyCheckIn week —
+  /// display-only, never re-parsed for logic.
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+/// The 24 spec §9 badges — seeded once via `ensureBadgesSeeded()`
+/// (src/lib/gamification/badges.ts), same idempotent-seed pattern as
+/// `ensureTaskTemplatesSeeded()`. A badge with no award condition wired
+/// yet (most curriculum-linked ones — see that file) simply has zero
+/// rows in `BusinessBadge` until a later phase gives it a real trigger;
+/// it is never fabricated as "earned."
+model Badge {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  earnedBy BusinessBadge[]
+}
+
+model BusinessBadge {
+  id         String   @id @default(cuid())
+  businessId String
+  badgeId    String
+  earnedAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, badgeId])
+  @@index([businessId])
+}
+
+/// One row per business. `graceDaysUsed`/`graceDaysResetAt` implement
+/// spec §9's "two grace days per month" — a missed day within the grace
+/// budget preserves the streak instead of resetting it to 0.
+model Streak {
+  businessId       String    @id
+  currentStreak    Int       @default(0)
+  longestStreak    Int       @default(0)
+  lastActivityDate DateTime?
+  graceDaysUsed    Int       @default(0)
+  graceDaysResetAt DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 // ---------------------------------------------------------------------------

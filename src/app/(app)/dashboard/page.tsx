@@ -599,6 +599,43 @@ export default async function DashboardPage() {
         </div>
       </Card>
 
+      {/* Gamification (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md §9, Phase A) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Your Progress</CardTitle>
+        </CardHeader>
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">Level</p>
+            <p className="mt-1 font-display text-xl font-semibold text-navy-900">
+              {data.gamificationSnapshot.name}
+            </p>
+            <p className="text-xs text-foreground-muted">
+              {data.gamificationSnapshot.totalPoints} points
+              {data.gamificationSnapshot.pointsToNextLevel !== null &&
+                ` · ${data.gamificationSnapshot.pointsToNextLevel} to ${data.gamificationSnapshot.nextLevelName}`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">Streak</p>
+            <p className="mt-1 font-display text-xl font-semibold text-navy-900">
+              {data.gamificationSnapshot.currentStreak} day{data.gamificationSnapshot.currentStreak === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs text-foreground-muted">
+              Best: {data.gamificationSnapshot.longestStreak} day
+              {data.gamificationSnapshot.longestStreak === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">Badges</p>
+            <p className="mt-1 font-display text-xl font-semibold text-navy-900">
+              {data.gamificationSnapshot.earnedBadgeCount}
+            </p>
+            <p className="text-xs text-foreground-muted">earned so far</p>
+          </div>
+        </div>
+      </Card>
+
       {/* Advanced Business Tools (spec Prompt 10) */}
       <Card>
         <CardHeader>
