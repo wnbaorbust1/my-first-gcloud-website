@@ -3552,3 +3552,72 @@ Migration `20260814041814_curriculum_phase_c` applied.
 
 **Next**: Phase D (Next Best Action engine) or Phase E (lightweight
 Vault), per the pilot-scoped plan — not yet requested.
+
+---
+
+## PHASE D — Next Best Action Engine
+
+Pilot-scoped per `BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` §13, replacing
+the original Phase 4 heuristic (first NOT_STARTED task by MUST_DO/
+SHOULD_DO/BONUS then order) with the spec's real 8-tier priority order,
+mapped onto signals this schema already has — nothing invented. Tier 1
+(safety/compliance) has no corresponding data in this schema and is
+explicitly not faked as a tier; tier 2 (missing prerequisite) is
+structurally guaranteed already, since only NOT_STARTED tasks (LOCKED
+tasks have unmet prerequisites) are ever eligible candidates.
+
+**Engine** (`src/lib/roadmap/next-best-action.ts`): `rankNextBestActions()`
+(pure) maps tiers 3-8 to real fields — `RoadmapTask.facilitatorAdjusted`
+(tier 3), the business's ACTIVE `Goal.goalType` matched to task category
+via a new `GOAL_TYPE_CATEGORIES` table (tier 4), the `BlueprintStage`
+with the business's lowest real `AssessmentScore` (tier 5, via pure
+`getLowestScoringStage()`), `REVENUE_CATEGORIES` (tier 6),
+`SYSTEMS_CATEGORIES` (tier 7), and a long-term-growth fallback (tier 8)
+— ties within a tier keep the original MUST_DO/SHOULD_DO/BONUS-then-order
+tie-break. Every pick carries a real, tier-specific `reason` string —
+spec: "The engine must explain why an action was selected." `pickSmallerAlternative()`
+(pure) picks the best-ranked remaining candidate with a strictly smaller
+`estimatedMins`, falling back to the next-ranked candidate if none is
+smaller — never a fabricated placeholder task.
+
+**Wired into `/dashboard`**: `getDashboardData()` now calls
+`rankNextBestActions()` with data it already has loaded (notStarted
+tasks, the active Goal, the assessment's scores) — no extra queries.
+`loadNextBestActionCandidates()` is a separate small I/O wrapper for
+callers that don't already have that context, used only by the swap API
+route.
+
+**Spec's three required affordances** ("allow the user to choose a
+smaller action, reschedule, or request help") — all real, all wired into
+a new `NextBestActionCard` client component on `/dashboard`:
+- **Smaller action**: `POST /api/roadmap/next-best-action/swap` calls
+  `pickSmallerAlternative()` and swaps the card's displayed task
+  client-side.
+- **Reschedule**: new member-facing `POST /api/roadmap/tasks/[id]/pause`
+  / `.../resume` routes — the first member-facing use of the existing
+  `PAUSED` TaskStatus (previously facilitator-only). Pausing never
+  touches `TaskResponse` — "reschedule without losing progress" (spec
+  §6) is literal here, not just copy. `/roadmap` gained a "Resume"
+  button (`ResumeTaskButton`) on paused tasks.
+- **Request help**: links straight to the existing `/ai` Blueprint AI
+  chat (Phase 7) — a real, already-working feature, not new plumbing.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (62, 13 new
+— every tier's real-signal mapping, tier-beats-priority ordering,
+within-tier tie-breaks, and both `pickSmallerAlternative` branches),
+`npm run test:integration` (113, 7 new — real Postgres: a stranger can't
+pause/resume or swap someone else's task; pausing a NOT_STARTED task
+leaves its `TaskResponse` answers untouched; pause/resume are each
+idempotent against their own already-applied state; the swap route picks
+a real smaller task with a real reason) all pass, no regressions to the
+existing 49/106. `next dev` smoke test confirmed the full loop against a
+real business with real assessment scores and a real active goal: the
+dashboard correctly picked the task in the business's lowest-scoring
+stage over an unrelated one, with the right "closes your biggest gap"
+reason text; swap, pause, and resume all worked end-to-end through the
+real API (a mid-session Turbopack route-manifest quirk — new routes
+added under an already-indexed dynamic `[id]` folder needed one dev-
+server restart to be picked up — was confirmed as a dev-only caching
+artifact, not a code defect, once restarted).
+
+**Next**: Phase E (lightweight Vault), per the pilot-scoped plan.

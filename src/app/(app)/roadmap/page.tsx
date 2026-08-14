@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RoadmapItem, type RoadmapItemStatus } from "@/components/ui/roadmap-item";
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
+import { ResumeTaskButton } from "@/components/roadmap/resume-task-button";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -155,13 +156,22 @@ export default async function RoadmapPage() {
                       isLast={i === tasks.length - 1}
                     />
                   );
-                  return actionable ? (
-                    <Link key={task.id} href={`/build/${task.id}`} className="block hover:opacity-80">
-                      {item}
-                    </Link>
-                  ) : (
-                    <div key={task.id}>{item}</div>
-                  );
+                  if (actionable) {
+                    return (
+                      <Link key={task.id} href={`/build/${task.id}`} className="block hover:opacity-80">
+                        {item}
+                      </Link>
+                    );
+                  }
+                  if (task.status === "PAUSED") {
+                    return (
+                      <div key={task.id} className="flex items-center justify-between gap-3">
+                        {item}
+                        <ResumeTaskButton taskId={task.id} />
+                      </div>
+                    );
+                  }
+                  return <div key={task.id}>{item}</div>;
                 })}
               </div>
             </details>

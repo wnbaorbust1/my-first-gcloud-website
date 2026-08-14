@@ -20,11 +20,11 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { ScoreCard } from "@/components/ui/score-card";
-import { StageBadge } from "@/components/ui/stage-badge";
-import { TaskCard, type TaskPriority } from "@/components/ui/task-card";
+import { TaskCard } from "@/components/ui/task-card";
 import { sessionLabelFor } from "@/lib/assessment/scoring";
 import { AffirmationCard } from "@/components/affirmations/affirmation-card";
 import { MoodCheckInCard } from "@/components/affirmations/mood-checkin-card";
+import { NextBestActionCard } from "@/components/roadmap/next-best-action-card";
 import { getDashboardData } from "@/lib/dashboard/data";
 import { formatCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
@@ -40,12 +40,6 @@ function greeting() {
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
-
-const IMPACT_BY_PRIORITY: Record<TaskPriority, string> = {
-  MUST_DO: "HIGH",
-  SHOULD_DO: "MEDIUM",
-  BONUS: "LOW",
-};
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -366,40 +360,25 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Next Best Action — the single most important thing on this page. */}
-      <Card className="border-gold-200 bg-gradient-to-br from-gold-50 to-surface">
-        <p className="text-sm font-semibold uppercase tracking-wide text-gold-600">
-          Your Next Best Move
-        </p>
-        {nextBestAction ? (
-          <>
-            <h2 className="mt-1 text-xl font-semibold text-navy-900">{nextBestAction.title}</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-foreground-muted">
-              <StageBadge stage={nextBestAction.stage as Stage} />
-              <span>~{nextBestAction.estimatedMins ?? "a few"} min</span>
-              <span>
-                Impact:{" "}
-                <span className="font-semibold text-navy-700">
-                  {IMPACT_BY_PRIORITY[nextBestAction.priority]}
-                </span>
-              </span>
-            </div>
-            {nextBestAction.description && (
-              <p className="mt-3 text-sm text-navy-700">
-                <span className="font-medium">Why this matters: </span>
-                {nextBestAction.description}
-              </p>
-            )}
-            <Button asChild size="lg" variant="gold" className="mt-5">
-              <Link href={`/build/${nextBestAction.id}`}>Start Building</Link>
-            </Button>
-          </>
-        ) : (
-          <p className="mt-2 text-sm text-foreground-muted">
-            Your facilitator is preparing your Blueprint Roadmap.
-          </p>
-        )}
-      </Card>
+      {/* Next Best Action Engine (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md §13,
+          Phase D) — the single most important thing on this page, with a
+          real "why," and the spec's required smaller/reschedule/help affordances. */}
+      <NextBestActionCard
+        businessId={data.business.id}
+        initialTask={
+          nextBestAction
+            ? {
+                id: nextBestAction.id,
+                title: nextBestAction.title,
+                stage: nextBestAction.stage as Stage,
+                priority: nextBestAction.priority,
+                estimatedMins: nextBestAction.estimatedMins,
+                description: nextBestAction.description,
+                reason: data.nextBestActionReason,
+              }
+            : null
+        }
+      />
 
       {/* Today's Blueprint */}
       <section>

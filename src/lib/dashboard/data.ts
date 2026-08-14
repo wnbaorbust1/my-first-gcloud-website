@@ -5,12 +5,11 @@ import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/member
 import { getCurrentWeek } from "@/lib/curriculum/curriculum";
 import { getLevel, getLevelEligiblePoints, getTotalPoints } from "@/lib/gamification/points";
 import { logError } from "@/lib/observability/log-error";
+import { getLowestScoringStage, rankNextBestActions } from "@/lib/roadmap/next-best-action";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
 import { STAGES, type Stage } from "@/lib/utils";
-
-const PRIORITY_RANK = { MUST_DO: 0, SHOULD_DO: 1, BONUS: 2 } as const;
 
 /**
  * One query bundle for the whole dashboard funnel (spec Prompt 4:
@@ -73,10 +72,6 @@ export async function getDashboardData(userId: string) {
   const tasks = roadmap?.tasks ?? [];
 
   const notStarted = tasks.filter((t) => t.status === "NOT_STARTED");
-  const sortedByPriority = [...notStarted].sort(
-    (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.order - b.order,
-  );
-  const nextBestAction = sortedByPriority[0] ?? null;
 
   const todaysBlueprint = {
     mustDo: notStarted.filter((t) => t.priority === "MUST_DO").sort((a, b) => a.order - b.order)[0],
@@ -204,11 +199,39 @@ export async function getDashboardData(userId: string) {
     .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0))
     .slice(0, 3);
 
+  // NEXT BEST ACTION ENGINE (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md §13,
+  // Phase D) — ranks notStarted against real signals this function
+  // already has loaded (facilitator adjustments, the active goal, the
+  // lowest-scoring assessment stage) and explains why. See
+  // src/lib/roadmap/next-best-action.ts for the full tier mapping.
+  const nextBestRanked = rankNextBestActions(
+    notStarted.map((t) => ({
+      id: t.id,
+      title: t.title,
+      stage: t.stage as Stage,
+      category: t.category,
+      priority: t.priority,
+      order: t.order,
+      estimatedMins: t.estimatedMins,
+      facilitatorAdjusted: t.facilitatorAdjusted,
+    })),
+    {
+      activeGoalType: goal?.goalType ?? null,
+      lowestScoringStage: getLowestScoringStage(
+        assessment.scores.map((s) => ({ stage: s.stage as Stage, scorePercent: s.scorePercent })),
+      ),
+    },
+  );
+  const topPick = nextBestRanked[0] ?? null;
+  const nextBestAction = topPick ? (notStarted.find((t) => t.id === topPick.task.id) ?? null) : null;
+  const nextBestActionReason = topPick?.reason ?? null;
+
   return {
     state: "builder" as const,
     business,
     assessment,
     nextBestAction,
+    nextBestActionReason,
     todaysBlueprint,
     roadmapSnapshot,
     progressByStage,
