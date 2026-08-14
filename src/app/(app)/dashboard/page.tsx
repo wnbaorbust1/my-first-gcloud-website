@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  CalendarCheck,
   CalendarDays,
   CheckCircle2,
   Circle,
@@ -283,7 +284,7 @@ export default async function DashboardPage() {
   }
 
   // ---- Builder unlocked: the full post-session dashboard ---------------
-  const { nextBestAction, todaysBlueprint, roadmapSnapshot, progressByStage, todaysAffirmation } = data;
+  const { nextBestAction, todaysBlueprint, roadmapSnapshot, progressByStage, todaysAffirmation, currentWeek } = data;
 
   return (
     <div className="flex flex-col gap-8">
@@ -310,6 +311,31 @@ export default async function DashboardPage() {
         )}
         <MoodCheckInCard businessId={data.business.id} />
       </div>
+
+      {/* Passion Sprint — This Week (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md
+          §5/§6, Phase C). Skipped (not page-breaking) if getCurrentWeek
+          failed — see getDashboardData's fault isolation around that call. */}
+      {currentWeek && currentWeek.state === "in-progress" && (
+        <Card className="border-navy-200">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">
+                Passion Sprint · Week {currentWeek.week.weekNumber} of 13
+              </p>
+              <p className="mt-1 text-lg font-semibold text-navy-900">{currentWeek.week.topic}</p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                {currentWeek.actionsCompletedCount} of {currentWeek.totalActions} daily actions complete
+              </p>
+            </div>
+            <Button asChild size="sm" variant="gold" className="w-full shrink-0 sm:w-auto">
+              <Link href="/curriculum">
+                <CalendarCheck className="h-4 w-4" aria-hidden="true" />
+                Continue This Week
+              </Link>
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

@@ -2,6 +2,7 @@ import "server-only";
 
 import { getTodaysAffirmation } from "@/lib/affirmations/affirmations";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { getCurrentWeek } from "@/lib/curriculum/curriculum";
 import { getLevel, getLevelEligiblePoints, getTotalPoints } from "@/lib/gamification/points";
 import { logError } from "@/lib/observability/log-error";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
@@ -115,6 +116,7 @@ export async function getDashboardData(userId: string) {
     streak,
     earnedBadgeCount,
     todaysAffirmation,
+    currentWeek,
   ] = await Promise.all([
     prisma.goal.findFirst({
       where: { businessId: business.id, status: "ACTIVE" },
@@ -156,6 +158,13 @@ export async function getDashboardData(userId: string) {
     // ones that already succeeded.
     getTodaysAffirmation(business.id).catch((err: unknown) => {
       void logError(err, { route: "dashboard", part: "getTodaysAffirmation", businessId: business.id });
+      return null;
+    }),
+    // Same fault-isolation reasoning as getTodaysAffirmation above — a
+    // bug in this newer Phase C feature must never take down the rest
+    // of the dashboard.
+    getCurrentWeek(business.id).catch((err: unknown) => {
+      void logError(err, { route: "dashboard", part: "getCurrentWeek", businessId: business.id });
       return null;
     }),
   ]);
@@ -212,6 +221,7 @@ export async function getDashboardData(userId: string) {
     toolsSnapshot,
     gamificationSnapshot,
     todaysAffirmation,
+    currentWeek,
   };
 }
 

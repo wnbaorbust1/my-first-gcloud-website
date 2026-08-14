@@ -420,6 +420,9 @@ model Business {
   affirmationEvents AffirmationEvent[]
   moodCheckIns      MoodCheckIn[]
 
+  curriculumWeekProgress   BusinessWeekProgress[]
+  dailyActionCompletions   DailyActionCompletion[]
+
   @@index([status])
 }
 
@@ -1481,6 +1484,128 @@ model MoodCheckIn {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Passion-Sprint Curriculum (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md §5/§6,
+// Phase C — pilot-scoped to the Passion sprint, weeks 1-13 of the spec's
+// 52-week map. "Wrap, don't replace": this is a separate, sequential
+// day-by-day curriculum layered on top of the existing 30-task Business
+// Builder, not a rebuild of it — a week's `requiredAsset` may overlap in
+// substance with an existing RoadmapTask, but nothing here reads or
+// writes RoadmapTask directly, so both systems stay independently correct.
+// Weeks 14+ (Power/Legacy) are explicitly deferred to a later phase.
+// ---------------------------------------------------------------------------
+
+/// spec §6 "Task sizes": Quick Step (~5 min), Standard Step (~15 min),
+/// Power Step (~30 min) — same objective at three time budgets so a
+/// short-on-time day never means skipping entirely.
+enum ActionSize {
+  QUICK
+  STANDARD
+  POWER
+}
+
+/// One row per curriculum week (spec §5's 52-week map, rows 1-13 seeded
+/// in this phase). `stage` reuses BlueprintStage rather than a new enum —
+/// the spec's own week ranges already line up with it (1-13 Passion,
+/// 14-39 Power, 40-52 Legacy), so weeks 14+ can be seeded later without a
+/// schema change.
+model CurriculumWeek {
+  id            String         @id @default(cuid())
+  weekNumber    Int            @unique
+  stage         BlueprintStage
+  topic         String
+  requiredAsset String
+
+  /// A concise lesson (spec §5: "concise lesson").
+  lesson String @db.Text
+  /// Why this week matters — same ADHD-friendly "plain why" convention as
+  /// TaskTemplate.whyItMatters.
+  whyItMatters String @db.Text
+  /// A completed example (spec §5: "a completed example").
+  completedExample String @db.Text
+  /// The weekly review prompt shown once all 5 daily actions are done.
+  weeklyReviewPrompt String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  actions  DailyAction[]
+  progress BusinessWeekProgress[]
+
+  @@index([stage, weekNumber])
+}
+
+/// Five per week (spec §5: "five daily actions"), each sized per the
+/// spec's Quick/Standard/Power convention.
+model DailyAction {
+  id        String     @id @default(cuid())
+  weekId    String
+  dayNumber Int
+  title     String
+  description String   @db.Text
+  size      ActionSize
+
+  createdAt DateTime @default(now())
+
+  week        CurriculumWeek           @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  completions DailyActionCompletion[]
+
+  @@unique([weekId, dayNumber])
+  @@index([weekId])
+}
+
+enum WeekProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// One row per (business, week) — where a business stands in the
+/// curriculum. Weeks unlock sequentially: a business only has a row for
+/// week N+1 once week N is COMPLETED (see getCurrentWeek in
+/// src/lib/curriculum/curriculum.ts), the same pattern as
+/// RoadmapTask.status's LOCKED-until-prerequisites-met gating.
+model BusinessWeekProgress {
+  id         String              @id @default(cuid())
+  businessId String
+  weekId     String
+  status     WeekProgressStatus  @default(NOT_STARTED)
+
+  /// The member's own answer to weeklyReviewPrompt — required to mark
+  /// the week COMPLETED, never fabricated.
+  reviewNote String? @db.Text
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  business Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  week     CurriculumWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, weekId])
+  @@index([businessId])
+}
+
+/// One row per (business, daily action) actually completed — idempotent
+/// via the unique constraint, same "duplicate click just returns false"
+/// pattern as AffirmationEvent.
+model DailyActionCompletion {
+  id            String   @id @default(cuid())
+  businessId    String
+  dailyActionId String
+  /// Optional member note/link standing in for "proof of completion"
+  /// (spec §6 dashboard order item 11) — self-reported, never verified,
+  /// same honesty convention as every other self-reported field in this
+  /// schema.
+  proofNote     String?  @db.Text
+  completedAt   DateTime @default(now())
+
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  dailyAction DailyAction @relation(fields: [dailyActionId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dailyActionId])
   @@index([businessId])
 }
 

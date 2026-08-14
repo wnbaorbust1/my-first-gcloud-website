@@ -2,6 +2,7 @@ import {
   BookOpen,
   Briefcase,
   CalendarDays,
+  CalendarCheck,
   Compass,
   CreditCard,
   DollarSign,
@@ -26,6 +27,7 @@ export interface NavItem {
 export const SIDEBAR_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "My Roadmap", href: "/roadmap", icon: Compass },
+  { label: "Passion Sprint", href: "/curriculum", icon: CalendarCheck },
   { label: "Build", href: "/build", icon: Hammer },
   { label: "Blueprint AI", href: "/ai", icon: Sparkles },
   { label: "My Blueprint", href: "/my-blueprint", icon: BookOpen },

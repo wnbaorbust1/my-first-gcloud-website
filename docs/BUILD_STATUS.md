@@ -3465,3 +3465,90 @@ Migration `20260814034144_affirmations_phase_b` applied.
 
 **Next**: Phase C (52-week curriculum, Passion sprint only — weeks
 1–13), per the pilot-scoped plan.
+
+---
+
+## PHASE C — Passion-Sprint Curriculum (weeks 1–13)
+
+Pilot-scoped per the audit's phase plan: the spec's full 52-week
+curriculum map (`BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` §5) is seeded
+only for weeks 1–13 (the Passion sprint) — weeks 14+ (Power/Legacy) are
+explicitly deferred. "Wrap, don't replace": this is a separate,
+sequential day-by-day layer alongside the existing 30-task Business
+Builder, not a rebuild of it — nothing here reads or writes
+`RoadmapTask`, so both systems stay independently correct even where a
+week's required asset overlaps in substance with an existing task
+(weeks 2, 6, 7, 10, 11, 12 say so explicitly in their lesson text and
+point the member back to the matching Builder task instead of asking
+them to redo the same thinking).
+
+**Schema**: `CurriculumWeek` (weekNumber, stage, topic, requiredAsset,
+lesson, whyItMatters, completedExample, weeklyReviewPrompt),
+`DailyAction` (5 per week, sized via a new `ActionSize` enum —
+QUICK/STANDARD/POWER, spec §6's Quick/Standard/Power Step convention),
+`BusinessWeekProgress` (one row per business per week, sequential
+unlock — a business only gets a row for week N+1 once week N is
+COMPLETED, same LOCKED-until-prerequisites pattern as `RoadmapTask`),
+`DailyActionCompletion` (one row per business per action, idempotent via
+its unique constraint — same pattern as `AffirmationEvent`). `stage`
+reuses the existing `BlueprintStage` enum rather than adding a new one —
+the spec's own week ranges already line up with it (1-13 Passion, 14-39
+Power, 40-52 Legacy). Points reuse Phase A's existing `DAILY_ACTION`
+(10pts) and `WEEKLY_MODULE` (50pts) `PointsAction` values — both were
+already in the points table, seeded but unused until this phase gave
+them a real trigger.
+
+**Content**: All 13 weeks written out in full in
+`src/lib/curriculum/curriculum-weeks.ts` — a concise lesson, a plain
+"why it matters," a completed example, 5 real daily actions, and a
+weekly review question per week, matching spec §5's required shape
+exactly ("a concise lesson, why it matters, a completed example, five
+daily actions... a required asset, a weekly review"). Nothing here is
+placeholder copy — every lesson, example, and action is real, specific
+content written against the spec's own 13 topics (entrepreneurial
+mindset through Passion review), not filler.
+
+**Engine** (`src/lib/curriculum/curriculum.ts`): `ensureCurriculumSeeded()`
+(idempotent, same pattern as `ensureBadgesSeeded()`), `getCurrentWeek()`
+(self-healing — creates the next week's `BusinessWeekProgress` row the
+first time a business needs it, same pattern as `/build`'s
+`ensureRoadmapGenerated()` self-heal added earlier this session),
+`completeDailyAction()` (idempotent, awards 10pts + records streak
+activity), `completeWeek()` (requires all 5 daily actions logged and a
+real, non-empty weekly-review answer before awarding 50pts — never lets
+a week be marked done without genuine proof of completion, per this
+app's "never fabricate" convention).
+
+**API**: `POST /api/curriculum/actions/[id]/complete`,
+`POST /api/curriculum/weeks/[id]/complete` — both business-scoped via
+`assertBusinessAccess`, zod-validated, same shape as the Phase B
+affirmation routes.
+
+**UI**: `/curriculum` — the member's current week only (lesson, why,
+example, the 5 daily actions with one visually highlighted as "today's,"
+and the weekly review form), matching the spec's "one screen, what's
+the most important thing next" philosophy applied to the 13-week arc
+rather than a syllabus browser. A "Passion Sprint" nav item was added.
+A "This Week" summary card was added to `/dashboard`, positioned after
+the affirmation/mood-check-in cards per the spec's own daily dashboard
+order, fault-isolated the same way `todaysAffirmation` is (a bug here
+must never take down the rest of the dashboard — see this session's
+earlier Phase B regression and its fix).
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (49, 4 new
+— content-integrity checks: exactly 13 weeks numbered 1-13, exactly 5
+daily actions per week with no duplicate day numbers, every required
+field non-empty, no duplicate topics/required-assets across weeks),
+`npm run test:integration` (106, 7 new — real Postgres: seeding is
+idempotent; a new business starts on week 1; daily-action points are
+awarded exactly once per action; a week cannot be completed until all 5
+daily actions are done; a week cannot be completed with an empty review
+answer; completing week 1 awards 50 points and advances the business to
+week 2; re-submitting an already-completed week succeeds without
+double-awarding) all pass, no regressions to the existing 45/99.
+`next dev` serves `/dashboard` and `/curriculum` cleanly post-migration
+(redirect-to-login for an unauthenticated request, no server errors).
+Migration `20260814041814_curriculum_phase_c` applied.
+
+**Next**: Phase D (Next Best Action engine) or Phase E (lightweight
+Vault), per the pilot-scoped plan — not yet requested.
