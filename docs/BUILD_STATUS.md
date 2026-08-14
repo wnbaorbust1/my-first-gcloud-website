@@ -3621,3 +3621,73 @@ server restart to be picked up — was confirmed as a dev-only caching
 artifact, not a code defect, once restarted).
 
 **Next**: Phase E (lightweight Vault), per the pilot-scoped plan.
+
+---
+
+## PHASE E — Blueprint Vault (lightweight)
+
+Pilot-scoped per `BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` §10. Deliberately
+built as an **aggregation layer, not a new content store** — no new
+schema tables. Every Vault item is a pointer to a real row that already
+lives somewhere else in the app (a completed RoadmapTask, a saved SOP, a
+Vision Board, a facilitator note...); the Vault's job is just to organize
+what's already real into the spec's 17-folder structure and link back to
+where it lives, "automatically save each created asset" met by simply
+never needing a separate save step — the asset was already saved by
+whichever tool created it.
+
+**`src/lib/vault/vault.ts`**: `VAULT_FOLDERS` (the spec's exact 17
+folders), `BLUEPRINT_DESTINATION_TO_FOLDER` (every real
+`TaskTemplate.blueprintDestination` value mapped to its folder — a unit
+test asserts every value actually used in `task-templates.ts` has a real
+mapping, so a future new task template can't silently fall through),
+and `getVaultContents(businessId)` — queries every real source in
+parallel (completed RoadmapTasks, VisionBoardProfile +
+VisionBoardVersion count, RevenuePlan, PricingPlan, Sop, AutomationStep,
+Offer, MarketingPlan, SalesScript, ContentPlanItem, JourneyStage, open
+Leads, Goal, BusinessMilestone, FacilitatorNote) and buckets them by
+folder, each item carrying a real `origin` ("You" / "Your Facilitator" /
+"AI-assisted," from `RoadmapTask.facilitatorAdjusted` or
+`VisionBoardProfile.sectionSources`) and a `viewHref` back to its real
+source page. "Research," "Legal and Compliance," and "Brand" have no
+corresponding content anywhere in this app yet and stay real, honest
+empty folders rather than being force-mapped to content that isn't
+actually theirs. `FacilitatorNote` rows marked `PRIVATE` are explicitly
+excluded — a facilitator's private working notes must never leak into
+the member-facing Vault.
+
+**Spec functions** ("view, edit, download, print, email, duplicate,
+archive, restore prior version, and display origin/provenance") — this
+pilot ships **view** (linking to the real source page, which already
+supports edit for every item type here) and **origin/provenance**.
+Download/print already exists at the Blueprint-document level
+(`/my-blueprint/documents`, Phase 6) and is linked from the Vault page
+rather than rebuilt per-item. Email, duplicate, archive, and
+restore-prior-version are real spec asks with no existing infrastructure
+to wrap — deferred rather than half-built, same reasoning as Phase B's
+deferred proactive check-ins.
+
+**UI**: new `/vault` page — a collapsible per-folder list (same
+`<details>` pattern as `/roadmap`'s stage groups), each item showing its
+title and an origin badge, linking out to view/edit. An honest empty
+state ("Nothing saved yet") when a business has created nothing at all
+yet, vs. per-folder "Nothing here yet" for folders with no content. A
+new "Blueprint Vault" nav item was added.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (65, 3 new
+— every real `blueprintDestination` value used anywhere in
+`task-templates.ts` has a real folder mapping, no duplicate folders),
+`npm run test:integration` (119, 6 new — real Postgres: a completed,
+facilitator-adjusted task buckets into the right folder with "Your
+Facilitator" origin; a SOP/Offer/Goal each bucket correctly; a
+PARTICIPANT_VISIBLE note surfaces while a PRIVATE one from the same
+business never does; untouched folders stay honestly empty) all pass, no
+regressions to the existing 62/113. `next dev` smoke test against a real
+logged-in business confirmed both states end-to-end: the honest empty
+Vault before any content exists, and every item (SOP, Offer, Marketing
+Plan, Goal) landing in its correct folder with the correct origin badge
+after real rows were added.
+
+**Next**: not yet requested — Phase F (vision-board style pass),
+GoHighLevel, and community spaces remain deferred per the pilot-scoped
+plan's owner decisions.

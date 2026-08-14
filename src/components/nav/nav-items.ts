@@ -1,4 +1,5 @@
 import {
+  Archive,
   BookOpen,
   Briefcase,
   CalendarDays,
@@ -31,6 +32,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   { label: "Build", href: "/build", icon: Hammer },
   { label: "Blueprint AI", href: "/ai", icon: Sparkles },
   { label: "My Blueprint", href: "/my-blueprint", icon: BookOpen },
+  { label: "Blueprint Vault", href: "/vault", icon: Archive },
   { label: "Goals", href: "/goals", icon: Target },
   { label: "Money", href: "/money", icon: DollarSign },
   { label: "Tools", href: "/tools", icon: Briefcase },
