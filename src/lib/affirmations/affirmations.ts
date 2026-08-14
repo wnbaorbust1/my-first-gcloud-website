@@ -94,9 +94,23 @@ export async function getTodaysAffirmation(businessId: string): Promise<TodaysAf
   if (pool.length === 0) {
     pool = await prisma.affirmation.findMany({ where: { isCustom: false, stage: null }, orderBy: { id: "asc" } });
   }
+  // Defense in depth: if seeding somehow never landed (or landed after
+  // this business's very first request raced it), retry the seed once
+  // rather than indexing into an empty array.
+  if (pool.length === 0) {
+    await ensureAffirmationsSeeded();
+    pool = await prisma.affirmation.findMany({ where: { isCustom: false }, orderBy: { id: "asc" } });
+  }
+  // Still empty after a real retry means something is genuinely wrong
+  // (not a transient race) — throw rather than fabricate a fake,
+  // non-database-backed affirmation whose id would fail on the very
+  // first click. The dashboard's fault-isolation around this call
+  // already turns this into "card doesn't render" instead of a crash.
+  if (pool.length === 0) {
+    throw new Error(`No affirmations available (seeding did not produce any rows) for business ${businessId}`);
+  }
 
-  const index = hashToIndex(`${businessId}:${day.toISOString().slice(0, 10)}`, pool.length);
-  const affirmation = pool[index];
+  const affirmation = pool[hashToIndex(`${businessId}:${day.toISOString().slice(0, 10)}`, pool.length)];
 
   const events = await prisma.affirmationEvent.findMany({
     where: { businessId, affirmationId: affirmation.id, day },

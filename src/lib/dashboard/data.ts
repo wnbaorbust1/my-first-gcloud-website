@@ -3,6 +3,7 @@ import "server-only";
 import { getTodaysAffirmation } from "@/lib/affirmations/affirmations";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
 import { getLevel, getLevelEligiblePoints, getTotalPoints } from "@/lib/gamification/points";
+import { logError } from "@/lib/observability/log-error";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
@@ -148,7 +149,15 @@ export async function getDashboardData(userId: string) {
     getLevelEligiblePoints(business.id),
     prisma.streak.findUnique({ where: { businessId: business.id } }),
     prisma.businessBadge.count({ where: { businessId: business.id } }),
-    getTodaysAffirmation(business.id),
+    // Fault-isolated: a bug in this newer, less-battle-tested feature
+    // must never be able to take down the rest of the dashboard, which
+    // is exactly what happened without this guard — a rejection inside
+    // Promise.all fails every other query in the same batch too, even
+    // ones that already succeeded.
+    getTodaysAffirmation(business.id).catch((err: unknown) => {
+      void logError(err, { route: "dashboard", part: "getTodaysAffirmation", businessId: business.id });
+      return null;
+    }),
   ]);
 
   // getLevel()'s own `totalPoints` field just echoes back whatever was

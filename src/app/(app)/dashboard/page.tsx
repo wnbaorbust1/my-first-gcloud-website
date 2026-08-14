@@ -290,19 +290,24 @@ export default async function DashboardPage() {
       {header}
 
       {/* Daily Affirmation + Mood Check-In (spec §7, Phase B) — right after
-          the greeting, per the spec's own daily dashboard order. */}
+          the greeting, per the spec's own daily dashboard order. The
+          affirmation card is skipped (not a page-breaking error) if
+          getTodaysAffirmation failed — see getDashboardData's fault
+          isolation around that call. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <AffirmationCard
-          businessId={data.business.id}
-          affirmationId={todaysAffirmation.id}
-          text={todaysAffirmation.text}
-          spoken={todaysAffirmation.spoken}
-          reflected={todaysAffirmation.reflected}
-          connected={todaysAffirmation.connectedTaskId !== null}
-          favorited={todaysAffirmation.favorited}
-          nextActionTaskId={nextBestAction?.id ?? null}
-          nextActionTitle={nextBestAction?.title ?? null}
-        />
+        {todaysAffirmation && (
+          <AffirmationCard
+            businessId={data.business.id}
+            affirmationId={todaysAffirmation.id}
+            text={todaysAffirmation.text}
+            spoken={todaysAffirmation.spoken}
+            reflected={todaysAffirmation.reflected}
+            connected={todaysAffirmation.connectedTaskId !== null}
+            favorited={todaysAffirmation.favorited}
+            nextActionTaskId={nextBestAction?.id ?? null}
+            nextActionTitle={nextBestAction?.title ?? null}
+          />
+        )}
         <MoodCheckInCard businessId={data.business.id} />
       </div>
 
