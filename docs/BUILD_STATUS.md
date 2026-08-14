@@ -3257,3 +3257,84 @@ with the real business/user showing in the roster, then removed it and
 confirmed the roster returned to "No registrants yet." All verification
 accounts, sessions, and audit log rows were deleted from the dev
 database afterward.
+
+---
+
+## AUDIT — `docs/BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` (pre-implementation)
+
+**Date:** 2026-08-14. **Scope:** owner supplied a new, much larger
+product spec — a 52-week gamified one-year curriculum, daily
+affirmations/adaptive check-ins, points/levels/badges/streaks, a
+"Blueprint Vault" asset library, a formalized Next Best Action engine,
+GoHighLevel-based communications, and community spaces — layered on top
+of the existing platform. Per that document's own START HERE
+instructions: read-only audit, no application code, packages, database,
+or migrations touched. Full 9-part audit (current-state summary, gap
+analysis, conflicts requiring clarification, recommended DB/architecture
+changes, phased plan, risks/dependencies, acceptance criteria, test
+plan, doc-update plan) was delivered in chat and is not duplicated here
+in full; this entry records the process-required summary and the
+owner's resulting decisions.
+
+**Files inspected:** `docs/BLUEPRINT_MASTER_SPEC.md` (full — confirmed
+it is the Visual Experience Directive plus the already-ratified,
+already-implemented Vision Board 12-section spec); `docs/BUILD_STATUS.md`
+(this file, in full); `docs/BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md` (full,
+787 lines); `prisma/schema.prisma` (`BlueprintStage` enum — confirmed
+only 3 values, no points/badge/streak/affirmation-system/Vault models
+exist); `src/lib/validations/vision-board-data.ts` (confirmed all 12
+new-spec board sections already exist in `VisionBoardData` — `myStory`,
+`myWhy`, `blueprint`, `resources`, `actionPlan`, `legacy`,
+`businessModelCanvas`, `affirmations` (static display list only, not an
+engagement system), `accountability`, `bigGoals`, `passionAssessment`,
+`ninetyDayGoalTracker`); `src/lib/assessment/scoring.ts` (confirmed a
+`"GROWTH"` recommendation type already exists, firing on the exact
+same "all three scores at/above threshold" condition the new spec
+describes for its 4th tier — see decision below); `src/lib/roadmap/generate.ts`
+(confirmed dependency-graph task unlocking plus `facilitatorBoosts`
+exist but not a formalized, explainable priority engine).
+
+**Key finding:** most of the new spec's engagement/curriculum/rewards
+layer is genuinely new — no gamification schema, no affirmation-delivery
+system, no 52-week curriculum, no GoHighLevel integration, and no
+community feature exist today. But several pieces the new spec seems to
+ask for already exist under a different name (the Vision Board's 12
+sections; the `"GROWTH"` recommendation type for the 4th tier) — this is
+additive engagement/curriculum scope layered on a materially complete
+platform, not a rebuild.
+
+**Owner decisions (resolving the audit's 7 open clarification items):**
+1. Track naming: keep internal `PASSION`/`POWER`/`LEGACY` values; add a
+   display-label layer only ("Blueprint Foundations/Accelerator/Legacy").
+2. 4th tier ("Strategic Growth/Blueprint Mentor"): **no `BlueprintStage`
+   enum change** — extend the existing `"GROWTH"` recommendation type's
+   display copy instead. Zero migration risk; the trigger condition
+   already matches.
+3. Vision board visual style (purple/gold/lavender/hand-drawn/crowns):
+   scoped to the vision-board template only, not a site-wide re-theme of
+   the navy/cream/gold app shell.
+4. 52-week curriculum vs. the existing 30-task Business Builder: wrap,
+   don't replace — weeks whose required asset already matches a built
+   tool (SOP, Marketing Plan, etc.) point at that real tool.
+5. GoHighLevel: deferred, owner will provide credentials later.
+6. **Pilot first**, per the new spec's own Section 21 — do not build all
+   52 weeks or the full feature set before validating with a small
+   cohort.
+7. Community spaces: deferred alongside GoHighLevel — also consistent
+   with the new spec's own Section 21 pilot scope, which does not
+   include community spaces either.
+
+**Resulting pilot-scoped phase plan** (supersedes the full phase list
+for now): Phase A gamification (points/streaks/badges/levels) → Phase B
+daily affirmations + adaptive check-ins → Phase C curriculum, **Passion
+sprint only (weeks 1–13)**, not all 52 → Phase D Next Best Action engine
+formalization → Phase E Blueprint Vault (lightweight tagging + unified
+view over existing tables, not a data migration) → Phase F vision-board
+style pass. Power/Legacy sprints (weeks 14–52), community spaces, and
+GoHighLevel are explicitly deferred until pilot evidence justifies them,
+per the owner's decisions above.
+
+**Per explicit instruction, implementation has not started.** Approval
+to begin Phase A was requested and given in chat immediately following
+these decisions.
+database afterward.
