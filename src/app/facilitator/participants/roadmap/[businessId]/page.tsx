@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ensureRoadmapGenerated } from "@/lib/roadmap/generate";
 import { prisma } from "@/lib/prisma";
 import { STAFF_ROLES } from "@/lib/rbac";
 import { assertBusinessAccess, requireRole } from "@/lib/session";
@@ -29,6 +30,19 @@ export default async function ManageRoadmapPage({
 
   const allowed = await assertBusinessAccess(user.id, user.role, businessId);
   if (!allowed) notFound();
+
+  // Self-healing (pre-publish audit follow-up): a business can end up
+  // builderAccessEligible with no Roadmap row if access was granted a
+  // way other than the normal attend-a-qualifying-session path (e.g.
+  // an admin's "Unlock Full Vision Board" override that ran before this
+  // page existed, or a direct database fix) — ensureRoadmapGenerated is
+  // idempotent (no-ops instantly if a roadmap already exists), so it's
+  // safe to call unconditionally on every load rather than leaving this
+  // page permanently stuck on "one is created automatically" for a
+  // business that will never trigger that automatic path.
+  if (business.builderAccessEligible) {
+    await ensureRoadmapGenerated(businessId);
+  }
 
   const roadmap = await prisma.roadmap.findFirst({
     where: { businessId },

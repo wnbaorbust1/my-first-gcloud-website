@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StageBadge } from "@/components/ui/stage-badge";
 import { MembershipLockedNotice } from "@/components/billing/membership-locked-notice";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
+import { ensureRoadmapGenerated } from "@/lib/roadmap/generate";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { cn, type Stage } from "@/lib/utils";
@@ -51,6 +52,15 @@ export default async function BuildPage() {
 
   if (access.locked && access.reason === "not-unlocked") return notUnlockedNotice;
   if (access.locked) return <MembershipLockedNotice />;
+
+  // Self-healing (pre-publish audit follow-up): a business can be
+  // builderAccessEligible with no Roadmap row if access was granted a
+  // way other than the normal attend-a-qualifying-session path (e.g. an
+  // admin override). ensureRoadmapGenerated is idempotent — an instant
+  // no-op if a roadmap already exists — so calling it here means this
+  // page can never get permanently stuck on "preparing your roadmap"
+  // for a business that will never trigger the automatic path.
+  await ensureRoadmapGenerated(membership.businessId);
 
   const roadmap = await prisma.roadmap.findFirst({
     where: { businessId: membership.businessId },
