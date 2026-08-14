@@ -1,6 +1,16 @@
 import type { MetadataRoute } from "next";
 
-/** Only the truly public, indexable marketing pages — everything else needs a session. */
+/**
+ * Only the truly public, indexable marketing pages — everything else
+ * needs a session.
+ *
+ * Forced dynamic (pre-publish audit follow-up — see robots.ts for the
+ * full explanation): guarantees this always reflects the current
+ * `NEXTAUTH_URL` instead of whatever it was at the last build that
+ * happened to touch this file's source.
+ */
+export const dynamic = "force-dynamic";
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const now = new Date();
