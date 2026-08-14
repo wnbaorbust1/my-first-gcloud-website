@@ -22,6 +22,8 @@ import { ScoreCard } from "@/components/ui/score-card";
 import { StageBadge } from "@/components/ui/stage-badge";
 import { TaskCard, type TaskPriority } from "@/components/ui/task-card";
 import { sessionLabelFor } from "@/lib/assessment/scoring";
+import { AffirmationCard } from "@/components/affirmations/affirmation-card";
+import { MoodCheckInCard } from "@/components/affirmations/mood-checkin-card";
 import { getDashboardData } from "@/lib/dashboard/data";
 import { formatCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
@@ -281,11 +283,28 @@ export default async function DashboardPage() {
   }
 
   // ---- Builder unlocked: the full post-session dashboard ---------------
-  const { nextBestAction, todaysBlueprint, roadmapSnapshot, progressByStage } = data;
+  const { nextBestAction, todaysBlueprint, roadmapSnapshot, progressByStage, todaysAffirmation } = data;
 
   return (
     <div className="flex flex-col gap-8">
       {header}
+
+      {/* Daily Affirmation + Mood Check-In (spec §7, Phase B) — right after
+          the greeting, per the spec's own daily dashboard order. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <AffirmationCard
+          businessId={data.business.id}
+          affirmationId={todaysAffirmation.id}
+          text={todaysAffirmation.text}
+          spoken={todaysAffirmation.spoken}
+          reflected={todaysAffirmation.reflected}
+          connected={todaysAffirmation.connectedTaskId !== null}
+          favorited={todaysAffirmation.favorited}
+          nextActionTaskId={nextBestAction?.id ?? null}
+          nextActionTitle={nextBestAction?.title ?? null}
+        />
+        <MoodCheckInCard businessId={data.business.id} />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

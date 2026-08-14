@@ -23,19 +23,56 @@ export const POINTS_TABLE: Record<PointsAction, number> = {
   MILESTONE: 100,
   REASSESSMENT_30_DAY: 50,
   SPRINT_90_DAY: 500,
+  AFFIRMATION_SPOKEN: 2,
+  AFFIRMATION_REFLECTION: 5,
+  AFFIRMATION_CONNECTED_ACTION: 5,
+  AFFIRMATION_CREATED: 10,
+  SEVEN_DAY_CHECKIN_STREAK: 25,
+  MINDSET_CHALLENGE_30_DAY: 100,
 };
 
-/** Records one points event and returns the business's new total. Never edits or removes a prior row — see PointsLedger's doc comment. */
+/**
+ * spec §7: "Affirmation activity alone must not allow a user to reach
+ * major business levels." Every affirmation/check-in action is excluded
+ * from level progression (see PointsLedger.countsTowardLevel) — real
+ * work actions all count.
+ */
+const LEVEL_EXCLUDED_ACTIONS = new Set<PointsAction>([
+  "AFFIRMATION_SPOKEN",
+  "AFFIRMATION_REFLECTION",
+  "AFFIRMATION_CONNECTED_ACTION",
+  "AFFIRMATION_CREATED",
+  "SEVEN_DAY_CHECKIN_STREAK",
+  "MINDSET_CHALLENGE_30_DAY",
+]);
+
+/** Records one points event and returns the business's new total (all actions, including affirmations — see getLevelEligiblePoints for the level-progression figure). Never edits or removes a prior row — see PointsLedger's doc comment. */
 export async function awardPoints(businessId: string, action: PointsAction, note?: string): Promise<number> {
   await prisma.pointsLedger.create({
-    data: { businessId, action, points: POINTS_TABLE[action], note },
+    data: {
+      businessId,
+      action,
+      points: POINTS_TABLE[action],
+      note,
+      countsTowardLevel: !LEVEL_EXCLUDED_ACTIONS.has(action),
+    },
   });
   return getTotalPoints(businessId);
 }
 
+/** All-time points across every action — the number shown to the member as their reward total. */
 export async function getTotalPoints(businessId: string): Promise<number> {
   const result = await prisma.pointsLedger.aggregate({
     where: { businessId },
+    _sum: { points: true },
+  });
+  return result._sum.points ?? 0;
+}
+
+/** The figure getLevel() should actually be called with — excludes affirmation/check-in points per spec §7. */
+export async function getLevelEligiblePoints(businessId: string): Promise<number> {
+  const result = await prisma.pointsLedger.aggregate({
+    where: { businessId, countsTowardLevel: true },
     _sum: { points: true },
   });
   return result._sum.points ?? 0;

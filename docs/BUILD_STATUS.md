@@ -3398,3 +3398,70 @@ rows deleted from the dev database afterward.
 
 **Next**: Phase B (Daily Affirmations & adaptive check-ins), per the
 pilot-scoped plan above.
+
+---
+
+## PHASE B — Daily Affirmations & Adaptive Check-Ins
+
+Pilot-scoped per the audit's phase plan, built against the newly-
+ratified ADHD-Friendly Design Requirement (`BLUEPRINT_MASTER_SPEC.md`).
+
+**Schema**: `Affirmation` (stage-tagged library, seeded via
+`ensureAffirmationsSeeded()` — spec §7's exact stage examples plus its
+one general example, 19 total), `AffirmationEvent` (one row per
+business/affirmation/type/day — the unique constraint itself is the
+once-per-day idempotency, no separate day-tracking needed),
+`MoodCheckIn`, and a `Mood` enum matching spec §7's 10 mood choices
+exactly. `PointsLedger` gained `countsTowardLevel` (default true) —
+spec §7 is explicit that "affirmation activity alone must not allow a
+user to reach major business levels," so every affirmation/check-in
+`PointsAction` is stamped false and `getLevelEligiblePoints()` (new,
+sums only true rows) is what dashboard level display actually uses —
+`getTotalPoints()` (all actions) is still what's shown as the member's
+reward number, so affirmation engagement still feels rewarding without
+being able to move a level on its own.
+
+**What's built**: `getTodaysAffirmation()` picks a real, deterministic
+(same one all day, hash of businessId+date — no separate
+"today's pick" table needed) stage-matched affirmation; "I Spoke This
+Today" (2pts), "Complete Reflection" (5pts, real text saved), "Connect
+it to today's action" (5pts, links to a real RoadmapTask the caller must
+actually own — verified server-side, not trusted from the client), and
+favorite-toggle (no points, not in spec's table) are all real and
+wired. A self-serve "How are you feeling?" mood check-in returns a
+genuinely adaptive response per spec §7's mapping (Overwhelmed → Quick
+Step; Stuck/Confused → break it down / ask the AI coach; Discouraged →
+real progress evidence, not platitudes; Confident/Excited → point
+toward a bigger step) — not a generic acknowledgment. Both surface on
+`/dashboard`, positioned right after the greeting per the spec's own
+daily dashboard order.
+
+**What's deliberately deferred** (see `src/lib/affirmations/mood.ts`'s
+doc comment): spec §7's PROACTIVE trigger list (auto-fires after a hard
+task, several incomplete actions, inactivity return, a milestone,
+weekly review start, or a chosen time) needs real scheduling/rate-limit
+infrastructure this pilot doesn't build. Shipping a real self-serve
+version now — the member opens it when they want to — beats a
+half-built proactive one, and a flow the member controls without
+interruption is itself defensible under the ADHD-friendly requirement,
+not just a scope cut. `CheckInPreference` (channel/quiet-hours/frequency
+settings) is likewise deferred until proactive triggering is actually
+being built — no unused schema shipped ahead of what uses it.
+"Create personal affirmation" (10pts) and "add to vision board" are
+seeded as `PointsAction` entries for completeness but not wired to a
+UI yet, same pattern as Phase A's unwired curriculum-linked actions.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (45, 4 new
+— every one of the 10 spec moods gets a real non-generic response;
+spot-checks against spec's exact adaptive rules for Overwhelmed/Stuck/
+Discouraged), `npm run test:integration` (99, 4 new — real Postgres:
+seeding is idempotent across repeated calls; the same business gets the
+same affirmation twice in one day; "I Spoke This Today" awards exactly
+2 points once and a same-day repeat awards nothing further; affirmation
+points show up in the all-actions total but never in the
+level-eligible total) all pass, no regressions to the existing 95.
+`next dev` serves `/login` and `/signup` cleanly post-migration.
+Migration `20260814034144_affirmations_phase_b` applied.
+
+**Next**: Phase C (52-week curriculum, Passion sprint only — weeks
+1–13), per the pilot-scoped plan.

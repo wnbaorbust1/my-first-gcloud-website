@@ -417,6 +417,9 @@ model Business {
   badges       BusinessBadge[]
   streak       Streak?
 
+  affirmationEvents AffirmationEvent[]
+  moodCheckIns      MoodCheckIn[]
+
   @@index([status])
 }
 
@@ -1320,6 +1323,14 @@ enum PointsAction {
   MILESTONE
   REASSESSMENT_30_DAY
   SPRINT_90_DAY
+  /// spec §7 affirmation gamification — see PointsLedger's `countsTowardLevel`
+  /// doc comment for why these are excluded from level progression.
+  AFFIRMATION_SPOKEN
+  AFFIRMATION_REFLECTION
+  AFFIRMATION_CONNECTED_ACTION
+  AFFIRMATION_CREATED
+  SEVEN_DAY_CHECKIN_STREAK
+  MINDSET_CHALLENGE_30_DAY
 }
 
 /// Append-only — never updated or deleted, so "total points" is always a
@@ -1333,6 +1344,14 @@ model PointsLedger {
   /// Optional context, e.g. the RoadmapTask title or WeeklyCheckIn week —
   /// display-only, never re-parsed for logic.
   note       String?
+  /// spec §7: "Affirmation activity alone must not allow a user to reach
+  /// major business levels. Completed business assets and verified
+  /// milestones remain the primary progression mechanism." Every
+  /// affirmation/check-in action is stamped false; every real-work action
+  /// stamped true — getLevel() sums only true rows, while the total
+  /// points shown to the member still includes everything (affirmation
+  /// engagement should still feel rewarding, just not level-moving).
+  countsTowardLevel Boolean @default(true)
   createdAt  DateTime     @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -1383,6 +1402,86 @@ model Streak {
   updatedAt        DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Daily Affirmations & Adaptive Check-Ins (BLUEPRINT_MASTER_SPEC_CLAUDE_CODE.md
+// §7, Phase B — pilot-scoped: the affirmation library, spoken/reflection/
+// connect-to-action tracking, and mood check-ins with an adaptive response
+// are built. Proactive/scheduled random check-in triggers, per-channel
+// notification preferences, and quiet hours are deliberately deferred —
+// see src/lib/affirmations/mood.ts's doc comment — this phase ships a
+// real, self-serve version rather than a half-built proactive one.
+// ---------------------------------------------------------------------------
+
+/// spec §7's stage-tagged affirmation library, seeded via
+/// ensureAffirmationsSeeded() (src/lib/affirmations/affirmations.ts).
+/// `stage: null` = general (not tied to one of the three stages).
+model Affirmation {
+  id        String          @id @default(cuid())
+  text      String          @db.Text
+  stage     BlueprintStage?
+  isCustom  Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  events AffirmationEvent[]
+
+  @@index([stage])
+}
+
+enum AffirmationEventType {
+  SPOKEN
+  REFLECTION
+  CONNECTED_ACTION
+  FAVORITED
+}
+
+/// One row per (business, affirmation, day, event type) — the natural
+/// idempotency unit for "did they already log this today" without a
+/// separate day-tracking table.
+model AffirmationEvent {
+  id            String               @id @default(cuid())
+  businessId    String
+  affirmationId String
+  type          AffirmationEventType
+  /// UTC calendar day this event counts toward — not a timestamp, so
+  /// "already logged today" is a plain equality check.
+  day           DateTime             @db.Date
+  reflection    String?              @db.Text
+  connectedTaskId String?
+  createdAt     DateTime             @default(now())
+
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  affirmation Affirmation @relation(fields: [affirmationId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, affirmationId, type, day])
+  @@index([businessId])
+}
+
+/// spec §7's 10 Mood Choices.
+enum Mood {
+  FOCUSED
+  CONFIDENT
+  EXCITED
+  OVERWHELMED
+  CONFUSED
+  DISCOURAGED
+  TIRED
+  STUCK
+  READY_TO_WORK
+  NEED_SMALLER_STEP
+}
+
+model MoodCheckIn {
+  id         String   @id @default(cuid())
+  businessId String
+  mood       Mood
+  note       String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------

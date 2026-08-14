@@ -1,7 +1,8 @@
 import "server-only";
 
+import { getTodaysAffirmation } from "@/lib/affirmations/affirmations";
 import { getBuilderAccessState, getSyncedMembership } from "@/lib/billing/membership";
-import { getLevel, getTotalPoints } from "@/lib/gamification/points";
+import { getLevel, getLevelEligiblePoints, getTotalPoints } from "@/lib/gamification/points";
 import { MILESTONE_CATALOG } from "@/lib/progress/milestones";
 import { getUpcomingSessions } from "@/lib/sessions/queries";
 import { prisma } from "@/lib/prisma";
@@ -109,8 +110,10 @@ export async function getDashboardData(userId: string) {
     milestones,
     openLeads,
     totalPoints,
+    levelEligiblePoints,
     streak,
     earnedBadgeCount,
+    todaysAffirmation,
   ] = await Promise.all([
     prisma.goal.findFirst({
       where: { businessId: business.id, status: "ACTIVE" },
@@ -142,12 +145,22 @@ export async function getDashboardData(userId: string) {
       select: { valueCents: true },
     }),
     getTotalPoints(business.id),
+    getLevelEligiblePoints(business.id),
     prisma.streak.findUnique({ where: { businessId: business.id } }),
     prisma.businessBadge.count({ where: { businessId: business.id } }),
+    getTodaysAffirmation(business.id),
   ]);
 
+  // getLevel()'s own `totalPoints` field just echoes back whatever was
+  // passed in (level-eligible points) — deliberately not spread here to
+  // avoid shadowing the real all-actions total shown to the member.
+  const level = getLevel(levelEligiblePoints);
   const gamificationSnapshot = {
-    ...getLevel(totalPoints),
+    name: level.name,
+    index: level.index,
+    pointsToNextLevel: level.pointsToNextLevel,
+    nextLevelName: level.nextLevelName,
+    totalPoints,
     currentStreak: streak?.currentStreak ?? 0,
     longestStreak: streak?.longestStreak ?? 0,
     earnedBadgeCount,
@@ -189,6 +202,7 @@ export async function getDashboardData(userId: string) {
     milestoneSnapshot,
     toolsSnapshot,
     gamificationSnapshot,
+    todaysAffirmation,
   };
 }
 
