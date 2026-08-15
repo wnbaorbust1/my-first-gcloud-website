@@ -140,7 +140,12 @@ export function BusinessProfileForm({
       return;
     }
 
-    router.push("/dashboard");
+    // First-time creation (no prior business) routes through a short
+    // one-time orientation before the assessment (ADHD-Friendly Design
+    // Requirement: a plain "why" and "what happens next" before asking
+    // for 10+ minutes of assessment questions). Editing an existing
+    // profile goes straight back to the dashboard as before.
+    router.push(business ? "/dashboard" : "/welcome");
     router.refresh();
   }
 

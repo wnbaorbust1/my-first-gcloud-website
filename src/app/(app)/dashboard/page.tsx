@@ -15,6 +15,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { NotificationsCard } from "@/components/dashboard/notifications-card";
+import { DashboardWelcomeModal } from "@/components/dashboard/welcome-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -282,6 +283,13 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Onboarding — Touchpoint 2 (pre-publish audit follow-up): shown
+          exactly once, the first time this business's dashboard ever
+          renders in the "builder" state. */}
+      {!data.business.builderWelcomeSeenAt && (
+        <DashboardWelcomeModal businessId={data.business.id} />
+      )}
+
       {header}
 
       {/* Daily Affirmation + Mood Check-In (spec §7, Phase B) — right after

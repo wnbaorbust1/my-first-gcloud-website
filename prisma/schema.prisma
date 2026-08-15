@@ -356,6 +356,15 @@ model Business {
   /// inferable from `sessionCompletedAt`.
   visionBoardUnlockedAt DateTime?
 
+  /// ONBOARDING (pre-publish audit follow-up, ADHD-Friendly Design
+  /// Requirement): set once, the first time this business's dashboard
+  /// renders the "welcome to your Builder dashboard" orientation moment
+  /// after builderAccessEligible flips true. Null means "not shown yet" —
+  /// the dashboard checks this field, never a session/localStorage flag,
+  /// so the one-time welcome survives across devices and logins, the
+  /// same durability convention as visionBoardUnlockedAt above.
+  builderWelcomeSeenAt DateTime?
+
   /// ACCOUNTABILITY (spec Prompt 9): the member's chosen check-in cadence
   /// — open string ("2_DAYS_WEEK" | "3_DAYS_WEEK" | "5_DAYS_WEEK" |
   /// "CUSTOM"), consistent with this schema's other open categorical

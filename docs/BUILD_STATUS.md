@@ -3751,3 +3751,61 @@ blocks launch.
 
 The onboarding gap (no orientation before the assessment, no "welcome to
 your dashboard" moment) remains the next scoped build.
+
+---
+
+## ONBOARDING — Two Touchpoints (pre-publish audit's last P0)
+
+Closes the last open finding from the 95/100 launch audit: no
+orientation existed anywhere before a brand-new member's first real
+action, and the moment Builder unlocks, 15+ features appear at once with
+no introduction. Two real, ADHD-Friendly-Design-Requirement-compliant
+touchpoints (plain "why," a short numbered "how," one obvious next
+action, low working-memory load) — no fabricated content, no fake tour.
+
+**Schema**: `Business.builderWelcomeSeenAt DateTime?` — same durability
+convention as `visionBoardUnlockedAt`: a real DB field, not session/
+localStorage state, so the one-time welcome survives across devices and
+logins and never re-shows once dismissed. Migration
+`20260815212102_builder_welcome_onboarding` applied.
+
+**Touchpoint 1 — `/welcome`** (new page): the very first stop after
+creating a business profile, before the Assessment ("the quiz"), which
+previously only ever explained itself, never the journey around it.
+Three numbered steps with real time estimates — Take the Assessment
+(~10 min) → Attend Your Recommended Session → Your Blueprint Unlocks —
+then one CTA into `/assessment`. `business-profile-form.tsx`'s redirect
+now branches: first-time creation (`business === null` before submit)
+routes through `/welcome`; editing an existing profile still goes
+straight back to `/dashboard` as before.
+
+**Touchpoint 2 — dashboard welcome modal** (`DashboardWelcomeModal`,
+`src/components/dashboard/welcome-modal.tsx`): renders exactly once,
+the first time `data.business.builderWelcomeSeenAt` is null on a
+"builder"-state dashboard load. Four concrete starting points — Your
+Next Best Move, Your Passion Sprint, the Blueprint Coach, and "everything
+saves to your Vault automatically" — deliberately not a full feature
+tour (gamification, affirmations, tools, etc. are left for the member
+to discover, matching "low working-memory load"). Dismissing calls
+`POST /api/onboarding/dashboard-welcome-seen` (business-scoped via
+`assertBusinessAccess`, idempotent) before closing, so a failed request
+can be retried rather than silently never persisting.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (65,
+unchanged — no new pure logic), `npm run test:integration` (123, 4 new
+— real Postgres: the flag starts null, a stranger can't dismiss another
+business's welcome, a real timestamp is set, and re-dismissing is
+idempotent) all pass, no regressions to the existing 65/119. `next dev`
+smoke test confirmed both touchpoints end-to-end against a real logged-in
+business: `/welcome` renders all three steps; the dashboard modal
+renders with all four points on first load; dismissing it persists a
+real timestamp; a second dashboard load correctly shows no modal. (One
+Turbopack dev-server route-manifest quirk — the whole `/api/auth/*`
+catch-all 404ing after adding the new `/api/onboarding` route directory
+— was resolved by a clean dev-server restart, same as the earlier
+Phase D `pause`/`resume` incident; confirmed as a dev-only caching
+artifact, not a code defect.) Test data reverted afterward.
+
+**Next**: not yet requested. Phase F (vision-board style pass),
+GoHighLevel, and community spaces remain deferred per the pilot-scoped
+plan's owner decisions.
