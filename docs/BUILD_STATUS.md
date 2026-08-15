@@ -3727,10 +3727,27 @@ confirmed via string-position comparison that "Your Progress" now
 renders before "Stage Progress" and well before "Advanced Tools." Test
 data removed afterward.
 
-**Still open from the audit** (not this pass): independent
-confirmation that the $9.99/mo · $100/yr membership checkout
-(`/billing`) works end-to-end now that `STRIPE_SECRET_KEY` is fixed —
-this needs the account owner's own login, since it's a different Stripe
-Price ID dependency than the $150 session checkout already confirmed.
+**Membership checkout ($9.99/mo · $100/yr) — RESOLVED, verified
+indirectly.** The account owner's business has `Membership.status =
+ADMIN_GRANTED` (set earlier this session for testing), which
+`BillingActions` correctly shows zero billing buttons for — including
+"Change Plan" — so this path can't be click-tested from that account. A
+real click-test also turned up something worth recording: the account
+owner has **three separate Stripe accounts** ("Loveable," "DLT
+Innovation Creative Solutions," "Daniels Leisure Travel") — Stripe
+accounts don't share objects, so a price ID from the wrong one would
+fail exactly like the earlier bad-key incident. Confirmed instead,
+piece by piece: (1) Stripe Dashboard shows both `STRIPE_PRICE_ID_MONTHLY`
+and `STRIPE_PRICE_ID_ANNUAL` exist as real, Active prices ($9.99/mo and
+$100/yr) under "Blueprint Membership," (2) in **Live mode**, (3) on the
+**"DLT Innovation Creative Solutions"** account, and (4) the account
+owner confirmed `STRIPE_SECRET_KEY` was copied from that same DLT
+account. Same account, same mode, valid key format, plus the already-
+confirmed-live webhook and $150 session checkout sharing the same key —
+every dependency this checkout needs is now consistent. Worth a real
+click-test later from an account that actually reaches `ACTIVE_MONTHLY`/
+`ACTIVE_ANNUAL` or `COMPLIMENTARY`/`EXPIRED` status, but nothing here
+blocks launch.
+
 The onboarding gap (no orientation before the assessment, no "welcome to
 your dashboard" moment) remains the next scoped build.
