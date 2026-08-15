@@ -3691,3 +3691,46 @@ after real rows were added.
 **Next**: not yet requested — Phase F (vision-board style pass),
 GoHighLevel, and community spaces remain deferred per the pilot-scoped
 plan's owner decisions.
+
+---
+
+## LAUNCH AUDIT FOLLOW-UP — P1 fixes (95/100 pre-publish audit)
+
+A self-directed scored audit (95/100, Grade A, up from a prior 94/100)
+was run against the full app ahead of the owner's first real cohort
+session (Sept 11-13). Full report delivered as a published artifact; two
+P0 findings were credential/verification issues already resolved earlier
+the same day (a Stripe secret key copied from a "Copy code" snippet
+rather than the raw key field — fixed live in Vercel — plus live
+end-to-end verification of the webhook, Stripe checkout, Resend email,
+and Anthropic AI). This entry closes the two real code-level P1
+findings from that audit:
+
+- **`robots.txt` missing three authenticated routes.** `/curriculum`,
+  `/vault`, and `/ai` (Phase C, Phase E, and pre-existing Phase 7
+  respectively) were never added to `src/app/robots.ts`'s disallow
+  list — same category of page as `/dashboard`/`/roadmap`, just added
+  after the list was last touched. Fixed.
+- **Gamification card was easy to miss.** `/dashboard`'s "Your Progress"
+  card (points/level/streak/badges, Phase A) sat as the second-to-last
+  card on the page, below Milestones and just above Advanced Tools —
+  confirmed live during the audit itself, when it wasn't obvious on
+  first look. Moved to right after "Today's Blueprint," near the top of
+  the builder-state dashboard, well above the fold.
+
+Both findings and fixes: real, no schema change. **Verified**:
+`npx tsc --noEmit`, `npm run lint`, `npm test` (65, unchanged — no test
+covers dashboard section order or robots.txt content, both are visual/
+config), `curl localhost:3000/robots.txt` confirmed all three new
+disallow entries present, and a live logged-in HTTP fetch of `/dashboard`
+confirmed via string-position comparison that "Your Progress" now
+renders before "Stage Progress" and well before "Advanced Tools." Test
+data removed afterward.
+
+**Still open from the audit** (not this pass): independent
+confirmation that the $9.99/mo · $100/yr membership checkout
+(`/billing`) works end-to-end now that `STRIPE_SECRET_KEY` is fixed —
+this needs the account owner's own login, since it's a different Stripe
+Price ID dependency than the $150 session checkout already confirmed.
+The onboarding gap (no orientation before the assessment, no "welcome to
+your dashboard" moment) remains the next scoped build.
