@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
+import { notifyGhl } from "@/lib/integrations/ghl";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { clientIp, checkRateLimit, RATE_LIMITS, TOO_MANY_REQUESTS_BODY } from "@/lib/rate-limit";
@@ -53,6 +54,17 @@ export async function POST(request: Request) {
       passwordHash,
     },
     select: { id: true, email: true, firstName: true, lastName: true },
+  });
+
+  // Fault-isolated by notifyGhl itself — a GHL outage never fails signup.
+  await notifyGhl({
+    event: "signup",
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    businessName: null,
+    stage: null,
+    healthScorePercent: null,
   });
 
   return NextResponse.json({ user }, { status: 201 });

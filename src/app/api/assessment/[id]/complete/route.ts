@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { completeAssessment, getMissingRequiredQuestions } from "@/lib/assessment/session";
+import { notifyGhl } from "@/lib/integrations/ghl";
 import { prisma } from "@/lib/prisma";
+import { getLowestScoringStage } from "@/lib/roadmap/next-best-action";
 import { assertBusinessAccess, getCurrentUser } from "@/lib/session";
+import type { Stage } from "@/lib/utils";
 
 export async function POST(
   _request: Request,
@@ -44,6 +47,35 @@ export async function POST(
   }
 
   await completeAssessment(assessmentId);
+
+  // GHL LEAD WORKFLOW — fires exactly once, since the early return above
+  // means this line is only ever reached the first time an assessment
+  // transitions into COMPLETED. Fault-isolated by notifyGhl itself.
+  const [business, scores, scoredAssessment] = await Promise.all([
+    prisma.business.findUnique({ where: { id: assessment.businessId }, select: { name: true } }),
+    prisma.assessmentScore.findMany({
+      where: { assessmentId },
+      select: { stage: true, scorePercent: true },
+    }),
+    prisma.assessment.findUnique({ where: { id: assessmentId }, select: { healthScorePercent: true } }),
+  ]);
+  const lowestScoringStage = getLowestScoringStage(
+    scores.map((s) => ({ stage: s.stage as Stage, scorePercent: s.scorePercent })),
+  );
+  // user.email is optional on the session type (NextAuth default), even
+  // though every real sign-in path here sets it — skip rather than send
+  // GHL a lead with no address in the one case it's somehow missing.
+  if (user.email) {
+    await notifyGhl({
+      event: "assessment_completed",
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      businessName: business?.name ?? null,
+      stage: lowestScoringStage,
+      healthScorePercent: scoredAssessment?.healthScorePercent ?? null,
+    });
+  }
 
   return NextResponse.json({ assessmentId });
 }

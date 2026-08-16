@@ -3809,3 +3809,53 @@ artifact, not a code defect.) Test data reverted afterward.
 **Next**: not yet requested. Phase F (vision-board style pass),
 GoHighLevel, and community spaces remain deferred per the pilot-scoped
 plan's owner decisions.
+
+---
+
+## GHL LEAD WORKFLOW — signup + assessment-completion webhook
+
+Requested for the owner's organic LinkedIn/Facebook/Instagram push
+ahead of the Sept 11-13 cohort: real leads should land in her GoHighLevel
+workflow automatically, not require manual entry.
+
+**`src/lib/integrations/ghl.ts`** — `notifyGhl()`, a fire-and-forget POST
+to `GHL_WEBHOOK_URL` (an inbound-webhook trigger URL from a GHL
+workflow). Fault-isolated by design: never throws, logs failures via the
+existing self-hosted `logError`, and is a silent no-op if the env var
+isn't set (so local dev and any environment without a configured
+workflow are unaffected). No third-party SDK — a plain `fetch`, same
+"the platform can already do this" pattern as the email abstraction.
+
+**Two triggers wired in**, both fire exactly once per real event:
+- `POST /api/auth/signup` — fires `event: "signup"` right after account
+  creation (no business yet at this point, so `businessName` is null).
+- `POST /api/assessment/[id]/complete` — fires `event:
+  "assessment_completed"` only on the first transition into COMPLETED
+  (the route's existing idempotent early-return for an already-completed
+  assessment means this can't double-fire on a re-call). Includes the
+  business name, health score, and the member's lowest-scoring stage
+  (reusing `getLowestScoringStage()` from the Next Best Action engine —
+  the same "what does this business need most" signal already used
+  elsewhere, not a new concept) so the GHL workflow can personalize
+  follow-up.
+
+**Payload shape**: `{ event, email, firstName, lastName, businessName,
+stage, healthScorePercent, source: "blueprint_app", timestamp }`.
+
+**Setup**: owner's real inbound webhook URL confirmed working — two live
+test payloads (`signup` and `assessment_completed` shapes) were POSTed
+directly to it so GHL had a real sample to build its field-mapping
+screen from (GHL's "Inbound Webhook" trigger can't be saved without one).
+Owner confirmed the workflow saved successfully with both events mapped.
+`GHL_WEBHOOK_URL` still needs to be added to Vercel's production env vars
+for real signups/assessments to start flowing — not yet confirmed set.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (73, 4 new —
+`notifyGhl` no-ops with no env var, posts the correct payload shape, and
+never throws on a non-2xx response or a rejected fetch) all pass, no
+regressions to the existing 69.
+
+**Next**: confirm `GHL_WEBHOOK_URL` is set in Vercel production, then a
+real end-to-end signup on production to confirm a contact actually lands
+in GHL. Organic post copy for LinkedIn/Facebook/Instagram was drafted in
+conversation, not stored in the repo.
