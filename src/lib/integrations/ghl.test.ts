@@ -46,13 +46,13 @@ describe("notifyGhl", () => {
 
   it("posts the payload to the configured webhook URL", async () => {
     process.env.GHL_WEBHOOK_URL = "https://example.test/hooks/abc";
-    const fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 200 }));
     global.fetch = fetchSpy as unknown as typeof fetch;
 
     await notifyGhl(payload);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://example.test/hooks/abc");
     const body = JSON.parse(init.body as string);
     expect(body).toMatchObject({ ...payload, source: "blueprint_app" });
