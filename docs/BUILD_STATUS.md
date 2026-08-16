@@ -3859,3 +3859,59 @@ regressions to the existing 69.
 real end-to-end signup on production to confirm a contact actually lands
 in GHL. Organic post copy for LinkedIn/Facebook/Instagram was drafted in
 conversation, not stored in the repo.
+
+**Update**: `GHL_WEBHOOK_URL` confirmed set in Vercel production. Both
+triggers verified live end-to-end against production — not just the
+webhook endpoint, the actual app routes: a real signup (`201`, `notifyGhl`
+fired) landed a real contact in the owner's GHL workflow once she
+published it (it had silently been left in Draft — no contact lands from
+an unpublished workflow even though the inbound-webhook URL still
+accepts POSTs and returns 200); a real full assessment completion
+(signup → business → all 36 real production questions scraped from the
+`/assessment` page's RSC payload and answered via the autosave endpoint
+→ complete) also landed a contact with business name, stage, and health
+score populated. Both confirmed by the owner directly in GHL. One build
+break surfaced and fixed in this cycle: `next build`'s TypeScript pass
+(unlike `tsc --noEmit` alone) type-checks test files too, and caught a
+real mock-typing gap in `ghl.test.ts` — fixed, verified via the actual
+`npm run build` command end-to-end before pushing again.
+
+---
+
+## PRICING PAGE — real Blueprint Sessions section
+
+Owner caught a real pre-launch gap while checking the site ahead of her
+social push: `/pricing` showed only the Blueprint Builder dashboard
+subscription ($9.99/mo, $100/yr) — nothing about the $150 Blueprint
+Session itself. Since `/sessions` lives under `(app)` and requires
+`requireUser()`, a signed-out visitor arriving from an ad or organic post
+had no public page anywhere showing session price, dates, or venue
+before creating an account — exactly the info her promotional flyer
+already advertises.
+
+**Fix**: added a real "Blueprint Sessions" section to `/pricing`
+(`src/app/(marketing)/pricing/page.tsx`), sourced from the same live
+`getUpcomingSessions()` query `/sessions` already uses — real title,
+dates, location, and price per upcoming `SessionOffering`, never
+hardcoded copy that could drift from what's actually scheduled.
+Deliberately excludes `virtualLink` and anything registrant-specific,
+since this page is reachable by anyone on the internet. CTA is "Sign Up
+Free to Register" → `/signup`, since booking itself still requires an
+account. `dynamic = "force-dynamic"` added so it's never statically
+baked at build time (a visitor weeks from now must see real upcoming
+sessions, not whatever was scheduled at last deploy). Empty state
+("No sessions are open for registration right now") for the case where
+none are currently scheduled — never a fake session.
+
+**Bug caught during verification**: the first date-range formatter
+mis-rendered a single-day session as "September 10–10, 2026" instead of
+"September 10, 2026." Fixed by comparing calendar days in the session's
+own timezone (not the server's) before deciding whether to render a
+range at all.
+
+**Verified**: `npx tsc --noEmit`, `npm run lint`, `npm test` (69,
+unchanged — no new pure logic), `npm run build` (the actual production
+build command, not just typecheck+lint separately) all pass. `next dev`
+smoke test against real local session data confirmed the section
+renders real prices/dates/locations end-to-end and the same-day date fix
+holds.
