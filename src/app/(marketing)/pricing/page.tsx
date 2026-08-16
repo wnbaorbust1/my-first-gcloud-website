@@ -64,7 +64,13 @@ export default async function PricingPage() {
   // to signed-in members on /sessions (title, dates, location, price),
   // never virtualLink or anything registrant-specific, since anyone on
   // the internet can load this page.
-  const upcomingSessions = await getUpcomingSessions();
+  // This public page promotes a single entry point for new visitors:
+  // the Passion Session (the recommended first session for anyone new
+  // to Blueprint, and the only one the current marketing push is
+  // driving traffic to). The other weekly-rotating types (Power,
+  // Legacy, Growth) exist for members already inside the app who've
+  // been recommended one of those specifically — not shown here.
+  const upcomingSessions = await getUpcomingSessions("PASSION");
 
   return (
     <div className="mx-auto max-w-4xl px-6 pb-24 pt-16 sm:pt-24">

@@ -3915,3 +3915,16 @@ build command, not just typecheck+lint separately) all pass. `next dev`
 smoke test against real local session data confirmed the section
 renders real prices/dates/locations end-to-end and the same-day date fix
 holds.
+
+**Update**: production actually has 4 weekly-rotating session types
+scheduled (Passion Sept 11, Power Sept 4, Legacy Sept 18, Growth Sept
+25) — the initial version showed all of them, but only the Passion
+Session is what the current marketing push is driving traffic to.
+Narrowed the query to `getUpcomingSessions("PASSION")` (the function
+already supported an optional type filter) — Passion is the recommended
+first session for anyone new to Blueprint, so this is also the correct
+long-term default for a public pre-signup page, not just a one-time fix
+for this campaign. Confirmed against the live production page that
+exactly one Passion session (Sept 11) currently exists, so this shows
+precisely the one session being promoted. Re-verified: `npx tsc
+--noEmit`, `npm run lint`, `npm run build`, `npm test` (69) all pass.
