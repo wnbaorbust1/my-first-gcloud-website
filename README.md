@@ -284,7 +284,13 @@ Email/password + Google OAuth via Supabase Auth, all server-driven:
 - **Route protection**: `middleware.ts` → `lib/supabase/middleware.ts`
   protects everything by default; only paths in its `PUBLIC_PATHS`
   allowlist (and anything under `/auth/`) are reachable while signed out.
-  New protected pages need zero middleware changes.
+  New protected pages need zero middleware changes. One deliberate
+  exception: `/play/` and `/api/play/` (the financial life simulation's
+  student-facing play flow) are also public — there's no student-account
+  system, so those two routes are their own authorization boundary
+  instead of relying on a session. See
+  `app/(fullscreen)/play/[joinCode]/page.tsx` and
+  `app/api/play/submit/route.ts`.
 - **Callback route** (`app/auth/callback/route.ts`) is the single landing
   point for signup confirmation links, password-reset links, and the
   Google OAuth redirect — all exchange a PKCE `code` for a session, then
@@ -761,6 +767,6 @@ See `.env.example`. Copy to `.env.local` (already git-ignored) and fill in:
 ✅ Deployed on Vercel
 ✅ Student portfolios: file/link/text items, class showcase, Storage-backed uploads
 ✅ Bell ringer generator: teacher-facing AI generation (topic or spiral review), full-screen display mode
-⬜ Financial life simulation
+✅ Financial life simulation: admin-authored scenarios, teacher class assignment via join code, public no-login student play, results ledger
 ⬜ Presentation builder
 ⬜ Calendar sync

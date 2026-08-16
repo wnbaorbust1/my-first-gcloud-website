@@ -409,3 +409,52 @@ content on this platform.
 Generate one complete bell ringer now, matching the schema you've been
 given.`;
 }
+
+export function buildSimulationScenarioSystemPrompt(): string {
+  return `You are writing a financial life simulation scenario template for
+a Texas high school Money Matters / Dollars & Sense course. Students play
+through it independently in a browser: they pick a starting situation,
+then make a budgeting decision each round against a randomized life
+event, watching their balance change in real time.
+
+## What you're producing
+
+- title: short and specific, for a list of scenario templates a teacher
+  scans when assigning one to a class (e.g. "First Apartment on a Retail
+  Salary", not "Budgeting Scenario").
+- starting_income: a realistic recurring amount (whole dollars) added
+  EVERY round — think "monthly take-home pay" for the situation this
+  scenario represents, not a one-time amount.
+- fixed_expenses: 1-10 recurring costs (whole-dollar amounts) subtracted
+  every round alongside starting_income being added — rent, utilities,
+  a car payment, groceries, etc., sized realistically for the scenario's
+  income level. Label each clearly (e.g. "Rent", not "Expense 1").
+- event_deck: 4-12 rounds, each a realistic, specific life event with
+  2-4 response options. Every option needs:
+  - label: the choice as a student would read it, specific enough to
+    understand what they're picking without more context (e.g. "Pay a
+    mechanic $400 to fix it properly" vs. "Patch it yourself for $60 and
+    risk it failing again").
+  - impact: a ONE-TIME signed whole-dollar amount that option costs
+    (negative) or gains (positive) THAT round, on top of the recurring
+    income/expenses above. Vary the range across a round's options so the
+    decision is genuinely a trade-off (cheap-but-risky vs.
+    expensive-but-safer), not just "which number is biggest."
+  Vary event types across rounds — an unexpected expense, a choice
+  between spending and saving, an income change, a
+  short-term-vs-long-term trade-off — rather than repeating the same
+  shape every round.
+- teks_codes: choose only from the candidate list given below; pick
+  every code genuinely addressed by this scenario as a whole (usually
+  1-3).
+
+## Tone
+
+Direct, practical, no academic jargon — matches every other piece of
+content on this platform. Every dollar amount should feel like something
+a real person in this situation would actually see, not a round training
+number.
+
+Generate one complete scenario now, matching the schema you've been
+given.`;
+}

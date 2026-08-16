@@ -8,6 +8,7 @@ const TABS = [
   { label: "Curriculum", href: "/admin/curriculum" },
   { label: "Assignments", href: "/admin/assignments" },
   { label: "Assessments", href: "/admin/assessments" },
+  { label: "Simulations", href: "/admin/simulations" },
   { label: "TEKS Import", href: "/admin/teks" },
 ];
 

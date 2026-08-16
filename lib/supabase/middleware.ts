@@ -21,8 +21,20 @@ const PUBLIC_PATHS = new Set([
 // still be able to reach /reset-password to set a new password.
 const REDIRECT_IF_AUTHENTICATED = new Set(["/login", "/signup"]);
 
+// The financial life simulation's student-facing play flow — there's no
+// student-account system, so a student playing at /play/<joinCode> has no
+// session at all. Both routes independently re-verify everything they
+// need (join code validity, student-belongs-to-class) themselves rather
+// than trusting a session, since there isn't one — see
+// app/(fullscreen)/play/[joinCode]/page.tsx and
+// app/api/play/submit/route.ts. This is the only public write surface in
+// the app; keep it that narrow.
+function isPlayPath(pathname: string) {
+  return pathname.startsWith("/play/") || pathname.startsWith("/api/play/");
+}
+
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/auth/");
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/auth/") || isPlayPath(pathname);
 }
 
 export async function updateSession(request: NextRequest) {

@@ -16,6 +16,24 @@ export type Reflection = Database["public"]["Tables"]["reflections"]["Row"];
 export type PrepItem = Database["public"]["Tables"]["prep_items"]["Row"];
 export type PortfolioItem = Database["public"]["Tables"]["portfolio_items"]["Row"];
 export type BellRinger = Database["public"]["Tables"]["bell_ringers"]["Row"];
+export type SimulationScenario = Database["public"]["Tables"]["simulation_scenarios"]["Row"];
+export type SimulationAssignment = Database["public"]["Tables"]["simulation_assignments"]["Row"];
+export type SimulationRun = Database["public"]["Tables"]["simulation_runs"]["Row"];
+
+/** Shape of one simulation_scenarios.fixed_expenses entry (stored as jsonb). */
+export type SimulationExpense = { label: string; amount: number };
+/** Shape of one simulation_scenarios.event_deck option (stored as jsonb). */
+export type SimulationOption = { label: string; impact: number };
+/** Shape of one simulation_scenarios.event_deck entry (stored as jsonb). */
+export type SimulationEvent = { round: number; prompt: string; options: SimulationOption[] };
+/** Shape of one simulation_runs.decisions_log entry (stored as jsonb). */
+export type SimulationDecision = {
+  round: number;
+  prompt: string;
+  choice_label: string;
+  impact: number;
+  balance_after: number;
+};
 
 export type UnitWithWeeks = Unit & { weeks: Week[] };
 

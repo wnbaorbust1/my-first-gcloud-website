@@ -46,6 +46,7 @@ export type PrepCategory =
   | "supplies_needed";
 export type PrepPriority = "low" | "medium" | "high";
 export type PortfolioArtifactType = "file" | "link" | "text";
+export type SimulationScenarioStatus = "draft" | "published";
 export type TeksMasteryStatus =
   | "not_started"
   | "introduced"
@@ -936,6 +937,112 @@ export type Database = {
             columns: ["lesson_id"];
             isOneToOne: false;
             referencedRelation: "lessons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      simulation_scenarios: {
+        Row: {
+          id: string;
+          course_id: string;
+          title: string;
+          starting_income: number;
+          fixed_expenses: Json;
+          event_deck: Json;
+          teks_ids: string[];
+          status: SimulationScenarioStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          course_id: string;
+          title: string;
+          starting_income: number;
+          fixed_expenses?: Json;
+          event_deck?: Json;
+          teks_ids?: string[];
+          status?: SimulationScenarioStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["simulation_scenarios"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "simulation_scenarios_course_id_fkey";
+            columns: ["course_id"];
+            isOneToOne: false;
+            referencedRelation: "courses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      simulation_assignments: {
+        Row: {
+          id: string;
+          class_id: string;
+          scenario_id: string;
+          join_code: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          class_id: string;
+          scenario_id: string;
+          join_code: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["simulation_assignments"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "simulation_assignments_class_id_fkey";
+            columns: ["class_id"];
+            isOneToOne: false;
+            referencedRelation: "classes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "simulation_assignments_scenario_id_fkey";
+            columns: ["scenario_id"];
+            isOneToOne: false;
+            referencedRelation: "simulation_scenarios";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      simulation_runs: {
+        Row: {
+          id: string;
+          assignment_id: string;
+          student_id: string;
+          decisions_log: Json;
+          ending_net_worth: number | null;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          assignment_id: string;
+          student_id: string;
+          decisions_log?: Json;
+          ending_net_worth?: number | null;
+          completed_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["simulation_runs"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "simulation_runs_assignment_id_fkey";
+            columns: ["assignment_id"];
+            isOneToOne: false;
+            referencedRelation: "simulation_assignments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "simulation_runs_student_id_fkey";
+            columns: ["student_id"];
+            isOneToOne: false;
+            referencedRelation: "students";
             referencedColumns: ["id"];
           },
         ];

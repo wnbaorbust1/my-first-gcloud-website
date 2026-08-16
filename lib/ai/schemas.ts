@@ -214,3 +214,33 @@ export const generatedBellRingerSchema = z.object({
   teks_codes: z.array(z.string()).max(10),
 });
 export type GeneratedBellRinger = z.infer<typeof generatedBellRingerSchema>;
+
+// ── Financial life simulation scenario generation ───────────────────────
+
+const generatedSimulationExpenseSchema = z.object({
+  label: z.string().min(1).max(200),
+  amount: z.number().int().min(0).max(1_000_000),
+});
+
+const generatedSimulationOptionSchema = z.object({
+  label: z.string().min(1).max(300),
+  // One-time signed dollar delta applied the round this option is chosen
+  // — negative for a cost, positive for a windfall.
+  impact: z.number().int().min(-1_000_000).max(1_000_000),
+});
+
+const generatedSimulationEventSchema = z.object({
+  round: z.number().int().min(1).max(12),
+  prompt: z.string().min(1).max(1000),
+  options: z.array(generatedSimulationOptionSchema).min(2).max(4),
+});
+
+export const generatedSimulationScenarioSchema = z.object({
+  title: z.string().min(1).max(300),
+  // Recurring amount added every round (not a one-time signing bonus).
+  starting_income: z.number().int().min(0).max(1_000_000),
+  fixed_expenses: z.array(generatedSimulationExpenseSchema).min(1).max(10),
+  event_deck: z.array(generatedSimulationEventSchema).min(4).max(12),
+  teks_codes: z.array(z.string()).max(10),
+});
+export type GeneratedSimulationScenario = z.infer<typeof generatedSimulationScenarioSchema>;
